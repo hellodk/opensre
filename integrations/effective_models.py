@@ -32,6 +32,7 @@ class EffectiveIntegrations(StrictConfigModel):
     mongodb: EffectiveIntegrationEntry | None = None
     mongodb_atlas: EffectiveIntegrationEntry | None = None
     redis: EffectiveIntegrationEntry | None = None
+    aerospike: EffectiveIntegrationEntry | None = None
     mariadb: EffectiveIntegrationEntry | None = None
     rabbitmq: EffectiveIntegrationEntry | None = None
     betterstack: EffectiveIntegrationEntry | None = None
