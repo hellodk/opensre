@@ -168,6 +168,8 @@ from config.constants.twilio import (
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
 from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
 from config.llm_credentials import resolve_env_credential
+from integrations.aerospike import aerospike_config_from_env
+from integrations.aerospike import classify as _classify_aerospike
 from integrations.airflow.config import airflow_config_from_env
 from integrations.airflow.config import classify as _classify_airflow
 from integrations.alertmanager import classify as _classify_alertmanager
@@ -417,6 +419,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "jenkins": _classify_jenkins,
     "mongodb": _classify_mongodb,
     "redis": _classify_redis,
+    "aerospike": _classify_aerospike,
     "postgresql": _classify_postgresql,
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
@@ -863,6 +866,15 @@ def load_env_integrations() -> list[dict[str, Any]]:
             _active_env_record(
                 "redis",
                 redis_config.model_dump(exclude={"integration_id"}),
+            )
+        )
+
+    aerospike_config = aerospike_config_from_env()
+    if aerospike_config:
+        integrations.append(
+            _active_env_record(
+                "aerospike",
+                aerospike_config.model_dump(exclude={"integration_id"}),
             )
         )
 

@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # registry walks it alongside the canonical ``tools/`` package. New vendors get
 # one entry each as they migrate.
 INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
+    "integrations.aerospike.tools",
     "integrations.alertmanager.tools",
     "integrations.argocd.tools",
     "integrations.aws.tools",

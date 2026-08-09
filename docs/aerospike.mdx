@@ -1,0 +1,120 @@
+---
+title: "Aerospike"
+description: "Connect Aerospike so OpenSRE can diagnose node, namespace, and latency issues during investigations"
+---
+
+OpenSRE uses Aerospike diagnostics to investigate cluster and namespace alerts — checking node health and cluster membership, per-namespace storage and object counts, and read/write latency histograms. This integration is read-only diagnostics run through the `asinfo` CLI, Aerospike's own info-protocol client — it does not read or write record-level (key/value) data.
+
+## Prerequisites
+
+- **`asinfo`** (from the `aerospike-tools` package) installed and on `PATH` in the environment running OpenSRE. This is an **external binary dependency**, not a Python package — OpenSRE detects it on `PATH` the same way it detects Helm. Install the `aerospike-tools` `.deb`/`.rpm`/Homebrew package from Aerospike's own download page; it ships `asinfo`/`asadm` together. Any container image or deploy target running this integration needs `aerospike-tools` added alongside its existing OS packages (e.g. an `apt-get install aerospike-tools` line).
+- Aerospike Community or Enterprise Edition, any version exposing the standard info protocol on port 3000 (or a custom port)
+- Network access from the OpenSRE environment to the Aerospike node(s)
+- Security-enabled clusters: supply `AEROSPIKE_USERNAME`/`AEROSPIKE_PASSWORD` — passed to `asinfo` as `-U`/`-P`. TLS is not yet supported — see Known limitations below.
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **Aerospike** when prompted and provide your host and port.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+AEROSPIKE_HOST=localhost
+AEROSPIKE_PORT=3000
+AEROSPIKE_USERNAME=
+AEROSPIKE_PASSWORD=
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AEROSPIKE_HOST` | — | **Required.** Aerospike node hostname or IP |
+| `AEROSPIKE_PORT` | `3000` | Aerospike info-protocol port |
+| `AEROSPIKE_USERNAME` | _(empty)_ | Username; leave blank unless the cluster has security enabled |
+| `AEROSPIKE_PASSWORD` | _(empty)_ | Password; leave blank unless the cluster has security enabled |
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "aerospike-prod",
+      "service": "aerospike",
+      "status": "active",
+      "credentials": {
+        "host": "aerospike.example.net",
+        "port": 3000,
+        "username": "",
+        "password": ""
+      }
+    }
+  ]
+}
+```
+
+## Tools
+
+Three read-only diagnostic tools are available when OpenSRE investigates an Aerospike-related alert:
+
+### Node status
+
+Retrieves node health via the `status` and `statistics` info commands: liveness, uptime, cluster size, cluster key, and cluster integrity. Useful for spotting a node that dropped out of quorum or a split cluster.
+
+### Namespace stats
+
+Lists namespaces and retrieves per-namespace object count, memory/device usage, replication factor, and stop-writes state via the `namespaces` and `namespace/<name>` info commands.
+
+<Info>
+These figures are single-node/local, not cluster-wide aggregates — a node's `namespace/<name>` response reflects only that node's local partition share (roughly `1/N` of the master partitions in an N-node cluster). This tool does not fan out to every cluster member and sum; the response's `scope` field is always `"single_node"`.
+</Info>
+
+### Latency
+
+Retrieves read/write/udf/query latency histograms via the modern `latencies:` info command. Older servers exposing only the legacy `latency:` command, or any response shape the parser doesn't recognize, degrade to a raw-text payload (`available: true`, data returned under `raw`) rather than failing the tool call.
+
+## Verify
+
+```bash
+opensre integrations verify aerospike
+```
+
+Expected output:
+
+```
+Service: aerospike
+Status: passed
+Detail: Connected to Aerospike node at localhost:3000; status: ok.
+```
+
+## Known limitations
+
+- Requires the `asinfo` binary (`aerospike-tools` package) on `PATH` — see Prerequisites above
+- `get_aerospike_namespace_stats` reports the connected node's local figures, not cluster-wide totals
+- Record-level (KV) access is intentionally out of scope — this integration only surfaces cluster/node/namespace diagnostics
+- TLS not yet supported. TLS-enabled Aerospike clusters commonly use a **separate listener port** from the plaintext service port (e.g. plaintext `3000` + TLS `4333`), so this is not simply a config flag flip once added.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **`asinfo` not found / node status shows "not configured"** | Install `aerospike-tools` and confirm `asinfo` is on `PATH` in the environment running OpenSRE. |
+| **Connection refused / timeout** | Verify the host/port, check firewalls, and ensure the Aerospike node is running and reachable. |
+| **Authentication failed** | Set `AEROSPIKE_USERNAME`/`AEROSPIKE_PASSWORD` for a security-enabled cluster. |
+| **Latency tool returns `raw` instead of `histograms`** | Expected on older server versions exposing only the legacy `latency:` command, or when the response shape isn't recognized — the raw text is still returned. |
+
+## Security best practices
+
+- Use a **read-only** Aerospike user for monitoring where security is enabled — the tools never write.
+- Store the host and password in `.env`, never in code.
+- Rotate credentials periodically.

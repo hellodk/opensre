@@ -613,6 +613,22 @@ class RedisIntegrationConfig(StrictConfigModel):
     _normalize_password = field_validator("password", mode="before")(normalize_str())
 
 
+class AerospikeIntegrationConfig(StrictConfigModel):
+    """Normalized Aerospike credentials used by resolution and verification flows."""
+
+    host: str
+    port: int = 3000
+    username: str = ""
+    password: str = ""
+    timeout_seconds: float = 5.0
+    tls_enabled: bool = False
+    integration_id: str = ""
+
+    _normalize_host = field_validator("host", mode="before")(normalize_str())
+    _normalize_username = field_validator("username", mode="before")(normalize_str())
+    _normalize_password = field_validator("password", mode="before")(normalize_str())
+
+
 # ---------------------------------------------------------------------------
 # Logging & Telemetry
 # ---------------------------------------------------------------------------

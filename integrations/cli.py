@@ -507,6 +507,12 @@ def _setup_redis() -> None:
     _run_spec_setup(REDIS_SETUP)
 
 
+def _setup_aerospike() -> None:
+    from integrations.aerospike.setup import AEROSPIKE_SETUP
+
+    _run_spec_setup(AEROSPIKE_SETUP)
+
+
 def _setup_discord() -> None:
     from integrations.discord.setup import DISCORD_SETUP
 
@@ -740,6 +746,7 @@ _HANDLERS: dict[str, Any] = {
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,
+    "aerospike": _setup_aerospike,
     "signoz": _setup_signoz,
     "jenkins": _setup_jenkins,
     "tempo": _setup_tempo,

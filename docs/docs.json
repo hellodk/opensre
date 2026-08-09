@@ -204,6 +204,7 @@
             "group": "Data and workflow systems",
             "expanded": false,
             "pages": [
+              "aerospike",
               "airflow",
               "azure-sql",
               "clickhouse",
