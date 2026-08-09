@@ -313,6 +313,14 @@ from config.constants.twilio import (
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
 from config.constants.work_items import OPENSRE_WORK_ITEMS_DIR_ENV
 from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
+from config.constants.yugabytedb import (
+    YUGABYTEDB_DATABASE_ENV,
+    YUGABYTEDB_HOST_ENV,
+    YUGABYTEDB_PASSWORD_ENV,
+    YUGABYTEDB_PORT_ENV,
+    YUGABYTEDB_SSL_MODE_ENV,
+    YUGABYTEDB_USERNAME_ENV,
+)
 
 __all__ = [
     "RELEASE_STAGE",
@@ -546,6 +554,12 @@ __all__ = [
     "WHATSAPP_DEFAULT_TO_ENV",
     "X_MCP_AUTH_TOKEN_ENV",
     "X_MCP_URL_ENV",
+    "YUGABYTEDB_DATABASE_ENV",
+    "YUGABYTEDB_HOST_ENV",
+    "YUGABYTEDB_PASSWORD_ENV",
+    "YUGABYTEDB_PORT_ENV",
+    "YUGABYTEDB_SSL_MODE_ENV",
+    "YUGABYTEDB_USERNAME_ENV",
     "ensure_opensre_tmp_dir",
     "get_memory_dir",
     "get_store_path",

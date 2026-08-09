@@ -20,6 +20,8 @@ _GROUP_SIGNALS: dict[str, tuple[str, ...]] = {
         "postgresql",
         "mysql",
         "mariadb",
+        "yugabytedb",
+        "yugabyte",
         "redis",
         "connection pool",
         "max_connections",

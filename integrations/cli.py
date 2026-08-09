@@ -642,6 +642,12 @@ def _setup_postgresql() -> None:
     _run_spec_setup(POSTGRESQL_SETUP)
 
 
+def _setup_yugabytedb() -> None:
+    from integrations.yugabytedb.setup import YUGABYTEDB_SETUP
+
+    _run_spec_setup(YUGABYTEDB_SETUP)
+
+
 def _setup_mysql() -> None:
     from integrations.mysql.setup import MYSQL_SETUP
 
@@ -738,6 +744,7 @@ _HANDLERS: dict[str, Any] = {
     "sentry_mcp": _setup_sentry_mcp,
     "x_mcp": _setup_x_mcp,
     "postgresql": _setup_postgresql,
+    "yugabytedb": _setup_yugabytedb,
     "mysql": _setup_mysql,
     "redis": _setup_redis,
     "signoz": _setup_signoz,

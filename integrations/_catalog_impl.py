@@ -167,6 +167,14 @@ from config.constants.twilio import (
 )
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
 from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
+from config.constants.yugabytedb import (
+    YUGABYTEDB_DATABASE_ENV,
+    YUGABYTEDB_HOST_ENV,
+    YUGABYTEDB_PASSWORD_ENV,
+    YUGABYTEDB_PORT_ENV,
+    YUGABYTEDB_SSL_MODE_ENV,
+    YUGABYTEDB_USERNAME_ENV,
+)
 from config.llm_credentials import resolve_env_credential
 from integrations.airflow.config import airflow_config_from_env
 from integrations.airflow.config import classify as _classify_airflow
@@ -290,6 +298,8 @@ from integrations.victoria_logs import classify as _classify_victoria_logs
 from integrations.whatsapp import classify as _classify_whatsapp
 from integrations.x_mcp import build_x_mcp_config
 from integrations.x_mcp import classify as _classify_x_mcp
+from integrations.yugabytedb import build_yugabytedb_config
+from integrations.yugabytedb import classify as _classify_yugabytedb
 from platform.common.coercion import safe_int
 from platform.observability.errors.boundary import report_exception
 
@@ -418,6 +428,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mongodb": _classify_mongodb,
     "redis": _classify_redis,
     "postgresql": _classify_postgresql,
+    "yugabytedb": _classify_yugabytedb,
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
@@ -885,6 +896,28 @@ def load_env_integrations() -> list[dict[str, Any]]:
             _active_env_record(
                 "postgresql",
                 postgresql_config.model_dump(exclude={"integration_id"}),
+            )
+        )
+
+    yugabytedb_host = os.getenv(YUGABYTEDB_HOST_ENV, "").strip()
+    yugabytedb_database = os.getenv(YUGABYTEDB_DATABASE_ENV, "").strip()
+    if yugabytedb_host and yugabytedb_database:
+        yugabytedb_config = build_yugabytedb_config(
+            {
+                "host": yugabytedb_host,
+                "port": int(_yb_port)
+                if (_yb_port := os.getenv(YUGABYTEDB_PORT_ENV, "").strip()) and _yb_port.isdigit()
+                else 5433,
+                "database": yugabytedb_database,
+                "username": os.getenv(YUGABYTEDB_USERNAME_ENV, "yugabyte").strip() or "yugabyte",
+                "password": resolve_env_credential(YUGABYTEDB_PASSWORD_ENV),
+                "ssl_mode": os.getenv(YUGABYTEDB_SSL_MODE_ENV, "prefer").strip() or "prefer",
+            }
+        )
+        integrations.append(
+            _active_env_record(
+                "yugabytedb",
+                yugabytedb_config.model_dump(exclude={"integration_id"}),
             )
         )
 
