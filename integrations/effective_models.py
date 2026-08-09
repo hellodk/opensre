@@ -50,6 +50,7 @@ class EffectiveIntegrations(StrictConfigModel):
     kafka: EffectiveIntegrationEntry | None = None
     clickhouse: EffectiveIntegrationEntry | None = None
     postgresql: EffectiveIntegrationEntry | None = None
+    yugabytedb: EffectiveIntegrationEntry | None = None
     azure_sql: EffectiveIntegrationEntry | None = None
     bitbucket: EffectiveIntegrationEntry | None = None
     trello: EffectiveIntegrationEntry | None = None

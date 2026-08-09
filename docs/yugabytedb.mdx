@@ -1,0 +1,193 @@
+---
+title: "YugabyteDB"
+description: "Connect YugabyteDB so OpenSRE can diagnose database issues during investigations"
+---
+
+OpenSRE uses YugabyteDB (YSQL) diagnostics to investigate database-related alerts — checking server health, surfacing slow queries, listing live cluster nodes, and analyzing table statistics.
+
+YugabyteDB's YSQL API is PostgreSQL-wire-compatible, so this integration works like the PostgreSQL integration with two differences: the default port is `5433` (not `5432`) and the default user is `yugabyte` (not `postgres`).
+
+## Prerequisites
+
+- No known hard minimum YugabyteDB version for the core tools — `yb_servers()` and the core `pg_stat_*` compatibility views have been stable for a long time. (If a future `yb_lock_status()`-based lock tool is ever added — not currently planned — that would require a 2.18+ era release.)
+- Network access from the OpenSRE environment to the YSQL port (default `5433`)
+- A read-only YSQL user with access to system views
+- **Point `host` at a specific node, not a load balancer/VIP, if possible** — see the node-pinning note under Investigation tools below
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup
+```
+
+Select **YugabyteDB** when prompted and provide your host, database, and credentials.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+YUGABYTEDB_HOST=your-yugabytedb-host
+YUGABYTEDB_PORT=5433
+YUGABYTEDB_DATABASE=your-database
+YUGABYTEDB_USERNAME=opensre_readonly
+YUGABYTEDB_PASSWORD=your-password
+YUGABYTEDB_SSL_MODE=prefer   # prefer, require, or disable
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `YUGABYTEDB_HOST` | — | **Required.** YugabyteDB hostname or IP |
+| `YUGABYTEDB_PORT` | `5433` | YugabyteDB YSQL port |
+| `YUGABYTEDB_DATABASE` | — | **Required.** Target database |
+| `YUGABYTEDB_USERNAME` | `yugabyte` | Username |
+| `YUGABYTEDB_PASSWORD` | _(empty)_ | Password |
+| `YUGABYTEDB_SSL_MODE` | `prefer` | SSL mode: `prefer`, `require`, or `disable` |
+
+<Info>
+YugabyteDB Managed (Aeon) deployments generally expect `sslmode=verify-full` with the cluster's CA certificate. `prefer` still connects there (it negotiates TLS opportunistically), but if you are on YugabyteDB Managed, set `YUGABYTEDB_SSL_MODE=verify-full` for a stricter connection.
+</Info>
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "yugabytedb-prod",
+      "service": "yugabytedb",
+      "status": "active",
+      "credentials": {
+        "host": "prod-primary.yugabyte.example.com",
+        "port": 5433,
+        "database": "application_db",
+        "username": "opensre_readonly",
+        "password": "your-password",
+        "ssl_mode": "prefer"
+      }
+    }
+  ]
+}
+```
+
+## Creating a read-only user
+
+```sql
+-- Create the user
+CREATE USER opensre_readonly WITH PASSWORD 'secure-password';
+
+-- Grant access to system views
+GRANT pg_monitor TO opensre_readonly;
+
+-- Grant access to the target database
+GRANT CONNECT ON DATABASE application_db TO opensre_readonly;
+\c application_db
+GRANT USAGE ON SCHEMA public TO opensre_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO opensre_readonly;
+
+-- Optional defense in depth: this integration only ever issues SELECT statements
+ALTER ROLE opensre_readonly SET default_transaction_read_only = on;
+```
+
+<Info>
+`pg_monitor` and YSQL's other predefined roles (`pg_read_all_stats`, `pg_read_all_settings`) are inherited intact from the PostgreSQL 11 fork YSQL is built on, and grant the same `pg_stat_activity`/`pg_stat_user_tables` visibility as PostgreSQL — no superuser privileges required.
+</Info>
+
+## Enabling slow query tracking
+
+`pg_stat_statements` is commonly enabled by default on YugabyteDB via `shared_preload_libraries` (unlike vanilla PostgreSQL, where it must be opted into). If it is not already enabled on your cluster, add it to `postgresql.conf`/the YB-TServer gflags:
+
+```ini
+shared_preload_libraries = 'pg_stat_statements'
+```
+
+Then run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+## Investigation tools
+
+When OpenSRE investigates a YugabyteDB-related alert, five diagnostic tools are available. Every tool's response includes a `connected_node` field — see **Node pinning** below.
+
+### Server status
+
+Retrieves version, connection counts (total, active, idle, max), transaction commit/rollback rates, and buffer cache hit ratio for the database. **Every YB-TServer runs its own local YSQL backend process with no cluster-wide aggregation, so these metrics — including `max_connections` — reflect only the node you connected to (`connected_node`), not the full cluster.**
+
+### Current queries
+
+Lists active queries running longer than a configurable threshold (default 1 s), excluding the monitoring connection itself. Includes PID, user, client address, duration, wait event, and a truncated query string. Same per-node caveat as Server status: a query running on a different YB-TServer than the one this connection landed on will not show up.
+
+### Table statistics
+
+Reads `pg_stat_user_tables` for a given schema (default `public`). Returns insert/update/delete/live/dead tuple counts, sequential vs index scan ratios, maintenance timestamps, and table sizes in bytes and MB.
+
+<Info>
+YugabyteDB's DocDB storage engine is an LSM tree, not PostgreSQL's heap, and does not run PostgreSQL's autovacuum daemon. `n_dead_tup` typically reads `0`, and `last_vacuum`/`last_autovacuum`/`last_analyze` typically read `NULL` — these fields are kept for schema parity with the PostgreSQL tool but are not actionable maintenance signals on YugabyteDB.
+</Info>
+
+### Cluster status
+
+Lists live YB-TServer nodes and their placement (cloud/region/zone) via the `yb_servers()` YSQL function — the documented, supported mechanism for topology discovery over a plain YSQL connection.
+
+`yb_servers()` **never lists YB-Master nodes** — only YB-TServers (the nodes that accept YSQL connections; masters never do). `node_type` distinguishes "primary cluster" vs. "read replica cluster" nodes in a multi-region read-replica deployment, **not** master vs. tserver.
+
+Tablet-level replication lag and leader/follower status are **not** covered by this tool: that data lives in `yb-admin` output or the YB-Master/YB-TServer HTTP UIs, which this integration does not have access to (it only has a YSQL connection, the same access model as the PostgreSQL integration).
+
+### Slow queries
+
+Reads `pg_stat_statements` to surface queries with the highest mean execution time. Results include call count, total/mean/min/max execution time (in ms), rows returned, and buffer cache hit percentage.
+
+<Info>
+Slow query data requires the `pg_stat_statements` extension to be installed and loaded via `shared_preload_libraries`. If it is not available, the tool returns `extension_available: false` with an explanatory note rather than an error — this is a normal, expected state on a cluster that hasn't enabled the extension.
+</Info>
+
+### Node pinning
+
+Every tool response includes a `connected_node` field (from `inet_server_addr()`) identifying the YB-TServer node the connection landed on. If `YUGABYTEDB_HOST` points at a load-balancer VIP or round-robin DNS name in front of multiple YB-TServers — a common production topology — separate tool calls within the same investigation can silently land on different nodes and return mutually inconsistent per-node slices (see the per-node caveats above). Use `connected_node` to check whether two tool calls in one investigation actually saw the same node, and prefer pointing `host` at a specific node IP over a load balancer when you need consistent per-call results.
+
+### Lock status
+
+Not offered by this integration, in v1 or as planned future work. PostgreSQL's `pg_locks` self-join assumes single-node lock semantics that don't hold on YugabyteDB's distributed lock manager — porting it as-is would silently under-report cross-node blocking. YugabyteDB's `yb_lock_status()` function would be the correct primitive for a future lock-status tool, but no such tool exists today.
+
+## Verify
+
+```bash
+opensre integrations verify yugabytedb
+```
+
+Expected output:
+
+```
+Service: yugabytedb
+Status: passed
+Detail: Connected to YugabyteDB 2.20.0.0 (PG 11.2 compat, build 0); target database: application_db
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Verify host, port (`5433`), and firewall rules. Check YB-TServer's YSQL listen configuration for the connecting host. |
+| **Authentication failed** | Confirm username and password. Check the YSQL `ysql_hba.conf`-equivalent gflag for the correct auth method. |
+| **SSL error** | Set `YUGABYTEDB_SSL_MODE=disable` to test without SSL, or `require`/`verify-full` to enforce it. |
+| **Permission denied on pg_stat_activity** | Grant `pg_monitor` role to the OpenSRE user. |
+| **pg_stat_statements not found** | Add `pg_stat_statements` to `shared_preload_libraries`, restart the YB-TServer, then run `CREATE EXTENSION pg_stat_statements;`. |
+| **`yb_servers()` returns "function does not exist"** | The target server is not actually YugabyteDB (likely a vanilla PostgreSQL instance pointed at by mistake). |
+| **Results look inconsistent between tool calls in the same investigation** | `host` is likely pointed at a load balancer/VIP rather than a specific node. Check each result's `connected_node` field to confirm. |
+| **Long-lived external connections see "Catalog Version Mismatch" errors** | Not an issue for OpenSRE's tools: each tool call opens a fresh connection and closes it immediately, so it always gets a clean catalog cache. This only affects other long-lived connections to the cluster. |
+
+## Security best practices
+
+- Use a **dedicated read-only user** with `pg_monitor` — avoid superuser credentials for monitoring.
+- Consider `ALTER ROLE opensre_readonly SET default_transaction_read_only = on;` as defense in depth, since this integration only ever issues `SELECT` statements.
+- Enable **SSL** (`YUGABYTEDB_SSL_MODE=require`, or `verify-full` on YugabyteDB Managed) in production environments.
+- Store credentials in `.env`, never in source code.
+- Rotate credentials periodically.
+- Point `host` at a specific YB-TServer node rather than a load balancer/VIP when consistent per-call node identity matters (see Node pinning above). Do not use YugabyteDB's topology-aware "smart driver" for this integration — it load-balances connections across nodes, which defeats node-identity stamping.

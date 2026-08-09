@@ -1,0 +1,45 @@
+{
+  "title": "[FIRING:1] YugabyteDB Slow Query Alert",
+  "state": "alerting",
+  "commonLabels": {
+    "alertname": "YugabyteDBSlowQuery",
+    "severity": "warning",
+    "cluster": "prod-yb-cluster",
+    "environment": "production",
+    "yugabytedb_instance": "prod-primary.yugabyte.net"
+  },
+  "commonAnnotations": {
+    "summary": "YugabyteDB instance has queries running longer than 30 seconds",
+    "description": "YugabyteDB cluster prod-yb-cluster primary node is experiencing slow query execution. Average query time: 45 seconds. Threshold: 30 seconds.",
+    "runbook": "https://wiki.example.com/yugabytedb/slow-queries",
+    "dashboard": "https://monitoring.example.com/d/yugabytedb-cluster",
+    "instance": "prod-primary.yugabyte.net:5433",
+    "yugabytedb_database": "application_db",
+    "yugabytedb_table": "events",
+    "yugabytedb_schema": "public",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "correlation_id": "yugabytedb-alert-correlation-001"
+  },
+  "externalURL": "https://monitoring.example.com",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"YugabyteDBSlowQuery\"}",
+  "truncatedAlerts": 0,
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "YugabyteDBSlowQuery",
+        "severity": "warning",
+        "cluster": "prod-yb-cluster",
+        "yugabytedb_instance": "prod-primary.yugabyte.net"
+      },
+      "annotations": {
+        "summary": "YugabyteDB instance has queries running longer than 30 seconds",
+        "description": "YugabyteDB cluster prod-yb-cluster primary node is experiencing slow query execution.",
+        "instance": "prod-primary.yugabyte.net:5433"
+      },
+      "startsAt": "2024-01-15T10:25:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}
