@@ -222,9 +222,11 @@ class TestAerospikeToolPaths:
     def test_latency_tool_path(self, mock_send):
         from integrations.aerospike.tools.aerospike_latency_tool import get_aerospike_latency
 
-        mock_send.return_value = {"latencies:": "{test}-read:msec,ops/sec;1.000,120"}
+        mock_send.return_value = {"latencies:": "{test}-read:msec,0.4,120"}
 
         result = get_aerospike_latency(host="prod-aerospike.internal")
 
         assert result["available"] is True
-        assert result["histograms"]["read"][0]["ops/sec"] == 120
+        assert result["histograms"] == [
+            {"namespace": "test", "operation": "read", "unit": "msec", "buckets": [0.4, 120]}
+        ]

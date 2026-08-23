@@ -85,52 +85,32 @@ def _resolved_asinfo_path() -> str | None:
     return shutil.which(_DEFAULT_ASINFO_BIN)
 
 
-def _build_args(config: AerospikeConfigLike, commands: Sequence[str]) -> list[str]:
-    """Build the ``asinfo`` argv.
+def _build_args(config: AerospikeConfigLike, command: str) -> list[str]:
+    """Build the ``asinfo`` argv for a single info command.
 
-    ``-h <host> -p <port> -v "<cmd1>\\n<cmd2>..."``, plus ``-U <username>
-    -P <password>`` when both are set (design doc §3.3). TLS flags are
-    deferred — not wired in v1 (design doc §2.1/§9 item 6).
+    ``-h <host> -p <port> -v "<cmd>"``, plus ``-U <username> -P <password>``
+    when both are set (design doc §3.3). TLS flags are deferred — not wired
+    in v1 (design doc §2.1/§9 item 6).
     """
-    args = ["-h", config.host, "-p", str(config.port), "-v", "\n".join(commands)]
+    args = ["-h", config.host, "-p", str(config.port), "-v", command]
     if config.username and config.password:
         args.extend(["-U", config.username, "-P", config.password])
     return args
 
 
-def _parse_stdout(stdout: str, commands: Sequence[str]) -> dict[str, str]:
-    """Split ``asinfo`` stdout into ``{command_name: raw_value}``.
-
-    Two shapes (design doc §1.2):
-
-    - Single-command: ``asinfo`` prints the bare value with no ``name\\t``
-      prefix, so the entire (trailing-newline-stripped) stdout is the one
-      requested command's value.
-    - Multi-command: each line is ``name\\tvalue``.
-    """
-    text = stdout.rstrip("\n")
-    if len(commands) == 1:
-        return {commands[0]: text}
-
-    result: dict[str, str] = {}
-    for line in text.split("\n"):
-        if not line:
-            continue
-        name, sep, value = line.partition("\t")
-        if not sep:
-            logger.warning("aerospike asinfo: unparseable stdout line (no tab): %r", line)
-            continue
-        result[name] = value
-    return result
-
-
 def send_info_commands(config: AerospikeConfigLike, commands: Sequence[str]) -> dict[str, str]:
-    """Run ``asinfo`` with the given info commands; return ``{command: raw_value}``.
+    """Run each info command as its own ``asinfo`` invocation; return ``{command: raw_value}``.
+
+    One subprocess per command — never batch multiple commands into a single
+    ``-v`` argument. Live verification against the Aerospike server 8.1.2
+    tools bundle showed ``asinfo`` executes only the FIRST command of a
+    multi-command ``-v`` and prints unlabeled output, so batching silently
+    lost every command after the first.
 
     Caller-facing entrypoint — the only function
     ``integrations/aerospike/__init__.py``'s per-tool data functions call.
-    One subprocess per call, no pooling: matches the "fresh connection per
-    call" behavior ``integrations/redis`` already commits to.
+    No pooling: matches the "fresh connection per call" behavior
+    ``integrations/redis`` already commits to.
 
     Raises:
         AsinfoBinaryNotFoundError: ``asinfo`` is not on ``PATH``.
@@ -145,34 +125,37 @@ def send_info_commands(config: AerospikeConfigLike, commands: Sequence[str]) -> 
             "aerospike-tools package so asinfo is on PATH."
         )
 
-    argv = [binary, *_build_args(config, commands)]
-    logger.debug("aerospike asinfo subprocess: %s commands", len(commands))
-    try:
-        proc = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=config.timeout_seconds,
-            check=False,
-            env=os.environ.copy(),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise AsinfoTimeoutError(
-            f"asinfo command timed out after {config.timeout_seconds}s"
-        ) from exc
-    except OSError as exc:
-        raise AsinfoConnectionError(
-            f"asinfo subprocess failed: {exc}", returncode=1, stderr=str(exc)
-        ) from exc
+    results: dict[str, str] = {}
+    for command in commands:
+        argv = [binary, *_build_args(config, command)]
+        logger.debug("aerospike asinfo subprocess: 1 command")
+        try:
+            proc = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=config.timeout_seconds,
+                check=False,
+                env=os.environ.copy(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AsinfoTimeoutError(
+                f"asinfo command timed out after {config.timeout_seconds}s"
+            ) from exc
+        except OSError as exc:
+            raise AsinfoConnectionError(
+                f"asinfo subprocess failed: {exc}", returncode=1, stderr=str(exc)
+            ) from exc
 
-    if proc.returncode != 0:
-        stderr = (proc.stderr or "").strip()
-        raise AsinfoConnectionError(
-            f"asinfo exited with code {proc.returncode}: {stderr or 'no stderr output'}",
-            returncode=proc.returncode,
-            stderr=stderr,
-        )
+        if proc.returncode != 0:
+            stderr = (proc.stderr or "").strip()
+            raise AsinfoConnectionError(
+                f"asinfo exited with code {proc.returncode}: {stderr or 'no stderr output'}",
+                returncode=proc.returncode,
+                stderr=stderr,
+            )
 
-    return _parse_stdout(proc.stdout or "", commands)
+        results[command] = (proc.stdout or "").rstrip("\n")
+    return results

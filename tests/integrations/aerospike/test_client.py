@@ -54,13 +54,17 @@ def test_resolved_asinfo_path_returns_none_when_binary_missing(
 
 
 def test_build_args_includes_host_and_port() -> None:
-    args = _build_args(_FakeConfig(host="node1", port=3000), ["statistics"])
+    args = _build_args(_FakeConfig(host="node1", port=3000), "statistics")
     assert args == ["-h", "node1", "-p", "3000", "-v", "statistics"]
 
 
-def test_build_args_joins_multiple_commands_with_newline() -> None:
-    args = _build_args(_FakeConfig(), ["namespaces", "namespace/test"])
-    assert args[-1] == "namespaces\nnamespace/test"
+def test_build_args_takes_exactly_one_command() -> None:
+    # Live finding (Aerospike server 8.1.2 tools bundle): asinfo executes only
+    # the FIRST command passed via -v and prints unlabeled output, so batching
+    # multiple commands into one invocation silently loses data. The transport
+    # therefore sends exactly one command per invocation.
+    args = _build_args(_FakeConfig(), "namespace/test")
+    assert args == ["-h", "node1", "-p", "3000", "-v", "namespace/test"]
 
 
 def test_build_args_adds_username_password_flags_when_both_set() -> None:
@@ -129,20 +133,49 @@ def test_send_info_commands_errors_on_timeout(monkeypatch: pytest.MonkeyPatch) -
         send_info_commands(_FakeConfig(), ["status"])
 
 
-def test_parse_multi_command_stdout_splits_on_name_tab_value(
+def test_one_asinfo_invocation_per_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Regression: multi-command batching lost every command after the first.
+
+    Live clusters execute only the first -v command, so send_info_commands
+    must issue one subprocess invocation per requested command.
+    """
     monkeypatch.setattr("integrations.aerospike.client.shutil.which", lambda _n: "/bin/asinfo")
-    stdout = "statistics\tcluster_size=3;\nnamespaces\ttest;bar\n"
+    calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+        calls.append(list(cmd))
+        return SimpleNamespace(returncode=0, stdout="value\n", stderr="")
 
     monkeypatch.setattr("integrations.aerospike.client.subprocess.run", fake_run)
 
-    result = send_info_commands(_FakeConfig(), ["statistics", "namespaces"])
+    result = send_info_commands(_FakeConfig(), ["status", "statistics"])
 
-    assert result == {"statistics": "cluster_size=3;", "namespaces": "test;bar"}
+    assert len(calls) == 2
+    assert [cmd[cmd.index("-v") + 1] for cmd in calls] == ["status", "statistics"]
+    assert result == {"status": "value", "statistics": "value"}
+
+
+def test_each_invocation_parses_bare_value_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each single-command invocation returns an unlabeled bare value."""
+    monkeypatch.setattr("integrations.aerospike.client.shutil.which", lambda _n: "/bin/asinfo")
+    stdout_by_command = {
+        "status": "ok\n",
+        "statistics": "cluster_size=3;cluster_key=ABC;\n",
+    }
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> SimpleNamespace:
+        command = cmd[cmd.index("-v") + 1]
+        return SimpleNamespace(returncode=0, stdout=stdout_by_command[command], stderr="")
+
+    monkeypatch.setattr("integrations.aerospike.client.subprocess.run", fake_run)
+
+    result = send_info_commands(_FakeConfig(), ["status", "statistics"])
+
+    assert result == {"status": "ok", "statistics": "cluster_size=3;cluster_key=ABC;"}
 
 
 def test_parse_single_command_stdout_has_no_name_prefix(monkeypatch: pytest.MonkeyPatch) -> None:

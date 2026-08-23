@@ -200,7 +200,11 @@ def _parse_semicolon_list(raw: str) -> list[str]:
     return [segment for segment in raw.split(";") if segment]
 
 
-_LATENCY_HEADER_RE = re.compile(r"^\{?([\w.-]+)\}?-(\w+):(.+)$")
+# Namespaced histograms always carry literal braces: "{test}-write:msec,...".
+# Braces are REQUIRED here so hyphenated global op names ("batch-index:")
+# are not misread as namespace-operation pairs.
+_LATENCY_SEGMENT_RE = re.compile(r"^\{([\w.-]+)\}-(\w+):(.*)$")
+_LATENCY_BARE_OP_RE = re.compile(r"^([\w.-]+):(.*)$")
 
 
 def _coerce_latency_value(value: str) -> Any:
@@ -212,45 +216,50 @@ def _coerce_latency_value(value: str) -> Any:
 
 
 def _parse_latency(raw: str) -> dict[str, Any]:
-    """Best-effort parse of the ``latencies:`` (or legacy ``latency:``) payload.
+    """Parse the ``latencies:`` payload into a list of histogram entries.
 
-    Recognizes segments shaped ``{namespace}-<op>:<column1>,<column2>,...``
-    (a histogram header) followed by comma-separated data rows, joined by
-    ``;`` or newline (both are observed across ``asinfo`` builds/server
-    versions). Degrades to ``{"raw": raw}`` on any shape this parser doesn't
-    recognize rather than raising — the exact cross-version grammar is
-    unconfirmed against a live server (design doc §9 item 5).
+    Grammar verified against a live Aerospike server 8.1.2 node: each
+    ``;``-separated segment is ONE complete histogram line shaped
+    ``{namespace}-<op>:<unit>,<bucket>,<bucket>,...`` (namespace prefix and
+    trailing buckets both optional — idle ops emit bare ``<op>:`` or
+    ``{ns}-<op>:``). The first token after the colon is the time unit
+    (e.g. ``msec``); the rest are bucket values. Segments are joined by
+    ``;`` or newline across ``asinfo`` builds.
+
+    Degrades to ``{"raw": raw}`` only when no segment matches the grammar
+    at all (e.g. an error string) — the exact cross-version grammar was
+    confirmed live before this parser was written.
     """
     text = (raw or "").strip()
     if not text:
         return {"raw": raw}
 
-    segments = [seg for seg in re.split(r"[;\n]", text) if seg.strip()]
-    histograms: dict[str, list[dict[str, Any]]] = {}
-    current_op: str | None = None
-    current_columns: list[str] = []
-
-    for segment in segments:
-        header_match = _LATENCY_HEADER_RE.match(segment)
-        if header_match:
-            current_op = header_match.group(2)
-            current_columns = [c.strip() for c in header_match.group(3).split(",") if c.strip()]
-            histograms.setdefault(current_op, [])
+    histograms: list[dict[str, Any]] = []
+    for segment in re.split(r"[;\n]", text):
+        seg = segment.strip()
+        if not seg:
             continue
 
-        if current_op is None:
-            # Data encountered before any recognized histogram header — an
-            # unrecognized shape overall.
-            return {"raw": raw}
+        namespaced = _LATENCY_SEGMENT_RE.match(seg)
+        if namespaced:
+            namespace, operation, rest = namespaced.groups()
+        else:
+            bare = _LATENCY_BARE_OP_RE.match(seg)
+            if bare is None:
+                continue
+            namespace, operation, rest = None, bare.group(1), bare.group(2)
 
-        values = [v.strip() for v in segment.split(",") if v.strip() != ""]
-        if not values:
-            continue
-        row: dict[str, Any] = {}
-        for index, value in enumerate(values):
-            key = current_columns[index] if index < len(current_columns) else f"field_{index}"
-            row[key] = _coerce_latency_value(value)
-        histograms[current_op].append(row)
+        values = [v.strip() for v in rest.split(",") if v.strip()] if rest else []
+        unit = values[0] if values else ""
+        buckets = [_coerce_latency_value(v) for v in values[1:]]
+        histograms.append(
+            {
+                "namespace": namespace,
+                "operation": operation,
+                "unit": unit,
+                "buckets": buckets,
+            }
+        )
 
     if not histograms:
         return {"raw": raw}
@@ -348,11 +357,11 @@ def get_namespace_stats(config: AerospikeConfig, namespace: str = "") -> dict[st
 def get_latency(config: AerospikeConfig) -> dict[str, Any]:
     """Retrieve Aerospike latency histograms (read/write/udf/query buckets).
 
-    Read-only: issues the modern ``latencies:`` info command.
-    ``_parse_latency`` degrades to a ``raw`` payload (with
-    ``available: True`` — data was fetched, just not fully parsed) when the
-    response shape isn't recognized, e.g. an older server that only exposes
-    the legacy ``latency:`` grammar.
+    Read-only: issues the modern ``latencies:`` info command. Each histogram
+    entry carries ``namespace`` (``None`` for cluster-global ops like
+    ``batch-index``), ``operation``, ``unit``, and numeric ``buckets``.
+    Degrades to a ``raw`` payload only when the response matches no known
+    segment shape.
     """
     if not config.is_configured:
         return tool_unavailable("aerospike", "Not configured.")

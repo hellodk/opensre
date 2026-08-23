@@ -37,12 +37,15 @@ def test_run_happy_path() -> None:
 class TestAerospikeLatencyToolPath:
     @patch("integrations.aerospike.send_info_commands")
     def test_tool_path_structured_response(self, mock_send) -> None:
-        mock_send.return_value = {"latencies:": "{test}-write:msec,ops/sec;1.000,20"}
+        # Real wire shape: one line per {ns}-<op>, unit first, then buckets.
+        mock_send.return_value = {"latencies:": "{test}-write:msec,1.000,20"}
 
         result = get_aerospike_latency(host="node1")
 
         assert result["available"] is True
-        assert result["histograms"]["write"][0]["ops/sec"] == 20
+        assert result["histograms"] == [
+            {"namespace": "test", "operation": "write", "unit": "msec", "buckets": [1.0, 20]}
+        ]
 
     @patch("integrations.aerospike.send_info_commands")
     def test_tool_path_degrades_to_raw_on_unrecognized_shape(self, mock_send) -> None:
