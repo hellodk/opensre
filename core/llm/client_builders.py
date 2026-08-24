@@ -49,6 +49,22 @@ def _cli_agent_client(registration: Any) -> AgentLLMClient:
     return CLIBackedAgentClient(registration.adapter_factory(), model=model_name)
 
 
+def _resolve_ollama_max_tokens() -> int:
+    """Return the ollama per-call token cap: ``OLLAMA_MAX_TOKENS`` or 1024.
+
+    Structured stages emit JSON payloads that silent truncation corrupts, so
+    operators can raise the cap for larger local models via env.
+    """
+    from config.constants.llm import DEFAULT_OLLAMA_MAX_TOKENS, OLLAMA_MAX_TOKENS_ENV
+
+    raw = os.getenv(OLLAMA_MAX_TOKENS_ENV, "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_OLLAMA_MAX_TOKENS
+    return value if value > 0 else DEFAULT_OLLAMA_MAX_TOKENS
+
+
 def _native_sdk_agent_client(route: LLMRoute) -> AgentLLMClient:
     """Build the native vendor-SDK tool-calling client for the route's provider."""
     from config.config import PROVIDER_ANTHROPIC, PROVIDER_BEDROCK, PROVIDER_OLLAMA, PROVIDER_OPENAI
@@ -65,7 +81,9 @@ def _native_sdk_agent_client(route: LLMRoute) -> AgentLLMClient:
         from core.llm.types import ModelType
 
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
-        max_tokens = 1024 if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
+        max_tokens = (
+            _resolve_ollama_max_tokens() if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
+        )
         return sdk.OpenAIAgentClient(
             model=resolved.model,
             max_tokens=max_tokens,
