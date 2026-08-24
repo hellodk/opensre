@@ -29,7 +29,7 @@ from integrations.aerospike import (
         "raw": "Unparsed asinfo output, present only when the response could not be structured.",
     },
     is_available=aerospike_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=aerospike_extract_params,
 )
 def get_aerospike_latency(

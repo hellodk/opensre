@@ -18,7 +18,7 @@ def test_metadata() -> None:
     rt = get_aerospike_node_status.__opensre_registered_tool__
     assert rt.name == "get_aerospike_node_status"
     assert rt.source == "aerospike"
-    assert rt.injected_params == ("host",)
+    assert rt.injected_params == ("host", "port")
 
 
 def test_run_happy_path() -> None:

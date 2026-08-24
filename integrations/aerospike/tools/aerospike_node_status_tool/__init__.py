@@ -31,7 +31,7 @@ from integrations.aerospike import (
         "cluster_integrity": "Whether the node reports the cluster as fully migrated/healthy.",
     },
     is_available=aerospike_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=aerospike_extract_params,
 )
 def get_aerospike_node_status(

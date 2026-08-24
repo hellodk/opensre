@@ -33,7 +33,7 @@ from integrations.aerospike import (
         "truncated": "True when more namespaces exist than the response includes.",
     },
     is_available=aerospike_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=aerospike_extract_params,
 )
 def get_aerospike_namespace_stats(
