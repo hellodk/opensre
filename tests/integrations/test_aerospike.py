@@ -290,15 +290,42 @@ class TestAerospikeNamespaceStats:
 class TestAerospikeLatency:
     @patch("integrations.aerospike.send_info_commands")
     def test_get_latency_structured(self, mock_send):
+        # Shape captured verbatim from a live Aerospike server 8.1.2 node:
+        # one line per {namespace}-<op>, first token after the colon is the
+        # time unit, the rest are histogram bucket values.
         mock_send.return_value = {
-            "latencies:": "{test}-read:msec,ops/sec,>1ms;1.000,120,0.4",
+            "latencies:": (
+                "batch-index:;"
+                "{test}-read:msec,0.4;"
+                "{test}-write:msec,1.20,0.50"
+            ),
         }
 
         result = get_latency(AerospikeConfig(host="node1"))
 
         assert result["available"] is True
-        assert "histograms" in result
-        assert result["histograms"]["read"][0]["ops/sec"] == 120
+        assert result["histograms"] == [
+            {"namespace": None, "operation": "batch-index", "unit": "", "buckets": []},
+            {"namespace": "test", "operation": "read", "unit": "msec", "buckets": [0.4]},
+            {
+                "namespace": "test",
+                "operation": "write",
+                "unit": "msec",
+                "buckets": [1.2, 0.5],
+            },
+        ]
+
+    @patch("integrations.aerospike.send_info_commands")
+    def test_get_latency_hyphenated_global_ops_stay_single_operation(self, mock_send):
+        """'batch-index:' has no {ns} prefix — it must not split as ns='batch', op='index'."""
+        mock_send.return_value = {"latencies:": "batch-index:;pi-query:msec,0.2"}
+
+        result = get_latency(AerospikeConfig(host="node1"))
+
+        assert result["histograms"] == [
+            {"namespace": None, "operation": "batch-index", "unit": "", "buckets": []},
+            {"namespace": None, "operation": "pi-query", "unit": "msec", "buckets": [0.2]},
+        ]
 
     @patch("integrations.aerospike.send_info_commands")
     def test_get_latency_degrades_to_raw(self, mock_send):
@@ -348,12 +375,13 @@ class TestAerospikeParsers:
         assert parse_latency("") == {"raw": ""}
 
     def test_parse_latency_structured_shape(self):
-        raw = "{test}-read:msec,ops/sec,>1ms;1.000,120,0.4;2.000,80,0.1"
+        # Real grammar: one segment per {namespace}-<op>:<unit>,<buckets...>
+        raw = "{test}-read:msec,120,0.4;{test}-write:msec,80,0.1"
         parsed = parse_latency(raw)
-        assert "histograms" in parsed
-        rows = parsed["histograms"]["read"]
-        assert rows[0] == {"msec": 1.0, "ops/sec": 120, ">1ms": 0.4}
-        assert rows[1] == {"msec": 2.0, "ops/sec": 80, ">1ms": 0.1}
+        assert parsed["histograms"] == [
+            {"namespace": "test", "operation": "read", "unit": "msec", "buckets": [120.0, 0.4]},
+            {"namespace": "test", "operation": "write", "unit": "msec", "buckets": [80.0, 0.1]},
+        ]
 
 
 class TestResolveIntegrations:
