@@ -27,14 +27,14 @@ from integrations.yugabytedb import (
         "Checking table row/tuple counts for a given schema",
     ],
     is_available=yugabytedb_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=yugabytedb_extract_params,
 )
 def get_yugabytedb_table_stats(
     host: str,
     database: str | None = None,
-    schema_name: str = "public",
     port: int = 5433,
+    schema_name: str = "public",
 ) -> dict[str, Any]:
     """Fetch table statistics for a specific schema (default 'public')."""
     return call_db_tool_with_default_db_warning(

@@ -70,14 +70,14 @@ class YugabyteDBSlowQueriesOutput(BaseModel):
     input_model=YugabyteDBSlowQueriesInput,
     output_model=YugabyteDBSlowQueriesOutput,
     is_available=yugabytedb_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=yugabytedb_extract_params,
 )
 def get_yugabytedb_slow_queries(
     host: str,
     database: str | None = None,
-    threshold_ms: int = 1000,
     port: int = 5433,
+    threshold_ms: int = 1000,
 ) -> dict[str, Any]:
     """Fetch slow query statistics above the threshold (default 1000ms mean time)."""
     return call_db_tool_with_default_db_warning(

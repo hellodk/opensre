@@ -27,14 +27,14 @@ from integrations.yugabytedb import (
         "Finding resource-intensive queries correlating with alert timeframes",
     ],
     is_available=yugabytedb_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=yugabytedb_extract_params,
 )
 def get_yugabytedb_current_queries(
     host: str,
     database: str | None = None,
-    threshold_seconds: int = 1,
     port: int = 5433,
+    threshold_seconds: int = 1,
 ) -> dict[str, Any]:
     """Fetch currently running queries above the threshold (default 1 second)."""
     return call_db_tool_with_default_db_warning(

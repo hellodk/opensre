@@ -27,7 +27,7 @@ from integrations.yugabytedb import (
         "Confirming cluster topology during a database incident",
     ],
     is_available=yugabytedb_is_available,
-    injected_params=("host",),
+    injected_params=("host", "port"),
     extract_params=yugabytedb_extract_params,
 )
 def get_yugabytedb_cluster_status(
