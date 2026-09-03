@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
 from integrations.aerospike import (
     AerospikeConfig,
     aerospike_extract_params,
@@ -18,7 +19,7 @@ from integrations.aerospike import (
         "recent time windows."
     ),
     source="aerospike",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Assess Aerospike request latency during an incident: percentage of ops "
         "exceeding 1ms/8ms/64ms thresholds per operation type.",

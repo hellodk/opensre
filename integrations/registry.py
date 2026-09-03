@@ -164,8 +164,8 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         service="aerospike",
         has_verifier=True,
         direct_effective=True,
-        setup_order=44,
-        verify_order=59,
+        setup_order=12,
+        verify_order=39,
     ),
     IntegrationSpec(
         service="betterstack",
