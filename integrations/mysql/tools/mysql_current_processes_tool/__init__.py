@@ -2,8 +2,9 @@
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.sql_wrapper import call_db_tool_with_default_db_warning
+from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.mysql import (
     get_current_processes,
     mysql_extract_params,
@@ -19,7 +20,7 @@ from integrations.mysql import (
         " excluding sleeping connections."
     ),
     source="mysql",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     use_cases=[
         "Identifying long-running queries blocking other operations",
         "Investigating lock contention or deadlock situations",

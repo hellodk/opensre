@@ -53,7 +53,7 @@ def captured_sentry_events(
       * ``conftest`` sets ``OPENSRE_SENTRY_DISABLED=1`` to keep the suite
         offline — we re-enable it here.
       * ``capture_exception`` and ``push_scope`` both need to be present
-        for the contextual-tag path inside ``platform.observability.errors.sentry``.
+        for the contextual-tag path inside ``infrastructure.observability.errors.sentry``.
 
     The mock ``push_scope`` returns a per-call ``_Scope`` instance that
     records every ``set_extra`` and ``set_tag`` call. ``capture_exception``
@@ -307,12 +307,12 @@ def _github_star_history_case() -> ToolFailureCase:
 
 def _eks_list_clusters_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_clusters_tool as mod
 
         mp.setattr(mod, "EKSClient", MagicMock(side_effect=RuntimeError("eks")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_clusters_tool as mod
 
         return mod.list_eks_clusters(role_arn="arn:aws:iam::123:role/x")
 
@@ -321,12 +321,12 @@ def _eks_list_clusters_case() -> ToolFailureCase:
 
 def _eks_describe_cluster_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_describe_cluster_tool as mod
 
         mp.setattr(mod, "EKSClient", MagicMock(side_effect=RuntimeError("eks")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_describe_cluster_tool as mod
 
         return mod.describe_eks_cluster(cluster_name="c", role_arn="arn:aws:iam::123:role/x")
 
@@ -335,12 +335,12 @@ def _eks_describe_cluster_case() -> ToolFailureCase:
 
 def _eks_nodegroup_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_nodegroup_health_tool as mod
 
         mp.setattr(mod, "EKSClient", MagicMock(side_effect=RuntimeError("eks")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_nodegroup_health_tool as mod
 
         return mod.get_eks_nodegroup_health(
             cluster_name="c",
@@ -352,12 +352,12 @@ def _eks_nodegroup_case() -> ToolFailureCase:
 
 def _eks_addon_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_describe_addon_tool as mod
 
         mp.setattr(mod, "EKSClient", MagicMock(side_effect=RuntimeError("eks")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_describe_addon_tool as mod
 
         return mod.describe_eks_addon(
             cluster_name="c",
@@ -370,12 +370,12 @@ def _eks_addon_case() -> ToolFailureCase:
 
 def _eks_events_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_events_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_events_tool as mod
 
         return mod.get_eks_events(
             cluster_name="c",
@@ -388,12 +388,12 @@ def _eks_events_case() -> ToolFailureCase:
 
 def _eks_node_health_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_node_health_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_node_health_tool as mod
 
         return mod.get_eks_node_health(
             cluster_name="c",
@@ -405,12 +405,12 @@ def _eks_node_health_case() -> ToolFailureCase:
 
 def _eks_list_namespaces_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_namespaces_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_namespaces_tool as mod
 
         return mod.list_eks_namespaces(
             cluster_name="c",
@@ -422,12 +422,12 @@ def _eks_list_namespaces_case() -> ToolFailureCase:
 
 def _eks_list_deployments_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_deployments_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_deployments_tool as mod
 
         return mod.list_eks_deployments(
             cluster_name="c",
@@ -440,12 +440,12 @@ def _eks_list_deployments_case() -> ToolFailureCase:
 
 def _eks_list_pods_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_pods_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_list_pods_tool as mod
 
         return mod.list_eks_pods(
             cluster_name="c",
@@ -458,12 +458,12 @@ def _eks_list_pods_case() -> ToolFailureCase:
 
 def _eks_pod_logs_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_pod_logs_tool as mod
 
         mp.setattr(mod, "build_k8s_clients", MagicMock(side_effect=RuntimeError("k8s")))
 
     def invoke() -> dict[str, Any]:
-        import integrations.eks.tools as mod
+        from integrations.eks.tools import eks_pod_logs_tool as mod
 
         return mod.get_eks_pod_logs(
             cluster_name="c",
@@ -867,7 +867,7 @@ def test_eks_client_error_path_uses_warning_severity(
     """
     from botocore.exceptions import ClientError
 
-    import integrations.eks.tools as mod
+    from integrations.eks.tools import eks_list_clusters_tool as mod
 
     client_error = ClientError(
         error_response={
@@ -917,7 +917,7 @@ def test_eks_nodegroup_health_tags_failing_nodegroup_during_iteration(
     failure on the second nodegroup should reach Sentry tagged with
     ``ng-broken``, not ``None`` or the first nodegroup.
     """
-    import integrations.eks.tools as mod
+    from integrations.eks.tools import eks_nodegroup_health_tool as mod
 
     def _describe(_cluster: str, ng: str) -> dict[str, Any]:
         if ng == "ng-broken":
@@ -1044,7 +1044,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "execute_aws_operation",
         "execute_github_issue_mutation",
         "execute_python_code",
+        "execute_yc_operation",
         "fetch_failed_run",
+        "find_yc_api",
         # fix_github_pr_ci catches only GitHubCiFixError for known states;
         # unexpected errors escape to the global #1476 wrapper.
         "fix_github_pr_ci",
@@ -1157,6 +1159,13 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "get_supabase_storage_buckets",
         "get_tracer_run",
         "get_tracer_tasks",
+        "get_yc_instance_diagnostics",
+        "get_yc_lb_health",
+        "get_yugabytedb_cluster_status",
+        "get_yugabytedb_current_queries",
+        "get_yugabytedb_server_status",
+        "get_yugabytedb_slow_queries",
+        "get_yugabytedb_table_stats",
         "helm_get_release_manifest",
         "helm_get_release_values",
         "helm_list_releases",
@@ -1192,6 +1201,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "list_s3_objects",
         "list_sentry_issue_events",
         "list_sentry_uptime_alerts",
+        "list_yc_log_groups",
+        "list_yc_instances",
+        "list_yc_metrics",
         "llm_set_provider",
         "lookup_cloudtrail_events",
         # Long-term memory tools: local-file CRUD over core/domain/memory;
@@ -1228,12 +1240,16 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "query_grafana_service_names",
         "query_grafana_traces",
         "query_honeycomb_traces",
+        "query_new_relic_alerts",
+        "query_new_relic_metrics",
         "query_opensearch_analytics",
         "query_signoz_logs",
         "query_signoz_metrics",
         "query_signoz_traces",
         "query_splunk_logs",
         "query_tempo",
+        "read_yc_logs",
+        "query_yc_metrics",
         "redeploy_railway_service",
         "replay_slack_thread_locally",
         "run_investigation",

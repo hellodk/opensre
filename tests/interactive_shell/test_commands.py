@@ -12,7 +12,9 @@ import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
-from platform.common.task_types import TaskKind, TaskStatus
+from core.agent_harness.session import SessionCore
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.investigation import (
@@ -24,7 +26,7 @@ from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.background_investigations import (
     BackgroundInvestigationRecord,
 )
-from surfaces.interactive_shell.ui.tables.tool_catalog import ToolCatalogEntry
+from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 
 
 def _capture() -> tuple[Console, io.StringIO]:
@@ -333,6 +335,45 @@ class TestDispatchSlash:
         assert "background notify channels set" in output.lower()
         assert "invalid channel" not in output.lower()
 
+    def test_background_read_forms_survive_a_headless_session(self) -> None:
+        """Chat transports dispatch literal slashes against SessionCore, which has
+        no terminal facet; the read forms must report empty state, not raise."""
+        session = SessionCore(store=InMemorySessionStore())
+        console, buf = _capture()
+
+        assert dispatch_slash("/background list", session, console) is True
+        assert "no background investigations" in buf.getvalue().lower()
+
+    def test_background_status_survives_a_headless_session(self) -> None:
+        session = SessionCore(store=InMemorySessionStore())
+        console, buf = _capture()
+
+        assert dispatch_slash("/background status", session, console) is True
+        assert "background mode" in buf.getvalue().lower()
+
+    @pytest.mark.parametrize("form", ["on", "off", "notify set email"])
+    def test_background_write_forms_are_interactive_shell_only(self, form: str) -> None:
+        """Write forms have no headless equivalent: background_mode_enabled has no
+        setter and preferences live on the terminal facet. They must point at the
+        REPL rather than crashing or silently doing nothing."""
+        session = SessionCore(store=InMemorySessionStore())
+        console, buf = _capture()
+
+        assert dispatch_slash(f"/background {form}", session, console) is True
+        assert "uv run opensre" in buf.getvalue()
+
+    @pytest.mark.parametrize(
+        "form",
+        ["", "status", "list", "show bg123", "use bg123", "notify list", "bogus"],
+    )
+    def test_background_every_form_answers_on_a_headless_session(self, form: str) -> None:
+        """No form may raise on SessionCore: chat transports dispatch all of them."""
+        session = SessionCore(store=InMemorySessionStore())
+        console, buf = _capture()
+
+        assert dispatch_slash(f"/background {form}".strip(), session, console) is True
+        assert buf.getvalue().strip()
+
     def test_background_notify_set_accepts_email_and_telegram_combined(self) -> None:
         """AC-2: email,telegram combined -> both stored, first-seen order preserved."""
         session = Session()
@@ -353,7 +394,10 @@ class TestDispatchSlash:
         output = buf.getvalue()
         assert "invalid channel" in output
         assert session.terminal.background_notification_preferences.channels == ()
-        assert "email, telegram" in output
+        # Listed individually, not as an adjacent pair: the hint now comes from the
+        # adapter registry, which reports capable channels sorted.
+        assert "email" in output
+        assert "telegram" in output
 
     def test_background_notify_set_telegram_shows_in_list_and_status(self) -> None:
         """AC-21: after setting telegram, /background notify list and the /background status
@@ -382,6 +426,94 @@ class TestDispatchSlash:
         assert dispatch_slash("/background notify set telegram,telegram", session, console) is True
         assert session.terminal.background_notification_preferences.channels == ("telegram",)
         assert "invalid channel" not in buf.getvalue().lower()
+
+    def test_background_list_reports_an_unreadable_store_without_leaking_the_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """dispatch_slash puts no try around the handler, so an escaping store error
+        reaches the transport's generic error path and logs a traceback. The message
+        also carries the absolute document path, and unlike the REPL terminal a chat
+        transport is an external sink, so the path must not reach the reply."""
+        document = tmp_path / "background" / "investigations.json"
+        document.parent.mkdir(parents=True)
+        document.write_text("{not json", encoding="utf-8")
+        monkeypatch.setattr(
+            "config.constants.paths.deployment_home", lambda: tmp_path, raising=False
+        )
+        session = SessionCore(store=InMemorySessionStore())
+        console, buf = _capture()
+
+        assert dispatch_slash("/background list", session, console) is True
+
+        output = buf.getvalue()
+        assert "background records" in output.lower()
+        assert str(tmp_path) not in output
+        assert "investigations.json" not in output
+
+    def test_background_notify_set_survives_into_the_next_session(self) -> None:
+        """Without hydration the document is write-only: the channels persist and
+        the next shell still reads none, so the setting silently never applies."""
+        session = Session()
+        console, _ = _capture()
+        assert dispatch_slash("/background notify set telegram,email", session, console) is True
+
+        fresh = Session()
+
+        assert fresh.terminal.background_notification_preferences.channels == (
+            "telegram",
+            "email",
+        )
+        listed, buf = _capture()
+        assert dispatch_slash("/background notify list", fresh, listed) is True
+        assert "telegram" in buf.getvalue()
+
+    def test_background_notify_list_reads_the_store_on_a_headless_session(self) -> None:
+        """A chat session has no terminal facet to hold preferences, so it would
+        answer "none" however the shell was configured."""
+        shell = Session()
+        console, _ = _capture()
+        assert dispatch_slash("/background notify set rocketchat", shell, console) is True
+
+        headless = SessionCore(store=InMemorySessionStore())
+        chat_console, buf = _capture()
+        assert dispatch_slash("/background notify list", headless, chat_console) is True
+
+        assert "rocketchat" in buf.getvalue()
+
+    def test_background_notify_set_validates_against_the_adapter_registry(self) -> None:
+        """AC-4 asks that adapters declare background support rather than a curated
+        list deciding it. Registering one makes its channel acceptable without any
+        edit here, which a hardcoded tuple cannot do."""
+        from bootstrap.adapters import install_notification_adapters
+        from infrastructure.delivery.notifications.outbound_registry import (
+            BACKGROUND_RCA,
+            clear_outbound_adapters,
+            get_outbound_adapter,
+            register_outbound_adapter,
+        )
+
+        class _StubAdapter:
+            name = "pagerduty"
+            capabilities = frozenset({BACKGROUND_RCA})
+
+            def deliver(self, record: BackgroundInvestigationRecord) -> str:
+                _ = record
+                return "sent"
+
+        session = Session()
+        console, buf = _capture()
+        register_outbound_adapter(_StubAdapter())
+        try:
+            assert dispatch_slash("/background notify set pagerduty", session, console) is True
+            assert session.terminal.background_notification_preferences.channels == ("pagerduty",)
+            assert "invalid channel" not in buf.getvalue().lower()
+        finally:
+            # Clearing alone would leave every later test in this worker with an
+            # empty registry, silently turning each channel into "unsupported".
+            clear_outbound_adapters()
+            install_notification_adapters()
+        assert get_outbound_adapter("pagerduty") is None
+        assert get_outbound_adapter("telegram") is not None
 
     def test_background_show_renders_real_dispatcher_telegram_sent(
         self, monkeypatch: pytest.MonkeyPatch
@@ -546,7 +678,7 @@ class TestDispatchSlash:
             lambda _self, **_kwargs: (_ for _ in ()).throw(RuntimeError("read broke")),
         )
         monkeypatch.setattr(
-            "surfaces.interactive_shell.utils.error_handling.exception_reporting.capture_exception",
+            "surfaces.shared.error_handling.exception_reporting.capture_exception",
             lambda exc, **_kwargs: captured_errors.append(exc),
         )
 
@@ -568,7 +700,7 @@ class TestDispatchSlash:
             lambda _self, *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("write broke")),
         )
         monkeypatch.setattr(
-            "surfaces.interactive_shell.utils.error_handling.exception_reporting.capture_exception",
+            "surfaces.shared.error_handling.exception_reporting.capture_exception",
             lambda exc, **_kwargs: captured_errors.append(exc),
         )
 
@@ -731,6 +863,8 @@ class TestIntegrationsCommand:
         console, buf = _capture()
         dispatch_slash("/integrations verify", Session(), console)
         assert "need attention" in buf.getvalue()
+        # The summary must name the fix, not just the count.
+        assert "/integrations setup" in buf.getvalue()
 
     def test_verify_all_ok(self, monkeypatch: object) -> None:
         monkeypatch.setattr(
@@ -879,8 +1013,8 @@ class TestIntegrationsCommand:
         assert captured == [["integrations", "setup"]]
 
     def test_remove_uses_native_store_removal(self, monkeypatch: object) -> None:
+        import infrastructure.analytics.cli as analytics_cli
         import integrations.store as store
-        import platform.analytics.cli as analytics_cli
         from surfaces.interactive_shell.command_registry import integrations as m
 
         removed: list[str] = []
@@ -939,8 +1073,8 @@ class TestMcpCommand:
         assert captured == [["integrations", "setup"]]
 
     def test_disconnect_uses_native_store_removal(self, monkeypatch: object) -> None:
+        import infrastructure.analytics.cli as analytics_cli
         import integrations.store as store
-        import platform.analytics.cli as analytics_cli
         from surfaces.interactive_shell.command_registry import integrations as m
 
         removed: list[str] = []
@@ -972,7 +1106,7 @@ class TestModelCommand:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> Path:
-        import surfaces.cli.wizard.store as wizard_store
+        import config.setup_store as wizard_store
 
         store_path = tmp_path / "opensre.json"
         monkeypatch.setattr(wizard_store, "get_store_path", lambda: store_path)
@@ -996,7 +1130,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
 
         env_path = tmp_path / ".env"
@@ -1063,7 +1197,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", tmp_path / ".env")
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", tmp_path / ".env")
@@ -1099,7 +1233,7 @@ class TestModelCommand:
         """If prompt-safe status has no credential path, /model set must not
         touch .env or os.environ."""
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         store_path = self._redirect_wizard_store(monkeypatch, tmp_path)
@@ -1140,7 +1274,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1165,7 +1299,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1189,7 +1323,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         store_path = self._redirect_wizard_store(monkeypatch, tmp_path)
@@ -1217,7 +1351,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1242,7 +1376,7 @@ class TestModelCommand:
         persisted verbatim and then silently fail availability checks. It must be
         normalized to ``gpt-5.5`` instead."""
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
         from surfaces.interactive_shell.command_registry import switch_reasoning_model
 
         env_path = tmp_path / ".env"
@@ -1267,7 +1401,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1294,7 +1428,7 @@ class TestModelCommand:
     ) -> None:
         """`/model set <provider> [model] --toolcall-model <m>` must persist both."""
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1321,7 +1455,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1347,7 +1481,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", tmp_path / ".env")
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", tmp_path / ".env")
@@ -1367,7 +1501,7 @@ class TestModelCommand:
         """Reviewer ask: a missing flag value must say *which* flag, not just
         echo the generic usage line."""
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1387,7 +1521,7 @@ class TestModelCommand:
     ) -> None:
         """`/model toolcall set <m>` must persist only the toolcall env var."""
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         env_path = tmp_path / ".env"
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
@@ -1423,7 +1557,7 @@ class TestModelCommand:
     ) -> None:
         """Providers without a separate toolcall model (codex/claude-code/gemini-cli/ollama)
         must not silently accept toolcall overrides."""
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", tmp_path / ".env")
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", tmp_path / ".env")
@@ -1438,7 +1572,7 @@ class TestModelCommand:
         tmp_path: Path,
     ) -> None:
         self._patch_llm(monkeypatch)
-        import surfaces.cli.wizard.env_sync as env_sync
+        import surfaces.shared.llm_setup.env_sync as env_sync
 
         monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", tmp_path / ".env")
         monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", tmp_path / ".env")
@@ -1609,7 +1743,7 @@ class TestInvestigateFileCommand:
             track_calls.append((entrypoint.value, trigger_mode.value, input_path))
             return _TrackContext()
 
-        monkeypatch.setattr("platform.analytics.cli.track_investigation", _fake_track)
+        monkeypatch.setattr("infrastructure.analytics.cli.track_investigation", _fake_track)
         monkeypatch.setattr(
             "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
             lambda **_kwargs: {"root_cause": "sample cause"},
@@ -1764,7 +1898,7 @@ class TestInvestigateFileCommand:
             track_calls.append((entrypoint.value, trigger_mode.value))
             return _TrackContext()
 
-        monkeypatch.setattr("platform.analytics.cli.track_investigation", _fake_track)
+        monkeypatch.setattr("infrastructure.analytics.cli.track_investigation", _fake_track)
         monkeypatch.setattr(
             "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
             lambda **_kwargs: {"root_cause": "test cause"},
@@ -1853,7 +1987,7 @@ class TestInvestigateFileCommand:
     def test_investigate_opensre_error_marks_task_failed(
         self, tmp_path: object, monkeypatch: object
     ) -> None:
-        from surfaces.interactive_shell.utils.error_handling.errors import OpenSREError
+        from surfaces.shared.error_handling.errors import OpenSREError
 
         alert_file = tmp_path / "alert.json"  # type: ignore[operator]
         alert_file.write_text('{"alert_name": "test"}', encoding="utf-8")  # type: ignore[union-attr]
@@ -1893,12 +2027,12 @@ class TestResumeCommand:
         from unittest.mock import patch
 
         from core.agent_harness.session import (
-            JsonlSessionStorage,
+            JsonlSessionStore,
             default_session_repo,
         )
         from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
 
-        SessionStore = JsonlSessionStorage()
+        SessionState = JsonlSessionStore()
         session = Session()
         old_id = session.session_id
         target_id = "old-abc-1234567890"
@@ -1907,7 +2041,7 @@ class TestResumeCommand:
             "core.agent_harness.session.persistence.paths.sessions_dir",
             return_value=tmp_path,
         ):
-            SessionStore.open_session(session)
+            SessionState.open_session(session)
             session.record("chat", "pre-resume turn")
 
             # Pre-create a finalized target session file to resume into.
@@ -2053,10 +2187,10 @@ class TestResumeCommand:
         """History display uses REPL turn order and includes slash commands."""
         from unittest.mock import patch
 
-        from core.agent_harness.session import JsonlSessionStorage
+        from core.agent_harness.session import JsonlSessionStore
         from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
 
-        SessionStore = JsonlSessionStorage()
+        SessionState = JsonlSessionStore()
         data = {
             "session_id": "display-test-abc123456789",
             "name": "My Session",
@@ -2079,7 +2213,7 @@ class TestResumeCommand:
             "core.agent_harness.session.persistence.paths.sessions_dir",
             return_value=tmp_path,
         ):
-            SessionStore.open_session(session)
+            SessionState.open_session(session)
             _apply_resume_data(data, session, console)
 
         output = buf.getvalue()
@@ -2624,7 +2758,7 @@ class TestRunCliCommand:
 
         console, buf = _capture()
         assert m.run_cli_command(console, ["update"], subprocess_timeout=30.0) is True
-        from platform.terminal.theme import ERROR
+        from infrastructure.terminal.theme import ERROR
 
         assert replayed == [("partial stdout\n", None), ("partial stderr\n", ERROR)]
         assert "timed out" in buf.getvalue()
@@ -2673,7 +2807,7 @@ class TestRunCliCommand:
     ) -> None:
         """Gateway/headless surfaces need the real exit status for slash analytics."""
         from core.agent_harness.session import SessionCore
-        from core.agent_harness.session.persistence.memory import InMemorySessionStorage
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
         from surfaces.interactive_shell.command_registry import cli_parity as m
 
         def _fake_run(
@@ -2693,7 +2827,7 @@ class TestRunCliCommand:
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom\n")
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
-        session = SessionCore(storage=InMemorySessionStorage())
+        session = SessionCore(store=InMemorySessionStore())
         session.record("slash", "/remote health", ok=True)
         console, _buf = _capture()
         assert m.run_cli_command(console, ["remote", "health"], session=session) is False
@@ -3102,3 +3236,21 @@ class TestCliDelegatedCommands:
         assert session.history[-1]["ok"] is False
         assert delegated == []
         assert started == []
+
+
+def test_alerts_inactive_prints_enable_instructions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The inactive warning must say how to turn the listener on."""
+    # Arrange
+    import surfaces.interactive_shell.command_registry.alerts as alerts_module
+
+    monkeypatch.setattr(alerts_module, "get_current_inbox", lambda: None)
+    console, buf = _capture()
+
+    # Act
+    dispatch_slash("/alerts", Session(), console)
+
+    # Assert
+    output = buf.getvalue()
+    assert "not active" in output
+    assert "alert_listener_enabled" in output
+    assert "OPENSRE_ALERT_LISTENER_ENABLED" in output

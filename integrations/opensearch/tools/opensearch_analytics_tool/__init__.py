@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
 
 _DEFAULT_MAX_RESULTS = 100
@@ -42,7 +43,7 @@ def _opensearch_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, 
     name="query_opensearch_analytics",
     description="Query OpenSearch-compatible analytics indices with bounded retrieval.",
     source="opensearch",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     requires=["url"],
     input_schema={
         "type": "object",

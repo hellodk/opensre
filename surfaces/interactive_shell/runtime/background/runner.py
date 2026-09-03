@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import threading
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -12,9 +13,9 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 from rich.markup import escape
 
-from platform.analytics.cli import track_investigation
-from platform.analytics.source import EntrypointSource, TriggerMode
-from platform.common.errors import OpenSREError
+from infrastructure.analytics.cli import track_investigation
+from infrastructure.analytics.source import EntrypointSource, TriggerMode
+from infrastructure.errors import OpenSREError
 from surfaces.interactive_shell.runtime import (
     BackgroundInvestigationRecord,
     Session,
@@ -24,9 +25,43 @@ from surfaces.interactive_shell.runtime.background.notifications import (
     deliver_background_notifications,
 )
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
-from surfaces.interactive_shell.utils.error_handling.exception_reporting import report_exception
+from surfaces.shared.error_handling.exception_reporting import report_exception
 
 BackgroundRunFn = Callable[..., dict[str, Any]]
+
+
+def _persist_record(session: Session, record: BackgroundInvestigationRecord) -> None:
+    """Save the record so it outlives this REPL session.
+
+    Never raises. The call sits in a ``finally`` on a daemon thread, so an escaping
+    exception could not fail the investigation (the ``except`` arms have already
+    run) but would reach ``threading.excepthook`` and print a traceback straight
+    into the terminal prompt_toolkit is drawing.
+
+    Failures report through both channels the arms above use, because the CLI
+    configures no logging and a lost record is otherwise invisible.
+    """
+    from infrastructure.scheduling.background_investigations.store import (
+        UnreadableBackgroundInvestigationsError,
+        background_investigation_store,
+    )
+
+    try:
+        background_investigation_store().save(record)
+    except Exception as exc:  # noqa: BLE001
+        report_exception(exc, context="surfaces.interactive_shell.background_persist")
+        # A damaged document fails every later save too, so name it rather than
+        # repeating an unactionable notice after every investigation. That message
+        # already carries the path, and the local terminal is not an external sink.
+        detail = (
+            escape(str(exc))
+            if isinstance(exc, UnreadableBackgroundInvestigationsError)
+            else escape(type(exc).__name__)
+        )
+        session.terminal.enqueue_background_notice(
+            f"[{WARNING}]background record not saved[/] "
+            f"[{DIM}]for task {escape(record.task_id)}:[/] {detail}",
+        )
 
 
 def _safe_console_print(console: Console, message: str) -> None:
@@ -117,10 +152,10 @@ def _start_background_investigation(
     session.terminal.background_investigations[task.task_id] = record
 
     def _worker() -> None:
-        from platform.analytics.usage_context import SURFACE_CLI, bound_usage_context
+        from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 
         with bound_usage_context(
-            surface=SURFACE_CLI,
+            surface=UsageSurface.CLI,
             session_id=session.session_id,
         ):
             try:
@@ -174,9 +209,23 @@ def _start_background_investigation(
                     f"[{ERROR}]background investigation failed[/] "
                     f"[{DIM}]for task {escape(task.task_id)}:[/] {escape(str(exc))}",
                 )
+            finally:
+                # After the arms above, so persistence can never alter task state.
+                _persist_record(session, record)
 
+    # Copy the context so the per-turn storage scope (a ContextVar set by
+    # ``bound_storage_scope``) is inherited. Without it ``current_scope()`` is None
+    # on the worker, and everything it touches that resolves through
+    # ``opensre_home()`` or ``session_home()`` — session transcripts, memory,
+    # integration reads — falls back to the shared host root instead of the bound
+    # organization's. Same reason as ``memory_extraction._schedule_coalesced``.
+    #
+    # The record store no longer depends on this: ``deployment_home()`` falls back
+    # to the configured organization rather than the host root, and a transport
+    # always binds that same organization. Kept because the rest of the worker does.
     thread = threading.Thread(
-        target=_worker,
+        target=contextvars.copy_context().run,
+        args=(_worker,),
         daemon=True,
         name=f"background-investigation-{task.task_id}",
     )

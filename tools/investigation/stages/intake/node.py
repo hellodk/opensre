@@ -7,6 +7,7 @@ import logging
 import time
 from typing import Any, cast
 
+from core.agent_harness.runtime import default_reasoning_llm_factory
 from core.domain.alerts.extraction import (
     AlertDetails,
     build_alert_details_model,
@@ -16,16 +17,18 @@ from core.domain.alerts.extraction import (
     make_problem_md,
 )
 from core.domain.types.incident_window import resolve_incident_window
-from core.llm.factory import LLMRole, get_llm
 from core.state import InvestigationState
-from platform.observability import (
+from infrastructure.delivery.reporting.slack_reactions import (
+    SlackReactionsPort,
+    get_slack_reactions_port,
+)
+from infrastructure.observability import (
     debug_print,
     render_investigation_header,
 )
-from platform.observability import (
+from infrastructure.observability import (
     get_progress_tracker as get_tracker,
 )
-from platform.reporting.slack_reactions import SlackReactionsPort, get_slack_reactions_port
 from tools.investigation.reporting.delivery.bootstrap import (
     ensure_delivery_adapters_registered,
 )
@@ -64,6 +67,7 @@ Extract these fields from the message text:
   - "kubernetes" for CrashLoopBackOff, OOMKilled, Kubernetes pods, kube_namespace, or any generic Kubernetes/k8s alert not tied to AWS EKS
   - "alertmanager" for Prometheus/Alertmanager-specific fields
   - "signoz" for SigNoz, signoz.io, or signoz_metrics
+  - "new_relic" for New Relic or newrelic.com
   Leave null if truly unknown.
 - kube_namespace: Kubernetes namespace if mentioned
 - cloudwatch_log_group: AWS CloudWatch log group if mentioned
@@ -162,7 +166,7 @@ def _extract_alert_details(state: InvestigationState) -> AlertDetails:
     text = format_raw_alert(raw_alert)
     prompt = _EXTRACT_PROMPT.format(text=text)
 
-    llm = get_llm(LLMRole.REASONING)
+    llm = default_reasoning_llm_factory()
     try:
         details = cast(
             AlertDetails,

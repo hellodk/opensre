@@ -2,8 +2,9 @@
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.sql_wrapper import call_db_tool_with_default_db_warning
+from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.postgresql import (
     get_current_queries,
     postgresql_extract_params,
@@ -18,7 +19,7 @@ from integrations.postgresql import (
         "Retrieve currently executing PostgreSQL queries above a specific duration threshold."
     ),
     source="postgresql",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     use_cases=[
         "Identifying long-running queries that may be causing performance issues",
         "Investigating database locks and blocking queries during incidents",

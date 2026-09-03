@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.code_host_unavailable import code_host_unavailable_payload
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import code_host_unavailable_payload, tool_unavailable
 from integrations.gitlab import (
     get_gitlab_file,
 )
@@ -43,7 +43,7 @@ def _get_gitlab_file_available(sources: dict[str, dict]) -> bool:
         "Viewing a specific version of a file at the deployed commit or branch",
     ],
     requires=["project_id", "file_path"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     input_schema={
         "type": "object",
         "properties": {

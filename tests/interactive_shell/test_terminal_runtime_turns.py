@@ -13,13 +13,13 @@ from core.llm.types import AgentLLMResponse, ToolCall
 from surfaces.interactive_shell.runtime.core.turn_accounting import (
     ToolCallingTurnResult,
 )
-from surfaces.interactive_shell.runtime.shell_turn_execution import execute_shell_turn
 from surfaces.interactive_shell.runtime.turn_host import run_agent_turn_queue
 from surfaces.interactive_shell.runtime.utils import input_policy as loop_input_policy
 from surfaces.interactive_shell.session import Session
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
 )
+from tests.shared.harness_turn_driver import run_harness_turn
 from tools.interactive_shell.actions import (
     investigation as _investigation_tool,
 )
@@ -75,6 +75,23 @@ def test_turn_needs_exclusive_stdin_for_exit_commands(
     assert loop_input_policy.turn_needs_exclusive_stdin("quit", session) is False
 
 
+def test_turn_needs_exclusive_stdin_for_goal_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/goal set`` must finish before the condition autosubmits as ``[N] ❯``."""
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    session = Session()
+    assert (
+        loop_input_policy.turn_needs_exclusive_stdin(
+            "/goal set --max-turns 4 count windows users",
+            session,
+        )
+        is True
+    )
+    assert loop_input_policy.turn_needs_exclusive_stdin("/goal", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("goal set x", session) is False
+
+
 def test_turn_needs_exclusive_stdin_for_update(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -120,6 +137,37 @@ def test_turn_needs_exclusive_stdin_for_integration_remove(
     assert (
         loop_input_policy.turn_needs_exclusive_stdin("integrations remove github", session) is False
     )
+
+
+def test_turn_needs_exclusive_stdin_for_background_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/background`` status/list/show print Rich tables; exclusive stdin keeps
+    the next ``prompt_async()`` from racing the table render and leaking CPR
+    bytes into the prompt buffer. Mutating forms like ``on`` stay ungated."""
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    session = Session()
+
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background status", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background list", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background show", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background show abc12", session) is True
+
+    assert loop_input_policy.turn_needs_exclusive_stdin("/background on", session) is False
+    # Bare command words are not recognized under literal-/slash gating.
+    assert loop_input_policy.turn_needs_exclusive_stdin("background", session) is False
+
+
+def test_turn_needs_exclusive_stdin_for_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/health`` prints the Integration Checks Rich table."""
+    monkeypatch.setattr(loop_input_policy, "repl_tty_interactive", lambda: True)
+    session = Session()
+
+    assert loop_input_policy.turn_needs_exclusive_stdin("/health", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("health", session) is False
 
 
 def test_turn_needs_exclusive_stdin_for_onboard(
@@ -169,7 +217,7 @@ def test_queued_literal_quit_requests_runtime_exit() -> None:
 
         async def _run_turn(text: str) -> None:
             await asyncio.to_thread(
-                execute_shell_turn,
+                run_harness_turn,
                 text,
                 session,
                 console,
@@ -189,7 +237,7 @@ def test_queued_literal_quit_requests_runtime_exit() -> None:
     asyncio.run(_scenario())
 
 
-def test_execute_shell_turn_nitro_prompt_uses_cli_agent_actions(
+def test_run_harness_turn_nitro_prompt_uses_cli_agent_actions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     nitro_prompt = (
@@ -224,7 +272,7 @@ def test_execute_shell_turn_nitro_prompt_uses_cli_agent_actions(
 
     session = Session()
     console = Console(file=io.StringIO(), force_terminal=False, highlight=False)
-    execute_shell_turn(
+    run_harness_turn(
         nitro_prompt,
         session,
         console,
@@ -239,7 +287,7 @@ def test_execute_shell_turn_nitro_prompt_uses_cli_agent_actions(
     assert llm_calls == []
 
 
-def test_execute_shell_turn_nitro_prompt_executes_remote_then_investigation(
+def test_run_harness_turn_nitro_prompt_executes_remote_then_investigation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     nitro_prompt = (
@@ -268,7 +316,7 @@ def test_execute_shell_turn_nitro_prompt_executes_remote_then_investigation(
         call_order.append(f"investigation:{alert_text}")
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.action_turn.default_llm_factory",
+        "core.agent_harness.turns.headless_build.default_llm_factory",
         lambda: FakeActionLLM(
             [
                 AgentLLMResponse(
@@ -295,7 +343,7 @@ def test_execute_shell_turn_nitro_prompt_executes_remote_then_investigation(
 
     session = Session()
     console = Console(file=io.StringIO(), force_terminal=False, highlight=False)
-    execute_shell_turn(
+    run_harness_turn(
         nitro_prompt,
         session,
         console,

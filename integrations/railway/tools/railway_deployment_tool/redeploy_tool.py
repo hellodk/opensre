@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from core.domain.types.evidence import EvidenceSource
-from core.tool_framework.base import BaseTool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.tool_decorator import tool
 from integrations.config_models import RailwayIntegrationConfig
 from integrations.railway.client import (
@@ -16,8 +17,8 @@ from integrations.railway.client import (
 class RedeployRailwayServiceTool(BaseTool):
     name = "redeploy_railway_service"
     source: ClassVar[EvidenceSource] = "railway"
-    surfaces = ("investigation", "chat", "action")
-    side_effect_level = "external"
+    surfaces = (ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION)
+    side_effect_level = SideEffectLevel.EXTERNAL
     requires_approval = True
     approval_reason = "Triggers a Railway redeploy of the selected service."
     description = "Request a Railway service redeploy after explicit confirmation."
@@ -73,4 +74,7 @@ class RedeployRailwayServiceTool(BaseTool):
 
 
 redeploy_railway_service = RedeployRailwayServiceTool()
-tool(redeploy_railway_service, surfaces=("investigation", "chat", "action"))
+tool(
+    redeploy_railway_service,
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+)

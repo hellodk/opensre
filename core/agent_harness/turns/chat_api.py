@@ -4,7 +4,7 @@ The **public** host API is :class:`~core.agent_harness.harness.AgentSession`
 (``chat`` / ``investigate``). Adapters (shell TTY dispatcher, ``HeadlessAgent``)
 build :class:`ChatTurnBindings` from their surface ports, then call
 :func:`dispatch_chat_turn` from inside ``.dispatch``. This module must not
-import ``surfaces`` or ``gateway``. Investigation stays on Path 2 via
+import ``surfaces`` or ``gateway``. Investigation is
 :meth:`AgentSession.investigate` (installed payload runner).
 """
 
@@ -17,7 +17,7 @@ from core.agent_harness.ports import (
     EvidenceGatherer,
     ExecuteActions,
     OutputSink,
-    SessionStore,
+    SessionState,
     StreamAnswerFn,
     TurnAccounting,
 )
@@ -45,7 +45,7 @@ class ChatTurnBindings:
 
 def dispatch_chat_turn(
     message: str,
-    session: SessionStore,
+    session: SessionState,
     bindings: ChatTurnBindings,
 ) -> TurnResult:
     """Run one chat turn. Thin facade over :func:`run_turn`.

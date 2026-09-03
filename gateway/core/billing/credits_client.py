@@ -17,7 +17,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
-from enum import Enum
+from enum import StrEnum
 from http import HTTPStatus
 from typing import Any
 
@@ -28,14 +28,14 @@ from config.constants.billing import (
     WEBAPP_URL_ENV,
 )
 from config.constants.organization import organization_id
-from integrations.slack.webapp_auth import webapp_bearer_token
+from gateway.core.billing.webapp_auth import webapp_bearer_token
 
 logger = logging.getLogger(__name__)
 
 _CONSUME_PATH = "/api/credits/consume"
 
 
-class CreditsOutcome(Enum):
+class CreditsOutcome(StrEnum):
     """Classification of one credit-consume attempt; policy belongs to callers."""
 
     ALLOWED = "allowed"

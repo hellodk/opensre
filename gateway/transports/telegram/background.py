@@ -6,8 +6,9 @@ import asyncio
 import logging
 import threading
 
-from gateway.core.runtime.active_turns import is_stop_command
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
+from config.constants.gateway import NO_ACTIVE_TURN_MESSAGE
+from gateway.core.middleware.active_turns import is_stop_command
+from gateway.core.process.polling_thread import PollingBackground, start_polling_background
 from gateway.transports.telegram.approvals import handle_callback_query
 from gateway.transports.telegram.inbound_handler import (
     handle_polled_inbound_telegram_message,
@@ -19,30 +20,7 @@ from gateway.transports.telegram.runtime import (
     TelegramPollingRuntime,
 )
 from gateway.transports.telegram.settings import GatewaySettings
-
-
-class TelegramGatewayBackground:
-    """Control handle for the background Telegram gateway thread."""
-
-    def __init__(
-        self,
-        *,
-        thread: threading.Thread,
-        stop_event: threading.Event,
-    ) -> None:
-        self._thread = thread
-        self._stop_event = stop_event
-
-    def stop(self, *, timeout: float = 8.0) -> bool:
-        """Request shutdown and return whether the thread stopped."""
-        self._stop_event.set()
-        self._thread.join(timeout=timeout)
-        return not self._thread.is_alive()
-
-    def wait(self, *, timeout: float | None = None) -> bool:
-        """Wait for the thread and return whether it has stopped."""
-        self._thread.join(timeout=timeout)
-        return not self._thread.is_alive()
+from infrastructure.turn_host.turn_callback import TurnCallback
 
 
 def start_telegram_gateway_background(
@@ -51,57 +29,34 @@ def start_telegram_gateway_background(
     logger: logging.Logger,
     initialize_runtime: InitializeTelegramPollingRuntime,
     shutdown_runtime: ShutdownTelegramPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
-) -> TelegramGatewayBackground:
+    handle_callback_to_gateway_agent: TurnCallback,
+) -> PollingBackground:
     """Start Telegram polling in a background thread."""
-    stop_event = threading.Event()
 
-    thread = threading.Thread(
-        target=_run_telegram_gateway_thread,
-        kwargs={
-            "settings": settings,
-            "stop_event": stop_event,
-            "logger": logger,
-            "initialize_runtime": initialize_runtime,
-            "shutdown_runtime": shutdown_runtime,
-            "handle_callback_to_gateway_agent": handle_callback_to_gateway_agent,
-        },
-        name="TelegramGatewayThread",
-        daemon=True,
-    )
-    thread.start()
+    def _initialize_runtime() -> TelegramPollingRuntime:
+        return initialize_runtime(settings)
 
-    logger.info("[telegram-gateway] polling started")
-    return TelegramGatewayBackground(thread=thread, stop_event=stop_event)
-
-
-def _run_telegram_gateway_thread(
-    *,
-    settings: GatewaySettings,
-    stop_event: threading.Event,
-    logger: logging.Logger,
-    initialize_runtime: InitializeTelegramPollingRuntime,
-    shutdown_runtime: ShutdownTelegramPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
-) -> None:
-    """Own Telegram polling resources for the lifetime of the thread."""
-    # Consideration: We could initialize a broader set of resources here that could be used by the gateway (i.e. the agent itself)
-    resources = initialize_runtime(settings)
-
-    try:
-        asyncio.run(
-            _poll_telegram_until_stopped(
-                settings=settings,
-                stop_event=stop_event,
-                logger=logger,
-                resources=resources,
-                handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
-            )
+    async def _poll_until_stopped(
+        resources: TelegramPollingRuntime,
+        stop_event: threading.Event,
+    ) -> None:
+        await _poll_telegram_until_stopped(
+            settings=settings,
+            stop_event=stop_event,
+            logger=logger,
+            resources=resources,
+            handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
         )
-    except Exception:
-        logger.critical("Fatal error in Telegram gateway thread", exc_info=True)
-    finally:
-        shutdown_runtime(resources)
+
+    return start_polling_background(
+        thread_name="TelegramGatewayThread",
+        started_message="[telegram-gateway] polling started",
+        fatal_message="Fatal error in Telegram gateway thread",
+        logger=logger,
+        initialize_runtime=_initialize_runtime,
+        poll_until_stopped=_poll_until_stopped,
+        shutdown_runtime=shutdown_runtime,
+    )
 
 
 async def _poll_telegram_until_stopped(
@@ -110,7 +65,7 @@ async def _poll_telegram_until_stopped(
     stop_event: threading.Event,
     logger: logging.Logger,
     resources: TelegramPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
+    handle_callback_to_gateway_agent: TurnCallback,
 ) -> None:
     """Poll Telegram updates and dispatch them until shutdown is requested."""
     poller = TelegramPoller(settings.bot_token)
@@ -136,7 +91,7 @@ async def _poll_telegram_until_stopped(
                 # the active-turn registry before dispatching a new turn.
                 if is_stop_command(event.text):
                     if not resources.active_cancels.request_stop(event.chat_id):
-                        resources.client.send_message(event.chat_id, "Nothing running to stop.")
+                        resources.client.send_message(event.chat_id, NO_ACTIVE_TURN_MESSAGE)
                     continue
                 await handle_polled_inbound_telegram_message(
                     event,

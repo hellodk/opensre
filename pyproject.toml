@@ -93,7 +93,7 @@ Issues = "https://github.com/Tracer-Cloud/opensre/issues"
 Changelog = "https://github.com/Tracer-Cloud/opensre/releases"
 
 [project.scripts]
-opensre = "surfaces.cli.app:main"
+opensre = "surfaces.entrypoint:main"
 
 [project.optional-dependencies]
 dev = [
@@ -145,9 +145,11 @@ postgresql = [
 azure_sql = [
     "pyodbc>=5.1.0,<6.0.0",
 ]
-cdk = [
-    "aws-cdk-lib>=2.170.0",
-    "constructs>=10.3.0",
+# Cloud Logging is the one Yandex Cloud read that has no REST endpoint; the
+# entry reader is gRPC-only. Everything else in the integration is REST, so the
+# stubs stay optional and only `read_yc_logs` needs them.
+yandex_cloud_logs = [
+    "yandexcloud>=0.300.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -156,16 +158,18 @@ include = [
   "config*",
   "core*",
   "gateway*",
+  "infrastructure*",
   "integrations*",
-  "platform*",
   "surfaces*",
   "tests*",
   "tools*",
 ]
 
 [tool.setuptools.package-data]
-"surfaces.cli" = ["investigation/sample_alerts/*.json"]
-"core.agent_harness.prompts" = ["skills/*.md"]
+"surfaces.shared" = ["sample_alerts/*.json"]
+"core.agent_harness.prompts" = ["skills/**/*.md"]
+"integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
+"tools" = ["**/SKILL.md"]
 
 # With pytest-xdist (-n auto), each worker writes a fragment; put them under
 # .pytest_cache/ (already gitignored) instead of .coverage.<hostname>.* at repo root.
@@ -178,8 +182,8 @@ paths = [
   "config",
   "core",
   "gateway",
+  "infrastructure",
   "integrations",
-  "platform",
   "surfaces",
   "tools",
 ]
@@ -212,7 +216,7 @@ ignore_names = [
   "validate_*_config",                             # integration config validators
   "*_config_from_env",                             # env-backed integration helpers
   "describe_llm_*", "llm_provider_*", "has_credentials_*",
-  "get_account_*", "get_datasource_uids",
+  "get_account_*",
   "configure_grafana_cloud", "apply_otel_env_defaults", "validate_grafana_cloud_config",
   "on_thread_*", "on_assistant_*", "on_cron_*",
   "discord_interactions", "health_check",

@@ -19,8 +19,8 @@ from bootstrap import adapters
 _REGISTRARS = {
     "integrations.harness_adapters.register_harness_adapters": "integrations",
     "tools.harness_adapters.register_harness_adapters": "tools",
-    "tools.investigation.scheduler_bootstrap.install": "investigation",
-    "integrations.scheduled_agent_bootstrap.install": "scheduled",
+    "infrastructure.scheduling.scheduler.runners.register_investigation_runner": "investigation",
+    "infrastructure.scheduling.scheduler.runners.register_agent_runner": "scheduled",
 }
 _STEPS = ("install_harness_adapters", "install_scheduler_runners")
 
@@ -31,7 +31,9 @@ def registration_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     calls: list[str] = []
 
     def _recorder(name: str) -> Any:
-        def _record() -> None:
+        # Registrars differ in arity — the runner registrars take the runner,
+        # the adapter installers take nothing — so record and ignore.
+        def _record(*_args: Any, **_kwargs: Any) -> None:
             calls.append(name)
 
         return _record
@@ -84,7 +86,15 @@ def test_only_the_composition_root_defines_the_steps() -> None:
     # cannot import each other, so pressure to re-add one is permanent — and a
     # comment asking people to "keep them in sync" is not enforcement.
     repo = pathlib.Path(__file__).resolve().parents[2]
-    packages = ("bootstrap", "surfaces", "gateway", "tools", "integrations", "platform", "core")
+    packages = (
+        "bootstrap",
+        "surfaces",
+        "gateway",
+        "tools",
+        "integrations",
+        "infrastructure",
+        "core",
+    )
 
     # Act
     definers = sorted(

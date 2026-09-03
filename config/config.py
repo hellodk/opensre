@@ -16,6 +16,11 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 from config.constants.llm import (
     AZURE_OPENAI_API_VERSION_ENV,
     AZURE_OPENAI_BASE_URL_ENV,
+    CUSTOM_ANTHROPIC_BASE_URL_ENV,
+    CUSTOM_OPENAI_BASE_URL_ENV,
+    LLM_PROVIDER_ENV,
+    normalize_anthropic_base_url,
+    normalize_custom_base_url,
 )
 from config.llm_auth.auth_method import (
     LLM_AUTH_METHOD_ENV,
@@ -41,6 +46,14 @@ from config.llm_models import (
     BEDROCK_LLM_CONFIG,
     BEDROCK_REASONING_MODEL,
     BEDROCK_TOOLCALL_MODEL,
+    CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL,
+    CUSTOM_ANTHROPIC_LLM_CONFIG,
+    CUSTOM_ANTHROPIC_REASONING_MODEL,
+    CUSTOM_ANTHROPIC_TOOLCALL_MODEL,
+    CUSTOM_OPENAI_CLASSIFICATION_MODEL,
+    CUSTOM_OPENAI_LLM_CONFIG,
+    CUSTOM_OPENAI_REASONING_MODEL,
+    CUSTOM_OPENAI_TOOLCALL_MODEL,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_CLASSIFICATION_MODEL,
     DEEPSEEK_LLM_CONFIG,
@@ -82,6 +95,11 @@ from config.llm_models import (
     OPENROUTER_REASONING_MODEL,
     OPENROUTER_TOOLCALL_MODEL,
     PROVIDER_MODEL_DEFAULTS,
+    TRUSTEDROUTER_BASE_URL,
+    TRUSTEDROUTER_CLASSIFICATION_MODEL,
+    TRUSTEDROUTER_LLM_CONFIG,
+    TRUSTEDROUTER_REASONING_MODEL,
+    TRUSTEDROUTER_TOOLCALL_MODEL,
     VERTEX_AI_CLASSIFICATION_MODEL,
     VERTEX_AI_LLM_CONFIG,
     VERTEX_AI_REASONING_MODEL,
@@ -104,6 +122,14 @@ __all__ = (
     "BEDROCK_LLM_CONFIG",
     "BEDROCK_REASONING_MODEL",
     "BEDROCK_TOOLCALL_MODEL",
+    "CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL",
+    "CUSTOM_ANTHROPIC_LLM_CONFIG",
+    "CUSTOM_ANTHROPIC_REASONING_MODEL",
+    "CUSTOM_ANTHROPIC_TOOLCALL_MODEL",
+    "CUSTOM_OPENAI_CLASSIFICATION_MODEL",
+    "CUSTOM_OPENAI_LLM_CONFIG",
+    "CUSTOM_OPENAI_REASONING_MODEL",
+    "CUSTOM_OPENAI_TOOLCALL_MODEL",
     "CLERK_CONFIG_DEV",
     "CLERK_CONFIG_PROD",
     "CLERK_ISSUER_ENV",
@@ -166,6 +192,11 @@ __all__ = (
     "SLACK_CHANNEL",
     "TRACER_BASE_URL_DEV",
     "TRACER_BASE_URL_PROD",
+    "TRUSTEDROUTER_BASE_URL",
+    "TRUSTEDROUTER_CLASSIFICATION_MODEL",
+    "TRUSTEDROUTER_LLM_CONFIG",
+    "TRUSTEDROUTER_REASONING_MODEL",
+    "TRUSTEDROUTER_TOOLCALL_MODEL",
     "VERTEX_AI_CLASSIFICATION_MODEL",
     "VERTEX_AI_LLM_CONFIG",
     "VERTEX_AI_REASONING_MODEL",
@@ -251,6 +282,7 @@ LLMProvider = Literal[
     "anthropic",
     "openai",
     "openrouter",
+    "trustedrouter",
     "deepseek",
     "gemini",
     "nvidia",
@@ -259,6 +291,8 @@ LLMProvider = Literal[
     "minimax",
     "groq",
     "azure-openai",
+    "custom-openai",
+    "custom-anthropic",
     "vertex-ai",
     "codex",
     "cursor",
@@ -286,7 +320,7 @@ PROVIDER_VERTEX_AI: LLMProvider = "vertex-ai"
 def get_configured_llm_provider() -> str:
     """Return the active LLM provider from env/project .env."""
     bootstrap_opensre_env(override=False)
-    return os.getenv("LLM_PROVIDER", "anthropic").strip().lower() or "anthropic"
+    return os.getenv(LLM_PROVIDER_ENV, "anthropic").strip().lower() or "anthropic"
 
 
 def get_llm_provider_api_key_env(provider: str | None = None) -> str | None:
@@ -354,6 +388,8 @@ def _llm_settings_env_payload(provider: str) -> dict[str, object]:
             AZURE_OPENAI_API_VERSION_ENV, DEFAULT_AZURE_OPENAI_API_VERSION
         ).strip()
         or DEFAULT_AZURE_OPENAI_API_VERSION,
+        "custom_openai_base_url": os.getenv(CUSTOM_OPENAI_BASE_URL_ENV, "").strip(),
+        "custom_anthropic_base_url": os.getenv(CUSTOM_ANTHROPIC_BASE_URL_ENV, "").strip(),
         "vertex_ai_project": os.getenv("VERTEX_AI_PROJECT", "").strip(),
         "vertex_ai_location": os.getenv("VERTEX_AI_LOCATION", DEFAULT_VERTEX_AI_LOCATION).strip()
         or DEFAULT_VERTEX_AI_LOCATION,
@@ -371,6 +407,7 @@ class LLMSettings(StrictConfigModel):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openrouter_api_key: str = ""
+    trustedrouter_api_key: str = ""
     deepseek_api_key: str = ""
     gemini_api_key: str = ""
     nvidia_api_key: str = ""
@@ -390,6 +427,9 @@ class LLMSettings(StrictConfigModel):
     openrouter_reasoning_model: str = OPENROUTER_REASONING_MODEL
     openrouter_classification_model: str = OPENROUTER_CLASSIFICATION_MODEL
     openrouter_toolcall_model: str = OPENROUTER_TOOLCALL_MODEL
+    trustedrouter_reasoning_model: str = TRUSTEDROUTER_REASONING_MODEL
+    trustedrouter_classification_model: str = TRUSTEDROUTER_CLASSIFICATION_MODEL
+    trustedrouter_toolcall_model: str = TRUSTEDROUTER_TOOLCALL_MODEL
     deepseek_reasoning_model: str = DEEPSEEK_REASONING_MODEL
     deepseek_classification_model: str = DEEPSEEK_CLASSIFICATION_MODEL
     deepseek_toolcall_model: str = DEEPSEEK_TOOLCALL_MODEL
@@ -408,6 +448,14 @@ class LLMSettings(StrictConfigModel):
     azure_openai_reasoning_model: str = AZURE_OPENAI_REASONING_MODEL
     azure_openai_classification_model: str = AZURE_OPENAI_CLASSIFICATION_MODEL
     azure_openai_toolcall_model: str = AZURE_OPENAI_TOOLCALL_MODEL
+    custom_openai_base_url: str = ""
+    custom_openai_reasoning_model: str = CUSTOM_OPENAI_REASONING_MODEL
+    custom_openai_classification_model: str = CUSTOM_OPENAI_CLASSIFICATION_MODEL
+    custom_openai_toolcall_model: str = CUSTOM_OPENAI_TOOLCALL_MODEL
+    custom_anthropic_base_url: str = ""
+    custom_anthropic_reasoning_model: str = CUSTOM_ANTHROPIC_REASONING_MODEL
+    custom_anthropic_classification_model: str = CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL
+    custom_anthropic_toolcall_model: str = CUSTOM_ANTHROPIC_TOOLCALL_MODEL
     bedrock_reasoning_model: str = BEDROCK_REASONING_MODEL
     bedrock_classification_model: str = BEDROCK_CLASSIFICATION_MODEL
     bedrock_toolcall_model: str = BEDROCK_TOOLCALL_MODEL
@@ -433,6 +481,16 @@ class LLMSettings(StrictConfigModel):
 
         return normalize_azure_openai_base_url(str(value or ""))
 
+    @field_validator("custom_openai_base_url", mode="before")
+    @classmethod
+    def _normalize_custom_openai_base_url(cls, value: object) -> str:
+        return normalize_custom_base_url(str(value or ""))
+
+    @field_validator("custom_anthropic_base_url", mode="before")
+    @classmethod
+    def _normalize_custom_anthropic_base_url(cls, value: object) -> str:
+        return normalize_anthropic_base_url(str(value or ""))
+
     @field_validator("provider", mode="before")
     @classmethod
     def _normalize_provider(cls, value: object) -> str:
@@ -455,6 +513,40 @@ class LLMSettings(StrictConfigModel):
             raise ValueError(
                 "LLM provider 'azure-openai' requires AZURE_OPENAI_BASE_URL to be set."
             )
+        if self.provider == "custom-openai":
+            if not self.custom_openai_base_url:
+                raise ValueError(
+                    "LLM provider 'custom-openai' requires CUSTOM_OPENAI_BASE_URL to be set."
+                )
+            if not all(
+                (
+                    self.custom_openai_reasoning_model,
+                    self.custom_openai_classification_model,
+                    self.custom_openai_toolcall_model,
+                )
+            ):
+                raise ValueError(
+                    "LLM provider 'custom-openai' requires a model — set CUSTOM_OPENAI_MODEL "
+                    "(applied to every tier) or all three CUSTOM_OPENAI_"
+                    "{REASONING,CLASSIFICATION,TOOLCALL}_MODEL."
+                )
+        if self.provider == "custom-anthropic":
+            if not self.custom_anthropic_base_url:
+                raise ValueError(
+                    "LLM provider 'custom-anthropic' requires CUSTOM_ANTHROPIC_BASE_URL to be set."
+                )
+            if not all(
+                (
+                    self.custom_anthropic_reasoning_model,
+                    self.custom_anthropic_classification_model,
+                    self.custom_anthropic_toolcall_model,
+                )
+            ):
+                raise ValueError(
+                    "LLM provider 'custom-anthropic' requires a model — set CUSTOM_ANTHROPIC_MODEL "
+                    "(applied to every tier) or all three CUSTOM_ANTHROPIC_"
+                    "{REASONING,CLASSIFICATION,TOOLCALL}_MODEL."
+                )
         return self
 
     @classmethod

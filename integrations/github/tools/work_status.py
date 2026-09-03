@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal, cast
 
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -109,8 +112,8 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
     ],
     anti_examples=["Creating, editing, or closing GitHub issues"],
     requires=["owner", "repo"],
-    surfaces=("investigation", "chat"),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
         "properties": {
@@ -249,8 +252,8 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
         "Preparing engineering status updates without changing GitHub state",
     ],
     requires=["owner", "repo"],
-    surfaces=("investigation", "chat"),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
         "properties": {
@@ -356,8 +359,8 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         "Building a read-only engineering status report with security context",
     ],
     requires=["owner", "repo"],
-    surfaces=("investigation", "chat"),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
         "properties": {
@@ -426,8 +429,8 @@ def list_github_security_alerts(
         "Rendering deterministic issue mutation payloads without mutating GitHub",
     ],
     anti_examples=["Directly mutating GitHub", "Inferring tasks from ambiguous Slack discussion"],
-    surfaces=("chat",),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.CHAT,),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
         "properties": {
@@ -548,32 +551,44 @@ def _validate_proposal_marker(proposal: GitHubIssueMutationProposal) -> str | No
     return None
 
 
-def _quoted_search_term(term: str) -> str:
-    cleaned = term.replace('"', "")
-    return f'"{cleaned}"'
+# One page of the most-recent issues is enough to catch an idempotent retry,
+# which lands within moments of the original creation, not months later.
+_RECENT_ISSUES_SCAN_LIMIT = 100
 
 
-def _search_issues_for_marker(
+def _recent_issues_with_marker(
     client: GitHubRestClient,
     *,
     owner: str,
     repo: str,
     marker: str,
-    search_area: Literal["body", "comments"],
 ) -> list[dict[str, Any]]:
+    """Recently-created issues whose body contains ``marker``.
+
+    Uses the issues list endpoint rather than /search/issues: GitHub's search
+    index has an observed multi-second propagation lag after issue creation,
+    which lets a rapid idempotent retry slip past a search-based dedup check
+    and create a duplicate issue (reproduced live).
+    """
     result = client.request(
         "GET",
-        "/search/issues",
+        f"/repos/{owner}/{repo}/issues",
         params={
-            "q": (f"repo:{owner}/{repo} is:issue in:{search_area} {_quoted_search_term(marker)}")
+            "state": "all",
+            "per_page": _RECENT_ISSUES_SCAN_LIMIT,
+            "sort": "created",
+            "direction": "desc",
         },
     )
-    if not isinstance(result, dict):
+    if not isinstance(result, list):
         return []
-    items = result.get("items")
-    if not isinstance(items, list):
-        return []
-    return [item for item in items if isinstance(item, dict)]
+    return [
+        item
+        for item in result
+        if isinstance(item, dict)
+        and "pull_request" not in item
+        and marker in str(item.get("body") or "")
+    ]
 
 
 def _marker_exists_on_issue(
@@ -583,17 +598,30 @@ def _marker_exists_on_issue(
     repo: str,
     issue_number: int,
     marker: str,
+    total_comments: int,
 ) -> bool:
-    return any(
-        item.get("number") == issue_number
-        for item in _search_issues_for_marker(
-            client,
-            owner=owner,
-            repo=repo,
-            marker=marker,
-            search_area="comments",
-        )
+    """Whether a comment containing ``marker`` already exists on the issue.
+
+    Lists the issue's own comments (bounded to one issue, immediately
+    consistent) rather than the repo-wide search API, for the same reason as
+    :func:`_recent_issues_with_marker`. Unlike the repo-wide comments
+    endpoint, this per-issue one does not support `sort`/`direction` and
+    always returns oldest-first, so a plain first-page fetch would miss a
+    marker on an issue with more than one page of comments -- exactly the
+    case an idempotency check has to catch. Fetches the last page directly,
+    computed from the issue's own comment count, so the newest comments
+    (where a retry's marker lands) are always the ones scanned.
+    """
+    per_page = 100
+    last_page = max(1, math.ceil(max(total_comments, 1) / per_page))
+    result = client.request(
+        "GET",
+        f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+        params={"per_page": per_page, "page": last_page},
     )
+    if not isinstance(result, list):
+        return False
+    return any(isinstance(item, dict) and marker in str(item.get("body") or "") for item in result)
 
 
 @tool(
@@ -605,8 +633,8 @@ def _marker_exists_on_issue(
         "Creating proposals",
         "Running during investigations",
     ],
-    surfaces=("chat",),
-    side_effect_level="mutating",
+    surfaces=(ToolSurface.CHAT,),
+    side_effect_level=SideEffectLevel.MUTATING,
     input_schema={
         "type": "object",
         "properties": {
@@ -639,12 +667,11 @@ def execute_github_issue_mutation(
         return _mutation_rejected(marker_error)
     try:
         if parsed.operation == "create":
-            existing_items = _search_issues_for_marker(
+            existing_items = _recent_issues_with_marker(
                 client,
                 owner=owner,
                 repo=repo,
                 marker=parsed.idempotency_marker,
-                search_area="body",
             )
             if existing_items:
                 return {
@@ -665,7 +692,8 @@ def execute_github_issue_mutation(
         issue_number = parsed.target.get("issue_number")
         if not isinstance(issue_number, int):
             return _mutation_rejected("proposal target.issue_number is required")
-        client.request("GET", f"/repos/{owner}/{repo}/issues/{issue_number}")
+        issue_before = client.request("GET", f"/repos/{owner}/{repo}/issues/{issue_number}")
+        total_comments = issue_before.get("comments", 0) if isinstance(issue_before, dict) else 0
         comment_body = str(parsed.payload.get("comment_body", ""))
         comment_already_recorded = _marker_exists_on_issue(
             client,
@@ -673,6 +701,7 @@ def execute_github_issue_mutation(
             repo=repo,
             issue_number=issue_number,
             marker=parsed.idempotency_marker,
+            total_comments=total_comments,
         )
         if comment_body and not comment_already_recorded:
             client.request(

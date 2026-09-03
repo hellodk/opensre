@@ -7,6 +7,7 @@ from typing import Any, TypedDict, cast
 
 from pydantic import BaseModel
 
+from core.agent_harness.runtime import default_reasoning_llm_factory
 from core.domain.alerts.alert_source import resolve_alert_source
 from core.domain.diagnosis import (
     InvestigationResult,
@@ -48,8 +49,8 @@ def diagnose(state: InvestigationState) -> dict[str, Any]:
     if str(state.get("root_cause") or "").strip():
         return {}
 
-    from platform.analytics.cli import capture_diagnosis_category_mismatch
-    from platform.observability import get_progress_tracker
+    from infrastructure.analytics.cli import capture_diagnosis_category_mismatch
+    from infrastructure.observability import get_progress_tracker
 
     tracker = get_progress_tracker()
     tracker.start("diagnose_root_cause", "Parsing investigation conclusion")
@@ -97,8 +98,6 @@ def _parse_via_structured_output(
     *,
     alert_source: str = "",
 ) -> InvestigationResult:
-    from core.llm.factory import LLMRole, get_llm
-
     prompt = f"""Extract the structured diagnosis from this investigation conclusion.
 
 Investigation conclusion:
@@ -130,7 +129,7 @@ Extract incident-command fields when present:
         remediation_tradeoffs: str
         validity_score: float
 
-    llm = get_llm(LLMRole.REASONING)
+    llm = default_reasoning_llm_factory()
     schema_model = build_diagnosis_schema(taxonomy_categories_for_alert_source(alert_source))
     raw_schema = (
         llm.with_structured_output(schema_model)

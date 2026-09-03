@@ -31,6 +31,12 @@ class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
     active_theme_name: str = "green"
+
+    cli_command_group: Any = field(default=None, repr=False, compare=False)
+    """The ``opensre`` Click command group the shell documents to the model.
+
+    Handed in by the process entrypoint; ``None`` when the shell runs on its
+    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False
@@ -81,11 +87,26 @@ class TerminalSession:
     exclusive-stdin dispatch path — the only place an interactive child process
     gets clean stdin."""
 
+    last_input_autosubmitted: bool = False
+    """True when the next ``render_submitted_prompt`` came from autosubmit.
+
+    Set when ``/goal set`` (or similar) queues the condition and the prompt
+    loop accepts it without Enter. Cleared when the submitted line is painted
+    so the work turn can show a distinct ``↗ /goal`` marker above ``[N] ❯``.
+    """
+
     exclusive_stdin_active: bool = False
     """True while a turn is running with exclusive stdin reserved (no live prompt).
 
     Inline picker/wizard slash commands must dispatch immediately during these
     turns instead of re-queueing via ``set_auto_command``, which would loop."""
+
+    dispatch_active: bool = False
+    """True while ``run_agent_turn`` is executing (any turn, not only exclusive-stdin).
+
+    ``set_auto_command`` must not ``validate_and_handle`` while this is set —
+    nesting another ``execute_shell_turn`` inside ``/goal set`` doubled the
+    PostHog answer before the outer turn finished."""
 
     background_mode_enabled: bool = False
     """Whether new investigations should run as session-local background tasks."""
@@ -96,9 +117,13 @@ class TerminalSession:
     """Completed or in-flight background RCA summaries, keyed by task id."""
 
     background_notification_preferences: BackgroundNotificationPreferences = field(
-        default_factory=BackgroundNotificationPreferences
+        default_factory=BackgroundNotificationPreferences.load
     )
-    """Preferred notification channels for background RCA completion events."""
+    """Preferred notification channels for background RCA completion events.
+
+    Hydrated from the durable store, so channels chosen in an earlier shell still
+    apply. ``load`` never raises and costs one stat when the document is absent.
+    """
 
     background_notices: list[str] = field(default_factory=list)
     """Thread-safe queue of Rich markup messages drained by the REPL main loop."""

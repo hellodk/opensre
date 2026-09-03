@@ -1,28 +1,28 @@
+"""Background-investigation session state for the REPL.
+
+``BackgroundInvestigationRecord`` itself lives under ``infrastructure.scheduling`` so the
+vendor notification adapters can share the contract without importing this
+package. It is re-exported here because this is the import path the REPL
+runtime and its tests already use.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+import logging
+from dataclasses import dataclass
 
+from infrastructure.scheduling.background_investigations.types import BackgroundInvestigationRecord
 
-@dataclass
-class BackgroundInvestigationRecord:
-    """One completed or in-flight background investigation tracked by the REPL."""
-
-    task_id: str
-    status: str
-    command: str
-    investigation_id: str = ""
-    root_cause: str = ""
-    top_analysis: tuple[str, ...] = ()
-    next_steps: tuple[str, ...] = ()
-    stats: dict[str, Any] = field(default_factory=dict)
-    final_state: dict[str, Any] = field(default_factory=dict)
-    notification_results: dict[str, str] = field(default_factory=dict)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class BackgroundNotificationPreferences:
-    """Session-scoped channel preferences for background RCA completion notifications."""
+    """Channel preferences for background RCA completion notifications.
+
+    A value object. :meth:`set_channels` only updates it; the slash command
+    persists explicitly so a write failure can be reported to the user.
+    """
 
     channels: tuple[str, ...] = ()
 
@@ -33,3 +33,27 @@ class BackgroundNotificationPreferences:
             if normalized and normalized not in cleaned:
                 cleaned.append(normalized)
         self.channels = tuple(cleaned)
+
+    @classmethod
+    def load(cls) -> BackgroundNotificationPreferences:
+        """Channels a previous session persisted, or empty.
+
+        Never raises. A damaged document, or a context root this turn may not
+        read, must not stop the shell from starting; the user sees the same
+        empty default they had before preferences were durable.
+        """
+        from infrastructure.scheduling.background_investigations.store import (
+            background_investigation_store,
+        )
+
+        try:
+            return cls(channels=background_investigation_store().notify_channels())
+        except Exception:  # noqa: BLE001
+            logger.debug("[background] could not load notify channels", exc_info=True)
+            return cls()
+
+
+__all__ = [
+    "BackgroundInvestigationRecord",
+    "BackgroundNotificationPreferences",
+]

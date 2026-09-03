@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from core.tool_framework.base import BaseTool
+from config.constants.slack import SLACK_WEBHOOK_URL_ENV
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.tool_decorator import tool
 from integrations.slack.tools.slack_send_message_tool.constants import SOURCE
 from integrations.slack.tools.slack_send_message_tool.delivery import (
@@ -42,7 +44,7 @@ class SlackSendMessageTool(BaseTool):
         "Replying in an existing Slack thread without thread context",
     ]
     requires = ["slack"]
-    side_effect_level = "external"
+    side_effect_level = SideEffectLevel.EXTERNAL
     requires_approval = True
     approval_reason = "Sends a message to Slack on your behalf."
     input_schema = {
@@ -86,7 +88,7 @@ class SlackSendMessageTool(BaseTool):
         configured_webhook = str(slack.get("webhook_url") or "").strip()
         if not configured_webhook and isinstance(slack.get("config"), dict):
             configured_webhook = str(slack["config"].get("webhook_url") or "").strip()
-        env_webhook = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+        env_webhook = os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip()
         # A bot token posts through chat.postMessage, the same path the
         # scheduler's delivery uses. Requiring a webhook here left a token-only
         # install with no way to send while the prompt still named this tool.
@@ -164,5 +166,5 @@ class SlackSendMessageTool(BaseTool):
 
 slack_send_message = tool(
     SlackSendMessageTool(),
-    surfaces=("investigation", "action"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
 )

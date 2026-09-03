@@ -21,7 +21,7 @@ import tools.interactive_shell.actions.shell as shell_tool
 import tools.interactive_shell.actions.slash as slash_tool
 import tools.interactive_shell.actions.synthetic as synthetic_tool
 import tools.interactive_shell.actions.task_cancel as task_cancel_tool
-from platform.analytics.repl_context import bound_repl_turn_context
+from infrastructure.analytics.repl_context import bound_repl_turn_context
 from surfaces.interactive_shell.runtime.shell_turn_execution import execute_shell_turn
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.utils.telemetry import PromptRecorder
@@ -299,12 +299,30 @@ def strip_redundant_integrations_list_history(
     ]
 
 
+def strip_session_goal_continuation_history(
+    actual_history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop session-goal continuation nudges from oracle history.
+
+    ``execute_shell_turn`` may call ``run_until_session_goal``, which records each
+    ``[session_goal] Continue…`` nudge as another ``cli_agent`` history row.
+    Planner-contract fixtures (e.g. 347) expect only the user's first turn; host
+    continuation is covered by SessionGoal unit tests, not live oracle history.
+    """
+    return [
+        entry
+        for entry in actual_history
+        if not str(entry.get("text_normalized", "")).lstrip().startswith("[session_goal]")
+    ]
+
+
 def normalize_history_for_oracle_match(
     actual_history: list[dict[str, Any]],
     expected_actions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Collapse duplicate alert rows when a single investigation dispatch is expected."""
-    filtered = strip_redundant_integrations_list_history(actual_history, expected_actions)
+    """Collapse known host-loop extras so fixtures pin the user turn under test."""
+    filtered = strip_session_goal_continuation_history(actual_history)
+    filtered = strip_redundant_integrations_list_history(filtered, expected_actions)
     if len(expected_actions) != 1:
         return filtered
     if str(expected_actions[0].get("kind", "")).strip() != "investigation":
@@ -541,7 +559,7 @@ def run_oracle_once(case: ScenarioCase, monkeypatch: pytest.MonkeyPatch) -> Orac
     patch_execution_boundary(monkeypatch, executed)
 
     # Record which registered tools fire during the conversational
-    # gather_integration_tool_evidence pass. Both gather_integration_tool_evidence and the action agent
+    # gather pass. Both the gather stage and the action agent
     # create Agent instances and call .run(), so patch Agent.run on the class
     # and ignore the interactive-shell action-agent tool surface.
     import core.agent as _agent_mod

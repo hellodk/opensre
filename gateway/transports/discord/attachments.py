@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
 
 import httpx
 
 from config.constants.discord import DISCORD_ATTACHMENT_HOST_SUFFIXES
+from config.constants.gateway import ATTACHMENT_MAX_TOTAL_CHARS
 from core.llm.image_description import describe_image_via_provider, is_supported_image
+from gateway.core.attachments.fetch import is_allowed_host
 from gateway.core.attachments.inline import (
-    _MAX_FILE_CHARS,
-    _MAX_TOTAL_CHARS,
     budgeted_section,
     is_text_mimetype,
     join_attachment_sections,
@@ -26,16 +25,7 @@ _MAX_BYTES = 256 * 1024
 
 def is_allowed_attachment_url(url: str) -> bool:
     """Reject non-Discord hosts so the bot token never leaves Discord CDN."""
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    if parsed.scheme != "https":
-        return False
-    host = (parsed.hostname or "").lower()
-    return any(
-        host == suffix or host.endswith(f".{suffix}") for suffix in DISCORD_ATTACHMENT_HOST_SUFFIXES
-    )
+    return is_allowed_host(url, DISCORD_ATTACHMENT_HOST_SUFFIXES)
 
 
 def _download(url: str, bot_token: str) -> bytes | None:
@@ -73,7 +63,7 @@ def build_discord_attachments_context(
     if not attachments:
         return ""
     sections: list[str] = []
-    remaining = _MAX_TOTAL_CHARS
+    remaining = ATTACHMENT_MAX_TOTAL_CHARS
     for item in attachments:
         label = item.filename or "attachment"
         if remaining <= 0:
@@ -102,7 +92,7 @@ def build_discord_attachments_context(
                 text = data.decode("utf-8")
             except UnicodeDecodeError:
                 text = data.decode("latin-1", errors="replace")
-            text = truncate_attachment_text(text, max_chars=_MAX_FILE_CHARS)
+            text = truncate_attachment_text(text)
             header = f"--- attached file: {label} ---"
             section, consumed = budgeted_section(header, text, remaining)
             remaining -= consumed

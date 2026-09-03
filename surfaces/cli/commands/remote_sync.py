@@ -1,6 +1,8 @@
-"""``opensre remote-sync`` — thin Click adapter over :mod:`platform.filestorage`."""
+"""``opensre remote-sync`` — thin Click adapter over :mod:`infrastructure.filestorage`."""
 
 from __future__ import annotations
+
+from contextlib import suppress
 
 import click
 
@@ -8,24 +10,25 @@ from config.constants.filestorage import (
     DEFAULT_REMOTE_SYNC_PREFIX,
     DEFAULT_REMOTE_SYNC_PROVIDER,
 )
-from platform.common.exit_codes import ERROR, SUCCESS
-from platform.filestorage import RemoteSyncConfigError, RemoteSyncError
-from platform.filestorage.enums import RemoteSyncField, RemoteSyncSubcommand
-from platform.filestorage.messages import (
+from infrastructure.filestorage import RemoteSyncConfigError, RemoteSyncError
+from infrastructure.filestorage.enums import RemoteSyncField, RemoteSyncSubcommand
+from infrastructure.filestorage.messages import (
     DISABLED_HELP,
     SETUP_DISABLED_CONFIRM,
     format_report_lines,
     format_setup_lines,
     format_status_lines,
 )
-from platform.filestorage.operations import get_sync_status, run_remote_sync
-from platform.filestorage.providers.registry import builtin_providers, provider_extra_fields
-from platform.filestorage.setup import (
+from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
+from infrastructure.filestorage.providers.registry import builtin_providers, provider_extra_fields
+from infrastructure.filestorage.setup import (
     RemoteSyncSetupRequest,
     disable_remote_sync,
     save_remote_sync_settings,
 )
+from infrastructure.process.exit_codes import ERROR, SUCCESS
 from surfaces.cli.commands.remote_sync_progress import CliProgress
+from surfaces.cli.telemetry import capture_exception
 
 
 @click.group(name="remote-sync", invoke_without_command=True)
@@ -74,6 +77,30 @@ def sync_now_command(pull_only: bool, push_only: bool, dry_run: bool) -> None:
     for line in format_report_lines(report, dry_run=dry_run):
         click.echo(line)
     raise SystemExit(SUCCESS)
+
+
+def run_remote_sync_on_exit() -> None:
+    """Run remote sync without changing the interactive shell's exit result."""
+    try:
+        report = run_remote_sync()
+    except Exception as exc:  # noqa: BLE001 - an optional exit hook must fail soft
+        with suppress(Exception):
+            capture_exception(exc, context="surfaces.cli.sync_on_exit")
+        click.echo(
+            "Automatic remote sync failed; run 'opensre remote-sync sync' for details.",
+            err=True,
+        )
+        return
+
+    if report is None:
+        click.echo(
+            "Automatic remote sync skipped because remote sync is off; "
+            "run 'opensre remote-sync setup' first.",
+            err=True,
+        )
+        return
+    for line in format_report_lines(report):
+        click.echo(line)
 
 
 @remote_sync_command.command(name=RemoteSyncSubcommand.SETUP.value)
@@ -218,7 +245,7 @@ def _prompt_extra_field(field: RemoteSyncField, provider: str, current: str | No
     """Prompt for ``field`` only if ``provider`` declared it; otherwise leave it unset.
 
     The declaration (and its prompt text) lives with the provider — see
-    :func:`platform.filestorage.providers.registry.provider_extra_fields` —
+    :func:`infrastructure.filestorage.providers.registry.provider_extra_fields` —
     so this stays generic across every registered provider, built-in or
     community, instead of hardcoding which providers use which field.
     """
@@ -229,4 +256,4 @@ def _prompt_extra_field(field: RemoteSyncField, provider: str, current: str | No
     return str(click.prompt(extra.prompt, default=current or "", show_default=False))
 
 
-__all__ = ["remote_sync_command"]
+__all__ = ["remote_sync_command", "run_remote_sync_on_exit"]

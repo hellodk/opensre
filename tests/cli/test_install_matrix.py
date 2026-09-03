@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform as py_platform
 import shutil
 import stat
 import subprocess
@@ -20,7 +21,6 @@ from pathlib import Path
 
 import pytest
 
-import platform as py_platform
 from config.constants.paths import REPO_ROOT
 
 pytestmark = pytest.mark.skipif(
@@ -272,7 +272,7 @@ def _run_install_sh(
                 "curl -fsSL https://install.opensre.com | bash",
                 "OPENSRE_AUTO_LAUNCH=0",
                 "OPENSRE_SKIP_GH_INSTALL=1",
-                'depends_on "gh"',
+                "Homebrew installs pull in `gh` automatically.",
             ),
         ),
         (

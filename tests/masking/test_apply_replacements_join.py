@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from platform.masking.context import MaskingContext
-from platform.masking.detectors import DetectedIdentifier
-from platform.masking.policy import MaskingPolicy
+from infrastructure.safety.masking.context import MaskingContext
+from infrastructure.safety.masking.detectors import DetectedIdentifier
+from infrastructure.safety.masking.policy import MaskingPolicy
 
 
 def test_apply_replacements_preserves_gaps_and_order() -> None:

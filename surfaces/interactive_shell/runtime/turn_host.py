@@ -21,17 +21,22 @@ from typing import TYPE_CHECKING, Any
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from surfaces.interactive_shell.runtime.action_turn import ShellActionRunner
+    from infrastructure.turn_host.turn_handler import TurnHandler
 
-from platform.analytics.repl_context import bound_repl_turn_context
-from platform.analytics.usage_context import SURFACE_CLI, bound_usage_context
-from platform.observability.trace.spans import bind_session_trace, emit_thread_boundary
+from infrastructure.analytics.repl_context import bound_repl_turn_context
+from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.observability.trace.spans import (
+    bind_session_trace,
+    emit_thread_boundary,
+)
 from surfaces.interactive_shell.runtime.agent_presentation import (
     AgentEvent,
     AgentEventSink,
     ConsoleAgentEventSink,
 )
-from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskManager
+from surfaces.interactive_shell.runtime.background.workers import (
+    BackgroundTaskManager,
+)
 from surfaces.interactive_shell.runtime.core.confirmation import (
     DispatchCancelled,
     request_confirmation_via_prompt,
@@ -47,11 +52,11 @@ from surfaces.interactive_shell.runtime.utils.input_policy import (
     turn_needs_exclusive_stdin,
 )
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.output.console_state import set_investigation_spinner
-from surfaces.interactive_shell.ui.output.repl_progress import repl_safe_progress_scope
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
-from surfaces.interactive_shell.utils.error_handling.exception_reporting import report_exception
 from surfaces.interactive_shell.utils.telemetry import PromptRecorder
+from surfaces.shared.error_handling.exception_reporting import report_exception
+from surfaces.shared.terminal.output.console_state import set_investigation_spinner
+from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +64,7 @@ _AGENT_TURN_KIND = "agent"
 
 
 @dataclass(frozen=True)
-class AgentTurnRuntime:
+class AgentTurnResources:
     """Immutable dependencies for running one submitted shell turn."""
 
     session: Session
@@ -71,12 +76,12 @@ class AgentTurnRuntime:
     #: terminal; an embedding caller passes its console so agent responses and
     #: tool output land in the same stream as the startup renders.
     console: Console | None = None
-    #: Session-scoped action runner; rebound to each turn's streaming console.
-    action_runner: ShellActionRunner | None = None
+    #: Session-scoped turn host; each turn binds its own streaming console.
+    turn_handler: TurnHandler | None = None
 
 
 def _streaming_console(
-    runtime: AgentTurnRuntime, cancel_event: threading.Event
+    runtime: AgentTurnResources, cancel_event: threading.Event
 ) -> StreamingConsole:
     """Spinner-aware console for one turn, writing where the caller asked.
 
@@ -104,7 +109,7 @@ def _streaming_console(
     )
 
 
-async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
+async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     """Set up shell presentation for one turn and drive its lifecycle."""
     dispatch_cancel = threading.Event()
     console = _streaming_console(runtime, dispatch_cancel)
@@ -121,6 +126,8 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
     exclusive_stdin = turn_needs_exclusive_stdin(text, runtime.session)
     progress_scope = contextlib.nullcontext() if exclusive_stdin else repl_safe_progress_scope()
     runtime.session.terminal.exclusive_stdin_active = exclusive_stdin
+    # Blocks nested validate_and_handle from set_auto_command (e.g. /goal set).
+    runtime.session.terminal.dispatch_active = True
     # Expose this turn's spinner so investigation stages can animate phase labels.
     set_investigation_spinner(runtime.spinner)
     emit_thread_boundary(
@@ -145,6 +152,7 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
     finally:
         set_investigation_spinner(None)
         runtime.session.terminal.exclusive_stdin_active = False
+        runtime.session.terminal.dispatch_active = False
         emit_thread_boundary(
             runtime.session.session_id,
             name="turn_boundary",
@@ -154,7 +162,7 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
 
 async def _run_agent_turn_loop(
     *,
-    runtime: AgentTurnRuntime,
+    runtime: AgentTurnResources,
     text: str,
     output: StreamingConsole,
     recorder: PromptRecorder | None,
@@ -177,7 +185,7 @@ async def _run_agent_turn_loop(
 
         with (
             bound_usage_context(
-                surface=SURFACE_CLI,
+                surface=UsageSurface.CLI,
                 session_id=runtime.session.session_id,
             ),
             bound_repl_turn_context(
@@ -195,7 +203,7 @@ async def _run_agent_turn_loop(
                 confirm_fn=confirm,
                 is_tty=None,
                 request_exit=runtime.request_exit,
-                action_runner=runtime.action_runner,
+                handler=runtime.turn_handler,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))
@@ -282,7 +290,7 @@ async def run_agent_turn_queue(
 
 
 __all__ = [
-    "AgentTurnRuntime",
+    "AgentTurnResources",
     "run_agent_turn",
     "run_agent_turn_queue",
     "run_input_loop",

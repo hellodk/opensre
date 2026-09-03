@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
-from core.agent_harness.session.terminal_access import session_terminal
+from core.agent_harness.spi.session_state import session_terminal
 from surfaces.interactive_shell.command_registry.cli_parity import (
     publish_headless_slash_response,
     run_cli_command,
@@ -24,14 +24,14 @@ from surfaces.interactive_shell.ui import (
     render_mcp_table,
     repl_table,
 )
-from surfaces.interactive_shell.ui.components.choice_menu import (
+from surfaces.shared.terminal.components.choice_menu import (
     CRUMB_SEP,
     prepare_repl_output_line,
     repl_choose_one,
     repl_section_break,
     repl_tty_interactive,
 )
-from surfaces.interactive_shell.ui.components.rendering import (
+from surfaces.shared.terminal.components.rendering import (
     _repl_table_width,
     print_repl_table,
     repl_print,
@@ -91,10 +91,10 @@ def _configured_service_choices() -> list[tuple[str, str]]:
 
 def _handle_remove(session: Session, console: Console, service: str | None) -> bool:
     """Remove an integration with a native inline-picker confirmation (no subprocess)."""
+    from infrastructure.analytics.cli import capture_integration_removed
     from integrations.registry import resolve_management_service
     from integrations.store import remove_integration
     from integrations.webapp_vault import delete_webapp_org_integration
-    from platform.analytics.cli import capture_integration_removed
 
     svc = resolve_management_service(service) if service else service
     if not svc:
@@ -180,9 +180,20 @@ def _print_verify_summary(
         style = WARNING if failed else HIGHLIGHT
         detail = "needs attention" if failed else "ok"
         repl_print(console, f"[{style}]{service} {detail}.[/]")
+        if failed:
+            repl_print(
+                console,
+                f"[{DIM}]Reconfigure with /integrations setup {service} — "
+                "the detail column above names what is missing.[/]",
+            )
         return
     if failed:
         repl_print(console, f"[{WARNING}]{len(failed)} integration(s) need attention.[/]")
+        repl_print(
+            console,
+            f"[{DIM}]Reconfigure with /integrations setup <service> — "
+            "the detail column above names what is missing.[/]",
+        )
     else:
         repl_print(console, f"[{HIGHLIGHT}]all integrations ok.[/]")
 

@@ -14,10 +14,10 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from platform.terminal import theme as ui_theme
+from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui.components.choice_menu import (
+from surfaces.shared.terminal.components.choice_menu import (
     print_valid_choice_list,
     repl_choose_one,
     repl_tty_interactive,

@@ -8,14 +8,14 @@ from typing import Any
 from rich.console import Console
 
 from core.agent_harness.accounting.turn_accounting import DefaultTurnAccounting
-from core.agent_harness.session.persistence.memory import InMemorySessionStorage
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.orchestrator import run_turn
 from surfaces.interactive_shell.runtime.core.turn_accounting import (
     ToolCallingTurnResult,
 )
-from surfaces.interactive_shell.runtime.shell_turn_execution import execute_shell_turn
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.utils.telemetry.recorder import LlmRunInfo
+from tests.shared.harness_turn_driver import run_harness_turn
 
 
 class _Recorder:
@@ -51,7 +51,7 @@ def test_recorder_flushes_once_for_chat_fallback() -> None:
     def _answer(*_args: Any, **_kwargs: Any) -> LlmRunInfo:
         return run_info
 
-    result = execute_shell_turn(
+    result = run_harness_turn(
         "question",
         Session(),
         _console(),
@@ -81,7 +81,7 @@ def test_recorder_flushes_once_for_silent_handled_turn() -> None:
             response_text="command output",
         )
 
-    result = execute_shell_turn(
+    result = run_harness_turn(
         "run something",
         session,
         _console(),
@@ -102,8 +102,8 @@ def test_recorder_flushes_once_for_silent_handled_turn() -> None:
 
 
 def test_default_turn_accounting_persists_action_only_context() -> None:
-    storage = InMemorySessionStorage()
-    session = Session(storage=storage)
+    storage = InMemorySessionStore()
+    session = Session(store=storage)
     storage.open_session(session)
 
     def _handled(*_args: object, **_kwargs: object) -> ToolCallingTurnResult:

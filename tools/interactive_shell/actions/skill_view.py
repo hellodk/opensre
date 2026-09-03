@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.prompts.skills.loader import list_action_skills, load_skill_body
-from core.agent_harness.tools.tool_context import (
-    ActionToolContext,
-    execute_with_action_context,
-    object_schema,
-    string_property,
-)
-from core.tool_framework.registered_tool import RegisteredTool
+from core.agent_harness.spi.grounding import list_action_skills, load_skill_body
+from core.agent_harness.tools import ActionToolContext, execute_with_action_context
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_property
 
 
 def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolContext) -> dict[str, Any]:
@@ -69,12 +66,12 @@ skill_view_tool = RegisteredTool(
         required=("name",),
     ),
     source="interactive_shell",
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
     parallel_safe=True,
     accepts_runtime_context=True,
     run=run_skill_view,
     tags=("safe", "fast", "no-credentials"),
-    side_effect_level="read_only",
+    side_effect_level=SideEffectLevel.READ_ONLY,
 )
 
 

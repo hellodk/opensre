@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.tool_decorator import tool
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.tools.slack_read_messages_tool.validation import validate_channel_id
@@ -40,7 +41,7 @@ class SlackReplyMessageTool(BaseTool):
         "Posting to a channel the bot has not been invited to",
     ]
     requires = ["slack"]
-    side_effect_level = "external"
+    side_effect_level = SideEffectLevel.EXTERNAL
     requires_approval = True
     approval_reason = "Posts a message to a Slack channel on your behalf."
     input_schema = {
@@ -140,5 +141,5 @@ class SlackReplyMessageTool(BaseTool):
 
 slack_reply_message = tool(
     SlackReplyMessageTool(),
-    surfaces=("investigation", "action"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
 )

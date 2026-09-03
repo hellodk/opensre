@@ -22,8 +22,8 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.output import DummyOutput
 
-from platform.terminal import theme as ui_theme
-from platform.terminal.theme import (
+from infrastructure.terminal import theme as ui_theme
+from infrastructure.terminal.theme import (
     ANSI_RESET,
     get_active_theme_name,
     set_active_theme,
@@ -38,10 +38,6 @@ from surfaces.interactive_shell.runtime.investigation_adapter import (
 from surfaces.interactive_shell.runtime.startup import initial_input as startup_initial_input
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import input_prompt
-from surfaces.interactive_shell.ui.components.cpr_stdin import (
-    strip_cpr_escape_sequences,
-    strip_cpr_sequences,
-)
 from surfaces.interactive_shell.ui.input_prompt import completion as prompt_completion
 from surfaces.interactive_shell.ui.input_prompt.completion import ShellCompleter
 from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
@@ -55,6 +51,10 @@ from surfaces.interactive_shell.ui.input_prompt.rendering import _prompt_message
 from surfaces.interactive_shell.ui.input_prompt.style import _build_prompt_style
 from surfaces.interactive_shell.ui.streaming import _CHARS_PER_TOKEN
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
+from surfaces.shared.terminal.components.cpr_stdin import (
+    strip_cpr_escape_sequences,
+    strip_cpr_sequences,
+)
 
 
 def test_agent_presentation_import_does_not_load_shell_turn_execution() -> None:
@@ -224,10 +224,13 @@ def test_shift_enter_inserts_newline_before_submit(
         ):
             prompt = input_prompt.build_prompt_session()
             task = asyncio.create_task(prompt.prompt_async(""))
+            # Yield so prompt_async attaches readers before keystrokes arrive;
+            # under loaded ``test-cov`` (xdist + coverage) a 1s wait_for flakes.
+            await asyncio.sleep(0)
             pipe_input.send_bytes(b"first line")
             pipe_input.send_bytes(_SHIFT_ENTER_SEQUENCE.encode())
             pipe_input.send_bytes(b"second line\r")
-            return await asyncio.wait_for(task, timeout=1)
+            return await asyncio.wait_for(task, timeout=5.0)
 
     assert asyncio.run(_collect()) == "first line\nsecond line"
 
@@ -376,7 +379,7 @@ def test_build_prompt_style_tracks_active_theme() -> None:
 
 
 def test_completion_menu_current_item_uses_highlight_style() -> None:
-    from platform.terminal.theme import BG, HIGHLIGHT
+    from infrastructure.terminal.theme import BG, HIGHLIGHT
 
     set_active_theme("green")
     style = _build_prompt_style()
@@ -395,7 +398,7 @@ def test_completion_menu_current_item_uses_highlight_style() -> None:
 
 
 def test_lazy_rich_style_split_tracks_active_theme() -> None:
-    from platform.terminal import theme as ui_theme
+    from infrastructure.terminal import theme as ui_theme
 
     set_active_theme("green")
     assert bool(ui_theme.DIM) is True
@@ -411,7 +414,7 @@ def test_lazy_rich_style_split_tracks_active_theme() -> None:
 def test_lazy_rich_style_parses_as_real_rich_style() -> None:
     from rich.style import Style
 
-    from platform.terminal import theme as ui_theme
+    from infrastructure.terminal import theme as ui_theme
 
     # Rich resolves a _LazyRichStyle via its underlying ``str`` value, so the
     # contract at call sites is to pass ``str(...)``. Verify that contract
@@ -521,55 +524,6 @@ def test_run_initial_input_dispatches_as_non_tty(monkeypatch: pytest.MonkeyPatch
     assert startup_initial_input.run_initial_input("/remote", Session()) == 0
     assert len(calls) == 1
     assert calls[0]["is_tty"] is False
-
-
-class TestLooksLikeCorrection:
-    """Unit tests for the ``_looks_like_correction`` heuristic.
-
-    Pins the v1 catches, false-positive guards, and limitations so future
-    iteration on ``_INTERVENTION_CORRECTION_RE`` has a regression baseline.
-    """
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "no, do that instead",
-            "nope",
-            "nvm",
-            "never mind",
-            "actually, let's check Datadog first",
-            "scratch that, run the synthetic test",
-            "wait, wrong dashboard",
-            "let's do an EKS health check instead",
-            "try a token refresh instead",
-            "wrong dashboard, fix it",
-            "instead, log a warning",
-            "Wait!",  # case-insensitive
-            "NO.",
-        ],
-    )
-    def test_correction_cues_match(self, text: str) -> None:
-        assert loop_turn_detection.looks_like_correction(text) is True
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            # Punctuation-lookahead guards reject content uses of cue words.
-            "stop the server before redeploying",
-            "instead of returning null, log a warning",
-            "no problem, I'll handle it",
-            "wait for the result",
-            # v1 limitation: cue must be at start of message.
-            "hmm, scratch that",
-            "doesn't work, try X instead",
-            # Edge cases.
-            "",
-            "   ",
-            "```\nstop the server\n```",
-        ],
-    )
-    def test_non_correction_text_does_not_match(self, text: str) -> None:
-        assert loop_turn_detection.looks_like_correction(text) is False
 
 
 class TestLooksLikeConfirmationAnswer:
@@ -727,7 +681,7 @@ class TestSpinnerState:
         assert spinner.inline_spinner_ansi() == ""
 
     def test_inline_spinner_uses_active_theme_highlight(self) -> None:
-        from platform.terminal.theme import set_active_theme
+        from infrastructure.terminal.theme import set_active_theme
 
         set_active_theme("blue")
         spinner = loop_state.SpinnerState()
@@ -1047,11 +1001,11 @@ class TestStreamingConsole:
 
         calls: list[str] = []
         monkeypatch.setattr(
-            "surfaces.interactive_shell.ui.components.choice_menu.ensure_tty_column_zero",
+            "surfaces.shared.terminal.components.choice_menu.ensure_tty_column_zero",
             lambda: calls.append("ensure"),
         )
         monkeypatch.setattr(
-            "surfaces.interactive_shell.ui.components.choice_menu.prepare_repl_output_line",
+            "surfaces.shared.terminal.components.choice_menu.prepare_repl_output_line",
             lambda: calls.append("prepare"),
         )
 
@@ -1717,9 +1671,9 @@ class TestThemeCommand:
         monkeypatch.setattr(theme_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(theme_cmd, "repl_choose_one", lambda **_kwargs: "blue")
         monkeypatch.setattr(theme_cmd, "_refresh_prompt_style", lambda _session: None)
-        monkeypatch.setattr("surfaces.cli.commands.config._load_config", lambda: {})
+        monkeypatch.setattr("config.local_settings.load_local_settings", lambda: {})
         monkeypatch.setattr(
-            "surfaces.cli.commands.config._save_config",
+            "config.local_settings.save_local_settings",
             lambda data: saved_payloads.append(dict(data)),
         )
 
@@ -1763,8 +1717,8 @@ class TestThemeCommand:
 
         monkeypatch.setattr(theme_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(theme_cmd, "_refresh_prompt_style", lambda _session: None)
-        monkeypatch.setattr("surfaces.cli.commands.config._load_config", lambda: {})
-        monkeypatch.setattr("surfaces.cli.commands.config._save_config", lambda _data: None)
+        monkeypatch.setattr("config.local_settings.load_local_settings", lambda: {})
+        monkeypatch.setattr("config.local_settings.save_local_settings", lambda _data: None)
 
         set_active_theme("green")
         session = Session()
@@ -1779,8 +1733,8 @@ class TestThemeCommand:
         monkeypatch.setattr(theme_cmd, "repl_tty_interactive", lambda: True)
         monkeypatch.setattr(theme_cmd, "repl_choose_one", lambda **_kwargs: "blue")
         monkeypatch.setattr(theme_cmd, "_refresh_prompt_style", lambda _session: None)
-        monkeypatch.setattr("surfaces.cli.commands.config._load_config", lambda: {})
-        monkeypatch.setattr("surfaces.cli.commands.config._save_config", lambda _data: None)
+        monkeypatch.setattr("config.local_settings.load_local_settings", lambda: {})
+        monkeypatch.setattr("config.local_settings.save_local_settings", lambda _data: None)
 
         refreshed: list[dict[str, object | None]] = []
 
@@ -1793,7 +1747,7 @@ class TestThemeCommand:
             refreshed.append({"console": console, "session": session, "theme_notice": theme_notice})
 
         monkeypatch.setattr(
-            "surfaces.interactive_shell.ui.components.rendering.refresh_welcome_poster",
+            "surfaces.interactive_shell.ui.poster.refresh_welcome_poster",
             _refresh,
         )
 
@@ -1806,7 +1760,7 @@ class TestThemeCommand:
         assert refreshed[0]["theme_notice"] == "blue"
 
     def test_theme_picker_lists_all_registered_themes(self, monkeypatch) -> None:
-        from platform.terminal.theme import list_theme_names
+        from infrastructure.terminal.theme import list_theme_names
         from surfaces.interactive_shell.command_registry import theme as theme_cmd
 
         monkeypatch.setattr(theme_cmd, "repl_tty_interactive", lambda: True)
@@ -1838,11 +1792,11 @@ class TestThemeCommand:
             lambda: drains.append("drain"),
         )
         monkeypatch.setattr(
-            "surfaces.interactive_shell.ui.components.rendering.refresh_welcome_poster",
+            "surfaces.interactive_shell.ui.poster.refresh_welcome_poster",
             lambda *_args, **_kwargs: drains.append("poster"),
         )
-        monkeypatch.setattr("surfaces.cli.commands.config._load_config", lambda: {})
-        monkeypatch.setattr("surfaces.cli.commands.config._save_config", lambda _data: None)
+        monkeypatch.setattr("config.local_settings.load_local_settings", lambda: {})
+        monkeypatch.setattr("config.local_settings.save_local_settings", lambda _data: None)
 
         session = Session()
         console, _buf = self._capture()

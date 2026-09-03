@@ -18,12 +18,9 @@ from config.config import (
 from config.grafana_cloud import load_env
 from config.llm_auth.credentials import status as credential_status
 from config.llm_auth.provider_catalog import provider_spec
-from config.platform_bootstrap import ensure_project_platform_package
 from tests.core.agent._ci_gates import (
     running_in_github_actions,
 )
-
-ensure_project_platform_package()
 
 
 def _repo_root() -> Path:
@@ -63,11 +60,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         help=(
             "Choose which live turn scenarios run. Use 'all' to run the FULL "
-            "suite (the default is a small representative downsample). Otherwise "
-            "'<mode>:<n>' where mode is 'complex' (most complex) or 'sample' "
-            "(random), and n is a count, a fraction, or a percentage (e.g. "
-            "'complex:5', 'sample:0.1', 'sample:10%'). Also settable via the "
-            "TURN_SELECT env var."
+            "suite (the default is a small representative downsample). "
+            "Otherwise: '<mode>:<n>' where mode is 'complex' or 'sample' "
+            "(e.g. 'complex:5', 'sample:10%'), or a comma-separated scenario "
+            "id / numeric-prefix list (e.g. '346,347' or "
+            "'346-metric-read-windows-users'). Also settable via TURN_SELECT."
         ),
     )
     group.addoption(
@@ -141,10 +138,32 @@ def _resolve_live_llm_configuration(
                 f" provider={settings.provider!r}, env={spec.api_key_env}"
             )
 
-    from core.llm.factory import reset_llm_clients
+    from core.llm.factory import LLMRole, get_llm, reset_llm_clients
 
     monkeypatch.setenv("LLM_PROVIDER", settings.provider)
     reset_llm_clients()
+    # credential_status can look fine while the provider SDK still refuses to
+    # construct a client (empty/placeholder key, wrong env for the active
+    # provider). Probe once here so live tests skip/fail at setup, not mid-call.
+    try:
+        get_llm(LLMRole.AGENT)
+    except Exception as exc:
+        detail = str(exc).lower()
+        if any(
+            marker in detail
+            for marker in (
+                "missing credentials",
+                "invalid_api_key",
+                "incorrect api key",
+                "authenticationerror",
+                "could not resolve credentials",
+            )
+        ):
+            _skip_or_fail_live_llm(
+                "Live LLM turn tests require a constructible provider client:"
+                f" provider={settings.provider!r}. {exc}"
+            )
+        raise
     yield
     reset_llm_clients()
 

@@ -25,7 +25,7 @@ def _console() -> Console:
 
 def test_hydrate_populates_session_from_effective_resolution(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "platform.harness_ports.configured_integration_services",
+        "infrastructure.harness_ports.configured_integration_services",
         lambda: ["gitlab", "datadog"],
     )
     session = Session()
@@ -37,7 +37,7 @@ def test_hydrate_populates_session_from_effective_resolution(monkeypatch: Any) -
 
 def test_hydrate_marks_known_even_when_none_configured(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "platform.harness_ports.configured_integration_services",
+        "infrastructure.harness_ports.configured_integration_services",
         list,
     )
     session = Session()
@@ -177,7 +177,7 @@ def test_stale_background_warm_does_not_overwrite_refreshed_cache() -> None:
 
 def test_hydrate_entrypoint_does_not_warm_before_prompt(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        "platform.harness_ports.configured_integration_services",
+        "infrastructure.harness_ports.configured_integration_services",
         lambda: ["datadog"],
     )
     resolve_calls: list[str] = []
@@ -202,7 +202,7 @@ def test_hydrate_leaves_unknown_on_failure(monkeypatch: Any) -> None:
         raise RuntimeError("catalog blew up")
 
     monkeypatch.setattr(
-        "platform.harness_ports.configured_integration_services",
+        "infrastructure.harness_ports.configured_integration_services",
         _boom,
     )
     session = Session()
@@ -238,7 +238,8 @@ def test_gate_error_allows_startup_with_bypass(monkeypatch: Any) -> None:
 def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> None:
     identified: list[str] = []
     monkeypatch.setattr(
-        "platform.analytics.cli.identify_saved_github_username",
+        main_entrypoint,
+        "identify_saved_github_username",
         lambda: identified.append("called"),
     )
 
@@ -279,7 +280,7 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
     monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr(
-        "platform.analytics.cli.identify_saved_github_username",
+        "infrastructure.analytics.cli.identify_saved_github_username",
         lambda: None,
     )
     monkeypatch.setattr(
@@ -289,13 +290,13 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
 
     session = Session()
     flushed: list[str] = []
-    original_flush = session.storage.flush
+    original_flush = session.store.flush
 
     def _track_flush(current_session: Session) -> None:
         flushed.append(current_session.session_id)
         original_flush(current_session)
 
-    monkeypatch.setattr(session.storage, "flush", _track_flush)
+    monkeypatch.setattr(session.store, "flush", _track_flush)
 
     class _PromptSession:
         history = None
@@ -404,7 +405,7 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
 
     monkeypatch.setattr("config.constants.OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
-    monkeypatch.setattr("platform.analytics.cli.identify_saved_github_username", lambda: None)
+    monkeypatch.setattr("infrastructure.analytics.cli.identify_saved_github_username", lambda: None)
 
     seen: list[object] = []
 
@@ -545,7 +546,7 @@ def test_initial_input_replay_uses_the_supplied_console(monkeypatch: Any) -> Non
 
     from surfaces.interactive_shell.runtime.startup import initial_input as replay
 
-    monkeypatch.setattr("platform.analytics.cli.identify_saved_github_username", lambda: None)
+    monkeypatch.setattr("infrastructure.analytics.cli.identify_saved_github_username", lambda: None)
 
     def _fake_terminal_ui(console: Any, **_kwargs: Any) -> None:
         console.print("REPLAY-SPLASH")
@@ -593,12 +594,12 @@ def test_turn_output_and_prompt_echo_reach_the_supplied_console() -> None:
     from rich.console import Console
 
     from surfaces.interactive_shell.runtime.turn_host import (
-        AgentTurnRuntime,
+        AgentTurnResources,
         _streaming_console,
     )
 
     captured = Console(file=StringIO(), force_terminal=False, width=80)
-    runtime = AgentTurnRuntime(
+    runtime = AgentTurnResources(
         session=Session(),
         state=SimpleNamespace(),
         spinner=SimpleNamespace(streaming=False, bytes_in=0),
@@ -630,12 +631,12 @@ def test_turn_output_reaches_capture_and_record_on_the_supplied_console() -> Non
     from rich.console import Console
 
     from surfaces.interactive_shell.runtime.turn_host import (
-        AgentTurnRuntime,
+        AgentTurnResources,
         _streaming_console,
     )
 
-    def build_runtime(console: Console) -> AgentTurnRuntime:
-        return AgentTurnRuntime(
+    def build_runtime(console: Console) -> AgentTurnResources:
+        return AgentTurnResources(
             session=Session(),
             state=SimpleNamespace(),
             spinner=SimpleNamespace(streaming=False, bytes_in=0),
@@ -662,11 +663,11 @@ def test_turn_output_falls_back_to_the_shell_terminal() -> None:
     import threading
 
     from surfaces.interactive_shell.runtime.turn_host import (
-        AgentTurnRuntime,
+        AgentTurnResources,
         _streaming_console,
     )
 
-    runtime = AgentTurnRuntime(
+    runtime = AgentTurnResources(
         session=Session(),
         state=SimpleNamespace(),
         spinner=SimpleNamespace(streaming=False, bytes_in=0),
@@ -713,7 +714,7 @@ def test_investigation_rendering_uses_the_supplied_console() -> None:
     the final report — the longest output the shell produces.
     """
     # Arrange
-    import surfaces.cli.ui.renderer as renderer_module
+    import surfaces.shared.terminal.stream_renderer as renderer_module
     from surfaces.interactive_shell.runtime.investigation_adapter import (
         repl_foreground_renderer,
     )
@@ -753,7 +754,7 @@ def test_investigation_progress_display_uses_the_supplied_console(
     stage progress and every tool-detail line still went to the shell terminal.
     """
     # Arrange
-    from surfaces.interactive_shell.ui.output import tracker as tracker_module
+    from surfaces.shared.terminal.output import tracker as tracker_module
 
     captured = Console(file=io.StringIO(), force_terminal=False, width=80)
     monkeypatch.setattr(tracker_module, "_repl_progress_active", lambda: True)
@@ -839,7 +840,7 @@ def test_streamed_run_paints_only_through_the_renderer_on_the_supplied_console()
     second painter on the same console (doubled READ/PLAN progress lines).
     """
     # Arrange
-    from platform.observability.render.progress import (
+    from infrastructure.observability.render.progress import (
         NoopProgressTracker,
         get_progress_tracker,
         silence_progress_tracker,
@@ -865,7 +866,7 @@ def test_streamed_run_paints_only_through_the_renderer_on_the_supplied_console()
         return SimpleNamespace(render_stream=_render)
 
     # Act
-    import surfaces.cli.ui.renderer as renderer_module
+    import surfaces.shared.terminal.stream_renderer as renderer_module
 
     real_renderer = renderer_module.StreamRenderer
     renderer_module.StreamRenderer = _fake_stream_renderer  # type: ignore[assignment]

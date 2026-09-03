@@ -13,16 +13,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.session.pending_choice import PendingUserChoice
-from core.agent_harness.session.terminal_access import session_terminal, set_auto_command
-from core.agent_harness.tools.tool_context import (
-    ActionToolContext,
-    execute_with_action_context,
-    object_schema,
-    string_array_property,
-    string_property,
+from core.agent_harness.spi.session_state import (
+    PendingUserChoice,
+    session_terminal,
+    set_auto_command,
 )
-from core.tool_framework.registered_tool import RegisteredTool
+from core.agent_harness.tools import ActionToolContext, execute_with_action_context
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_array_property, string_property
 
 _MIN_OPTIONS = 2
 _MAX_OPTIONS = 8
@@ -147,12 +146,12 @@ ask_user_choice_tool = RegisteredTool(
         required=("title", "options"),
     ),
     source="interactive_shell",
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
     parallel_safe=False,
     accepts_runtime_context=True,
     run=run_ask_user_choice,
     tags=("safe", "fast", "no-credentials"),
-    side_effect_level="read_only",
+    side_effect_level=SideEffectLevel.READ_ONLY,
 )
 
 

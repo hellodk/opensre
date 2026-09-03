@@ -30,6 +30,7 @@ from config.env_file import env_assignment_key, read_env_lines, sync_env_values
 from integrations._catalog_impl import load_env_integrations, resolve_effective_integrations
 from integrations.alertmanager.setup import ALERTMANAGER_SETUP
 from integrations.aws.setup import AWS_SETUP
+from integrations.azure.setup import AZURE_SETUP
 from integrations.azure_sql.setup import AZURE_SQL_SETUP
 from integrations.betterstack.setup import BETTERSTACK_SETUP
 from integrations.coralogix.setup import CORALOGIX_SETUP
@@ -48,6 +49,7 @@ from integrations.mariadb.setup import MARIADB_SETUP
 from integrations.mongodb.setup import MONGODB_SETUP
 from integrations.mongodb_atlas.setup import MONGODB_ATLAS_SETUP
 from integrations.mysql.setup import MYSQL_SETUP
+from integrations.new_relic.setup import NEW_RELIC_SETUP
 from integrations.openclaw.setup import OPENCLAW_SETUP
 from integrations.opensearch.setup import OPENSEARCH_SETUP
 from integrations.pagerduty.setup import PAGERDUTY_SETUP
@@ -113,6 +115,11 @@ _SUBMITTED: dict[str, dict[str, str]] = {
     "vercel": {"api_token": "vercel-api-token", "team_id": "team_abc123"},
     "telegram": {"bot_token": "123456:tg-bot-token", "default_chat_id": "-1001234567890"},
     "incident_io": {"api_key": "iio-api-key", "base_url": "https://api.eu.incident.io"},
+    "new_relic": {
+        "api_key": "NRAK-test-fake-0000000000000000000",
+        "account_id": "9876543",
+        "base_url": "https://api.eu.newrelic.com",
+    },
     "tracer": {"base_url": "https://tracer.example.com", "jwt_token": "tracer-jwt-token"},
     "mongodb_atlas": {
         "api_public_key": "atlas-public-key",
@@ -240,6 +247,14 @@ _SUBMITTED: dict[str, dict[str, str]] = {
         "driver": "ODBC Driver 18 for SQL Server",
         "encrypt": "true",
     },
+    "azure": {
+        "workspace_id": "11111111-2222-3333-4444-555555555555",
+        "access_token": "azure-log-analytics-token",
+        "endpoint": "https://api.loganalytics.azure.us",
+        "tenant_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "subscription_id": "ffffffff-0000-1111-2222-333333333333",
+        "max_results": "150",
+    },
     "grafana": {
         "endpoint": "https://checkout.grafana.net",
         "api_key": "glsa_grafana_token",
@@ -268,6 +283,7 @@ _SUBMITTED: dict[str, dict[str, str]] = {
         "webhook_url": "",
         "bot_token": "xoxb-test-token",
         "app_token": "xapp-test-token",
+        "default_chat_id": "C0123ABCD",
     },
     "aws": {
         # Keys mode — role fields cleared. Catalog hydrates flat access-key credentials.
@@ -312,6 +328,7 @@ _SPECS = [
     INCIDENT_IO_SETUP,
     JENKINS_SETUP,
     MONGODB_ATLAS_SETUP,
+    NEW_RELIC_SETUP,
     PAGERDUTY_SETUP,
     POSTHOG_SETUP,
     SENTRY_SETUP,
@@ -335,6 +352,7 @@ _SPECS = [
     MONGODB_SETUP,
     REDIS_SETUP,
     AZURE_SQL_SETUP,
+    AZURE_SETUP,
     GRAFANA_SETUP,
     ALERTMANAGER_SETUP,
     OPENSEARCH_SETUP,

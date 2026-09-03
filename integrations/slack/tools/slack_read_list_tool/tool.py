@@ -6,9 +6,10 @@ import os
 import re
 from typing import Any
 
-from core.tool_framework.base import BaseTool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations.slack.tools.slack_read_list_tool.constants import (
     DEFAULT_ITEM_LIMIT,
     MAX_ITEM_LIMIT,
@@ -109,7 +110,7 @@ class SlackReadListTool(BaseTool):
         "Downloading a normal file attachment from a message",
     ]
     requires = ["slack"]
-    side_effect_level = "read_only"
+    side_effect_level = SideEffectLevel.READ_ONLY
     requires_approval = False
     input_schema = {
         "type": "object",
@@ -254,5 +255,5 @@ def _extract_list_id(raw: str) -> str:
 
 slack_read_list = tool(
     SlackReadListTool(),
-    surfaces=("investigation", "chat", "action"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
 )

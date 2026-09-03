@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.sql_wrapper import call_db_tool_with_default_db_warning
+from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.yugabytedb import (
     get_slow_queries,
     resolve_yugabytedb_config,

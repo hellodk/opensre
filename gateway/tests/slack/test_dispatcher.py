@@ -13,20 +13,18 @@ import pytest
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.principal import Principal, StorageScope
 from gateway.core.billing.credits_client import CreditsOutcome
-from gateway.transports.slack.dispatcher import _SlackTurnDispatcher
-from gateway.transports.slack.events import SlackInboundMessage
-from gateway.transports.slack.principal import slack_scope
+from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
+from gateway.transports.slack.processing.events import SlackInboundMessage
+from gateway.transports.slack.processing.principal import slack_scope
 from gateway.transports.slack.settings import SlackGatewaySettings
-
-_SECURITY = "gateway.transports.slack.security"
 
 
 @pytest.fixture(autouse=True)
 def _isolate_slack_integration_store():
     """Worker tests must not depend on the developer's ~/.opensre integrations."""
     with (
-        patch(f"{_SECURITY}.get_integration", return_value=None),
-        patch(f"{_SECURITY}.upsert_instance"),
+        patch("gateway.core.middleware.identity_policy.get_integration", return_value=None),
+        patch("gateway.core.middleware.identity_policy.upsert_instance"),
     ):
         yield
 
@@ -165,8 +163,8 @@ def _dispatcher(
     resolver: _FakeSessionResolver,
     handler: Any,
     bot_user_id: str = "",
-) -> _SlackTurnDispatcher:
-    return _SlackTurnDispatcher(
+) -> SlackTurnDispatcher:
+    return SlackTurnDispatcher(
         settings=settings,
         messaging=messaging,
         session_resolver=resolver,  # type: ignore[arg-type]
@@ -238,7 +236,7 @@ def test_out_of_credits_blocks_turn_with_short_reply(monkeypatch: pytest.MonkeyP
         reasons.append(kwargs["reason"])
         return CreditsOutcome.DENIED
 
-    monkeypatch.setattr("gateway.transports.slack.dispatcher.consume_credits", deny)
+    monkeypatch.setattr("gateway.transports.slack.processing.dispatcher.consume_credits", deny)
 
     _dispatcher(
         settings=_settings(["U1"]),
@@ -265,7 +263,8 @@ def test_non_denied_credit_outcomes_run_the_turn(
     resolver = _FakeSessionResolver()
     turns: list[str] = []
     monkeypatch.setattr(
-        "gateway.transports.slack.dispatcher.consume_credits", lambda *_args, **_kw: outcome
+        "gateway.transports.slack.processing.dispatcher.consume_credits",
+        lambda *_args, **_kw: outcome,
     )
 
     def handler(text: str, _session: Any, sink: Any, _logger: logging.Logger) -> None:
@@ -277,44 +276,6 @@ def test_non_denied_credit_outcomes_run_the_turn(
     ).dispatch(_inbound())
 
     assert len(turns) == 1
-
-
-def test_conversation_locks_are_pruned_at_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    from gateway.transports.slack import dispatcher
-
-    monkeypatch.setattr(dispatcher, "_MAX_CONVERSATION_LOCKS", 4)
-    dispatcher = _dispatcher(
-        settings=_settings(["U1"]),
-        messaging=_FakeMessagingClient(),
-        resolver=_FakeSessionResolver(),
-        handler=lambda *_args: None,
-    )
-
-    for index in range(10):
-        with dispatcher._conversation_turn(f"T1:C1:{index}"):
-            pass
-
-    assert len(dispatcher._conversation_locks) <= 4 + 1
-
-
-def test_in_use_conversation_lock_survives_pruning(monkeypatch: pytest.MonkeyPatch) -> None:
-    from gateway.transports.slack import dispatcher
-
-    monkeypatch.setattr(dispatcher, "_MAX_CONVERSATION_LOCKS", 1)
-    dispatcher = _dispatcher(
-        settings=_settings(["U1"]),
-        messaging=_FakeMessagingClient(),
-        resolver=_FakeSessionResolver(),
-        handler=lambda *_args: None,
-    )
-
-    with dispatcher._conversation_turn("T1:C1:busy"):
-        busy_entry = dispatcher._conversation_locks["T1:C1:busy"]
-        # Another conversation triggers pruning while the first turn is running.
-        with dispatcher._conversation_turn("T1:C1:other"):
-            pass
-        # The in-use entry was never discarded or replaced.
-        assert dispatcher._conversation_locks["T1:C1:busy"] is busy_entry
 
 
 def test_handler_exception_is_contained() -> None:
@@ -355,7 +316,7 @@ def test_errored_turn_replaces_placeholder_with_error() -> None:
 
 def test_agent_context_omits_thread_ts_to_avoid_thread_reads() -> None:
     # Arrange / Act
-    from gateway.transports.slack.dispatcher import _agent_text_with_slack_context
+    from gateway.transports.slack.processing.dispatcher import _agent_text_with_slack_context
 
     text = _agent_text_with_slack_context(_inbound())
 
@@ -368,7 +329,7 @@ def test_agent_context_omits_thread_ts_to_avoid_thread_reads() -> None:
 
 def test_agent_context_attributes_the_speaker() -> None:
     """The turn prefix names who is speaking (multi-user thread attribution)."""
-    from gateway.transports.slack.dispatcher import _agent_text_with_slack_context
+    from gateway.transports.slack.processing.dispatcher import _agent_text_with_slack_context
 
     text = _agent_text_with_slack_context(_inbound())
 
@@ -492,7 +453,7 @@ def _gated_dispatcher(
     handler: Any,
     has_session: bool = True,
     allowed_user_ids: list[str] | None = None,
-) -> _SlackTurnDispatcher:
+) -> SlackTurnDispatcher:
     return _dispatcher(
         settings=_settings(allowed_user_ids or ["U1"]),
         messaging=messaging,

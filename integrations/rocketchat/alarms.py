@@ -14,11 +14,11 @@ from __future__ import annotations
 import logging
 import time
 
+from infrastructure.delivery.notifications.cooldown import CooldownGate
+from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
+from infrastructure.text.truncation import truncate
 from integrations.rocketchat.credentials import RocketChatCredentials
 from integrations.rocketchat.delivery import post_rocketchat_message, post_rocketchat_webhook
-from platform.common.truncation import truncate
-from platform.notifications.cooldown import CooldownGate
-from platform.notifications.limits import MAX_MESSAGE_SIZE
 
 logger = logging.getLogger(__name__)
 

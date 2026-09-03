@@ -37,6 +37,7 @@ class ProviderModelDefaults:
     toolcall: str
     base_url: str | None = None
     single_model_settings: bool = False
+    requires_explicit_models: bool = False
 
 
 DEFAULT_MAX_TOKENS = 4096
@@ -45,6 +46,7 @@ DEFAULT_VERTEX_AI_LOCATION = "us-central1"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+TRUSTEDROUTER_BASE_URL = "https://api.trustedrouter.com/v1"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -73,6 +75,14 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
         classification="openrouter/auto",
         toolcall="openrouter/auto",
         base_url=OPENROUTER_BASE_URL,
+    ),
+    "trustedrouter": ProviderModelDefaults(
+        provider="trustedrouter",
+        settings_key="trustedrouter",
+        reasoning="trustedrouter/auto",
+        classification="trustedrouter/auto",
+        toolcall="trustedrouter/auto",
+        base_url=TRUSTEDROUTER_BASE_URL,
     ),
     "deepseek": ProviderModelDefaults(
         provider="deepseek",
@@ -120,6 +130,22 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
         reasoning="gpt-5.4-mini",
         classification="gpt-5.4-mini",
         toolcall="gpt-5.4-mini",
+    ),
+    "custom-openai": ProviderModelDefaults(
+        provider="custom-openai",
+        settings_key="custom_openai",
+        reasoning="",
+        classification="",
+        toolcall="",
+        requires_explicit_models=True,
+    ),
+    "custom-anthropic": ProviderModelDefaults(
+        provider="custom-anthropic",
+        settings_key="custom_anthropic",
+        reasoning="",
+        classification="",
+        toolcall="",
+        requires_explicit_models=True,
     ),
     "bedrock": ProviderModelDefaults(
         provider="bedrock",
@@ -173,6 +199,10 @@ OPENROUTER_REASONING_MODEL = _defaults("openrouter").reasoning
 OPENROUTER_CLASSIFICATION_MODEL = _defaults("openrouter").classification
 OPENROUTER_TOOLCALL_MODEL = _defaults("openrouter").toolcall
 
+TRUSTEDROUTER_REASONING_MODEL = _defaults("trustedrouter").reasoning
+TRUSTEDROUTER_CLASSIFICATION_MODEL = _defaults("trustedrouter").classification
+TRUSTEDROUTER_TOOLCALL_MODEL = _defaults("trustedrouter").toolcall
+
 DEEPSEEK_REASONING_MODEL = _defaults("deepseek").reasoning
 DEEPSEEK_CLASSIFICATION_MODEL = _defaults("deepseek").classification
 DEEPSEEK_TOOLCALL_MODEL = _defaults("deepseek").toolcall
@@ -197,6 +227,14 @@ AZURE_OPENAI_REASONING_MODEL = _defaults("azure-openai").reasoning
 AZURE_OPENAI_CLASSIFICATION_MODEL = _defaults("azure-openai").classification
 AZURE_OPENAI_TOOLCALL_MODEL = _defaults("azure-openai").toolcall
 
+CUSTOM_OPENAI_REASONING_MODEL = _defaults("custom-openai").reasoning
+CUSTOM_OPENAI_CLASSIFICATION_MODEL = _defaults("custom-openai").classification
+CUSTOM_OPENAI_TOOLCALL_MODEL = _defaults("custom-openai").toolcall
+
+CUSTOM_ANTHROPIC_REASONING_MODEL = _defaults("custom-anthropic").reasoning
+CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL = _defaults("custom-anthropic").classification
+CUSTOM_ANTHROPIC_TOOLCALL_MODEL = _defaults("custom-anthropic").toolcall
+
 BEDROCK_REASONING_MODEL = _defaults("bedrock").reasoning
 BEDROCK_CLASSIFICATION_MODEL = _defaults("bedrock").classification
 BEDROCK_TOOLCALL_MODEL = _defaults("bedrock").toolcall
@@ -210,9 +248,12 @@ DEFAULT_OLLAMA_MODEL = _defaults("ollama").reasoning
 ANTHROPIC_LLM_CONFIG = model_config_for("anthropic")
 OPENAI_LLM_CONFIG = model_config_for("openai")
 OPENROUTER_LLM_CONFIG = model_config_for("openrouter")
+TRUSTEDROUTER_LLM_CONFIG = model_config_for("trustedrouter")
 DEEPSEEK_LLM_CONFIG = model_config_for("deepseek")
 GROQ_LLM_CONFIG = model_config_for("groq")
 AZURE_OPENAI_LLM_CONFIG = model_config_for("azure-openai")
+CUSTOM_OPENAI_LLM_CONFIG = model_config_for("custom-openai")
+CUSTOM_ANTHROPIC_LLM_CONFIG = model_config_for("custom-anthropic")
 GEMINI_LLM_CONFIG = model_config_for("gemini")
 NVIDIA_LLM_CONFIG = model_config_for("nvidia")
 MINIMAX_LLM_CONFIG = model_config_for("minimax")
@@ -233,6 +274,14 @@ __all__ = [
     "BEDROCK_LLM_CONFIG",
     "BEDROCK_REASONING_MODEL",
     "BEDROCK_TOOLCALL_MODEL",
+    "CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL",
+    "CUSTOM_ANTHROPIC_LLM_CONFIG",
+    "CUSTOM_ANTHROPIC_REASONING_MODEL",
+    "CUSTOM_ANTHROPIC_TOOLCALL_MODEL",
+    "CUSTOM_OPENAI_CLASSIFICATION_MODEL",
+    "CUSTOM_OPENAI_LLM_CONFIG",
+    "CUSTOM_OPENAI_REASONING_MODEL",
+    "CUSTOM_OPENAI_TOOLCALL_MODEL",
     "DEEPSEEK_BASE_URL",
     "DEEPSEEK_CLASSIFICATION_MODEL",
     "DEEPSEEK_LLM_CONFIG",
@@ -276,6 +325,11 @@ __all__ = [
     "OPENROUTER_TOOLCALL_MODEL",
     "PROVIDER_MODEL_DEFAULTS",
     "ProviderModelDefaults",
+    "TRUSTEDROUTER_BASE_URL",
+    "TRUSTEDROUTER_CLASSIFICATION_MODEL",
+    "TRUSTEDROUTER_LLM_CONFIG",
+    "TRUSTEDROUTER_REASONING_MODEL",
+    "TRUSTEDROUTER_TOOLCALL_MODEL",
     "VERTEX_AI_CLASSIFICATION_MODEL",
     "VERTEX_AI_LLM_CONFIG",
     "VERTEX_AI_REASONING_MODEL",

@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._relational import (
     RelationalConfigBase,
     env_int,

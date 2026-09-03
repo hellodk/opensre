@@ -6,9 +6,10 @@ from typing import Any
 
 import httpx
 
-from core.tool_framework.telemetry import report_run_error
+from core.domain.types.tools import ToolSurface
+from core.tool import report_run_error
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 
 _DEFAULT_MAX_RESULTS = 50
 _MAX_HARD_LIMIT = 200
@@ -96,7 +97,7 @@ def _normalize_rows(response_payload: dict[str, Any]) -> list[dict[str, Any]]:
     name="query_snowflake_history",
     description="Query Snowflake query history using a read-only bounded statement.",
     source="snowflake",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     requires=["account_identifier"],
     input_schema={
         "type": "object",

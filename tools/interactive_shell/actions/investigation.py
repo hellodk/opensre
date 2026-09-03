@@ -7,15 +7,15 @@ from typing import Any
 
 from rich.console import Console
 
-from core.agent_harness.tools.tool_context import (
+from core.agent_harness.tools import (
     ActionToolContext,
     capability_available_from_sources,
     execute_with_action_context,
-    object_schema,
-    string_property,
 )
-from core.tool_framework.registered_tool import RegisteredTool
-from platform.common.task_types import TaskRecord
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_property
+from infrastructure.scheduling.task_types import TaskRecord
 from tools.interactive_shell.shared.investigation_launch import (
     InvestigationLaunchPorts,
     InvestigationSession,
@@ -42,8 +42,8 @@ def run_text_investigation(
     action_already_listed: bool = False,
 ) -> None:
     def _run(task: TaskRecord) -> dict[str, object]:
-        from platform.analytics.cli import track_investigation
-        from platform.analytics.source import EntrypointSource, TriggerMode
+        from infrastructure.analytics.cli import track_investigation
+        from infrastructure.analytics.source import EntrypointSource, TriggerMode
 
         with (
             track_investigation(
@@ -140,7 +140,8 @@ investigation_start_tool = RegisteredTool(
         required=("alert_text",),
     ),
     source="interactive_shell",
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.EXTERNAL,
     parallel_safe=False,
     accepts_runtime_context=True,
     run=run_investigation,

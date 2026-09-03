@@ -219,7 +219,7 @@ def test_is_anthropic_bedrock_model_application_inference_profile_arn() -> None:
 
 def test_bedrock_client_routes_mistral_to_converse(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     runtime = _RecordingBedrockRuntime(
@@ -242,7 +242,7 @@ def test_bedrock_client_routes_mistral_to_converse(monkeypatch) -> None:
 
 def test_invoke_converse_includes_optional_system_temperature(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     runtime = _RecordingBedrockRuntime(
@@ -265,7 +265,7 @@ def test_invoke_converse_includes_optional_system_temperature(monkeypatch) -> No
 
 def test_invoke_converse_raises_when_no_text_blocks(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     runtime = _RecordingBedrockRuntime(
@@ -283,7 +283,7 @@ def test_invoke_converse_raises_when_no_text_blocks(monkeypatch) -> None:
 
 def test_bedrock_application_inference_profile_arn_uses_converse(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     runtime = _RecordingBedrockRuntime(
@@ -300,7 +300,7 @@ def test_bedrock_application_inference_profile_arn_uses_converse(monkeypatch) ->
 
 def test_bedrock_anthropic_bad_request_does_not_retry(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     attempts: list[int] = []
@@ -328,7 +328,7 @@ def test_bedrock_anthropic_bad_request_does_not_retry(monkeypatch) -> None:
 
 def test_bedrock_anthropic_stream_bad_request_does_not_retry(monkeypatch) -> None:
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     attempts: list[int] = []
@@ -559,7 +559,7 @@ def test_anthropic_invoke_stream_applies_guardrails_to_input(monkeypatch) -> Non
         def apply(self, content: str) -> str:
             return content.replace("secret", "[REDACTED]")
 
-    import platform.guardrails.engine as engine_module
+    import infrastructure.safety.guardrails.engine as engine_module
 
     monkeypatch.setattr(engine_module, "get_guardrail_engine", lambda: _RedactingEngine())
 
@@ -1551,19 +1551,22 @@ def test_openai_invoke_stream_rate_limit_retries_before_emit(monkeypatch) -> Non
     assert sleeps == [7.0]
 
 
-class _FakeInsufficientQuotaError(OpenAIRateLimitError):
-    """Fake RateLimitError with ``insufficient_quota`` error code (billing limit)."""
+class _FakeQuotaError(OpenAIRateLimitError):
+    """Fake RateLimitError with a billing-quota error code."""
 
-    def __init__(self) -> None:
-        Exception.__init__(self, "You exceeded your current quota")
+    def __init__(self, code: str = "insufficient_quota") -> None:
+        Exception.__init__(self, "You have no credits remaining")
         self.status_code = 429
         self.body = {
             "error": {
-                "message": "You exceeded your current quota",
+                "message": "You have no credits remaining. Add credits to continue using the API.",
                 "type": "insufficient_quota",
-                "code": "insufficient_quota",
+                "code": code,
             }
         }
+
+
+_FakeInsufficientQuotaError = _FakeQuotaError
 
 
 def test_openai_invoke_rate_limit_insufficient_quota_raises_immediately(monkeypatch) -> None:
@@ -1599,6 +1602,42 @@ def test_openai_invoke_rate_limit_insufficient_quota_raises_immediately(monkeypa
     assert sleeps == [], "insufficient_quota must not sleep before raising"
     msg = str(exc_info.value).lower()
     assert "quota" in msg or "billing" in msg
+
+
+def test_openai_invoke_rate_limit_credit_balance_exhausted_raises_immediately(
+    monkeypatch,
+) -> None:
+    """``credit_balance_exhausted`` is prepaid-empty, not a retryable 429."""
+    call_count = 0
+
+    class _Completions:
+        def create(self, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise _FakeQuotaError("credit_balance_exhausted")
+
+    class _Chat:
+        def __init__(self) -> None:
+            self.completions = _Completions()
+
+    class _OpenAI:
+        def __init__(self, **_kwargs) -> None:
+            self.chat = _Chat()
+
+    monkeypatch.setattr(
+        "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
+    )
+    monkeypatch.setattr(sdk_llm, "OpenAI", _OpenAI)
+    sleeps: list[float] = []
+    monkeypatch.setattr(sdk_llm.time, "sleep", lambda s: sleeps.append(s))
+
+    client = sdk_llm.OpenAILLMClient(model="gpt-4", api_key_env="OPENAI_API_KEY")
+    with pytest.raises(RuntimeError) as exc_info:
+        client.invoke("hi")
+
+    assert call_count == 1
+    assert sleeps == []
+    assert "quota" in str(exc_info.value).lower() or "billing" in str(exc_info.value).lower()
 
 
 def test_openai_invoke_stream_rate_limit_insufficient_quota_raises_immediately(
@@ -1939,7 +1978,7 @@ class _InactiveGuardrailEngine:
 def test_bedrock_invoke_anthropic_not_found_raises_immediately(monkeypatch) -> None:
     """NotFoundError (EOL model) must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -1963,7 +2002,7 @@ def test_bedrock_invoke_anthropic_not_found_raises_immediately(monkeypatch) -> N
 def test_bedrock_invoke_anthropic_authentication_raises_immediately(monkeypatch) -> None:
     """AuthenticationError must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -1988,7 +2027,7 @@ def test_bedrock_invoke_anthropic_authentication_raises_immediately(monkeypatch)
 def test_bedrock_invoke_anthropic_bad_request_inference_profile(monkeypatch) -> None:
     """BadRequestError with 'on-demand throughput' hint must suggest inference profile."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -2020,7 +2059,7 @@ def test_bedrock_invoke_anthropic_bad_request_inference_profile(monkeypatch) -> 
 def test_bedrock_invoke_anthropic_permission_denied_raises_immediately(monkeypatch) -> None:
     """PermissionDeniedError must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -2045,7 +2084,7 @@ def test_bedrock_invoke_anthropic_permission_denied_raises_immediately(monkeypat
 def test_bedrock_invoke_converse_validation_exception_raises_immediately(monkeypatch) -> None:
     """ValidationException from boto3 converse must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -2086,7 +2125,7 @@ def test_bedrock_invoke_converse_hard_client_errors_raise_immediately(
 ) -> None:
     """Permanent boto3 ClientError codes must raise RuntimeError without retrying."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     sleeps: list[float] = []
@@ -2124,7 +2163,7 @@ def test_bedrock_access_denied_surfaces_upstream_aws_message(monkeypatch) -> Non
     ``RuntimeError`` must include the upstream AWS ``Message`` so the user
     knows which one to fix. Regression coverage for #1808."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda _s: None)
@@ -2161,7 +2200,7 @@ def test_bedrock_access_denied_without_payment_keywords_shows_iam_checklist(
 ) -> None:
     """Other AccessDenied messages keep the broader Bedrock/IAM/marketplace checklist."""
     monkeypatch.setattr(
-        "platform.guardrails.engine.get_guardrail_engine",
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine",
         _InactiveGuardrailEngine,
     )
     monkeypatch.setattr(sdk_llm.time, "sleep", lambda _s: None)
@@ -2438,7 +2477,9 @@ def test_usage_hook_anthropic_invoke_fires_with_correct_token_counts(monkeypatch
         def __init__(self, **_kwargs) -> None:
             self.messages = _Messages()
 
-    monkeypatch.setattr("platform.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine)
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+    )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
     )
@@ -2480,7 +2521,9 @@ def test_usage_hook_openai_invoke_fires_with_correct_token_counts(monkeypatch) -
         def __init__(self, **_kwargs) -> None:
             self.chat = _Chat()
 
-    monkeypatch.setattr("platform.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine)
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+    )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
     )
@@ -2496,7 +2539,9 @@ def test_usage_hook_openai_invoke_fires_with_correct_token_counts(monkeypatch) -
 
 
 def test_usage_hook_bedrock_converse_fires_with_correct_token_counts(monkeypatch) -> None:
-    monkeypatch.setattr("platform.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine)
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+    )
     response = {
         "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
         "usage": {"inputTokens": 77, "outputTokens": 11},
@@ -2537,7 +2582,9 @@ def test_usage_hook_exception_propagates(monkeypatch) -> None:
         def __init__(self, **_kwargs) -> None:
             self.messages = _Messages()
 
-    monkeypatch.setattr("platform.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine)
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+    )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
     )
@@ -2579,7 +2626,9 @@ def test_usage_hook_unset_is_default_noop(monkeypatch) -> None:
         def __init__(self, **_kwargs) -> None:
             self.messages = _Messages()
 
-    monkeypatch.setattr("platform.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine)
+    monkeypatch.setattr(
+        "infrastructure.safety.guardrails.engine.get_guardrail_engine", _InactiveGuardrailEngine
+    )
     monkeypatch.setattr(
         "core.llm.providers.provider_credentials.resolve_llm_api_key", lambda _env: "k"
     )

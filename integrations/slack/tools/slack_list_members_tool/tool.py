@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.web_client import (
     bot_token_configured,
@@ -40,7 +41,7 @@ class SlackListTeamMembersTool(BaseTool):
     ]
     tags = (SUMMARIZE_OBSERVATION_TAG,)
     requires = ["slack"]
-    side_effect_level = "read_only"
+    side_effect_level = SideEffectLevel.READ_ONLY
     requires_approval = False
     input_schema = {
         "type": "object",
@@ -103,5 +104,5 @@ class SlackListTeamMembersTool(BaseTool):
 
 slack_list_team_members = tool(
     SlackListTeamMembersTool(),
-    surfaces=("investigation", "chat", "action"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
 )

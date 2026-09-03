@@ -65,7 +65,17 @@ def parse_tool_calls(message: Any) -> list[ToolCall]:
             input_dict = json.loads(raw_arguments) if raw_arguments else {}
         except json.JSONDecodeError:
             input_dict = {}
-        tool_calls.append(ToolCall(id=call_id, name=name, input=input_dict))
+        # A model may send arguments as JSON "null" or a non-object (some
+        # OpenAI-compatible gateways do for no-arg tools); coerce to {} so
+        # downstream consumers that require a dict never receive None. Mirrors
+        # the guard in the Responses-API parser (openai_responses.py).
+        tool_calls.append(
+            ToolCall(
+                id=call_id,
+                name=name,
+                input=input_dict if isinstance(input_dict, dict) else {},
+            )
+        )
     return tool_calls
 
 
@@ -290,7 +300,7 @@ def invoke_with_litellm_llm_retries(
     model: str,
     on_model_fallback: Callable[[], dict[str, Any] | None],
 ) -> Any:
-    from platform.guardrails.engine import GuardrailBlockedError
+    from infrastructure.safety.guardrails.engine import GuardrailBlockedError
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
     last_err: Exception | None = None
@@ -356,7 +366,7 @@ def stream_with_litellm_retries(
     model: str,
     on_model_fallback: Callable[[], dict[str, Any] | None],
 ) -> Iterator[str]:
-    from platform.guardrails.engine import GuardrailBlockedError
+    from infrastructure.safety.guardrails.engine import GuardrailBlockedError
 
     backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
     for attempt in range(_RETRY_MAX_ATTEMPTS):

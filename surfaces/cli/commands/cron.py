@@ -11,8 +11,10 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from platform.scheduler.credentials import requires_explicit_chat_id
-from platform.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
+from surfaces.cli.commands.scheduling import validate_cron_and_timezone
 
 _console = Console()
 
@@ -99,10 +101,10 @@ def cron_add(
     window_hours: int,
 ) -> None:
     """Add a new scheduled delivery task."""
-    from platform.scheduler.types import ScheduledTask
+    from infrastructure.scheduling.scheduler.types import ScheduledTask
 
     # Validate cron expression by constructing the APScheduler trigger
-    _validate_cron_and_timezone(cron_expr, timezone)
+    validate_cron_and_timezone(cron_expr, timezone)
     _validate_chat_id_for_provider(provider, chat_id)
 
     task = ScheduledTask(
@@ -115,9 +117,19 @@ def cron_add(
         window_hours=window_hours,
     )
 
-    from platform.scheduler.store import add_task
+    from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
+    from infrastructure.scheduling.scheduler.store import add_task
 
     added = add_task(task)
+    record_scheduler_task_operation(
+        "scheduled_task_created",
+        added,
+        extra={
+            "command": "cron_add",
+            "requested_task_id": task.id,
+            "deduplicated": added.id != task.id,
+        },
+    )
     _console.print(f"[green]Task {added.id} created.[/green]")
     if added.name:
         _console.print(f"  Name: {added.name}")
@@ -128,7 +140,7 @@ def cron_add(
 @cron_command.command(name="list")
 def cron_list() -> None:
     """List all scheduled delivery tasks."""
-    from platform.scheduler.loops import list_loop_summaries
+    from infrastructure.scheduling.scheduler.loops import list_loop_summaries
 
     loops = list_loop_summaries()
     if not loops:
@@ -156,7 +168,7 @@ def cron_list() -> None:
             loop.timezone,
             loop.provider.value,
             ", ".join(loop.channels),
-            "✓" if loop.enabled else "✗",
+            GLYPH_SUCCESS if loop.enabled else GLYPH_ERROR,
             loop.next_run or "—",
             loop.last_run or "—",
         )
@@ -168,9 +180,17 @@ def cron_list() -> None:
 @click.argument("task_id")
 def cron_remove(task_id: str) -> None:
     """Remove a scheduled delivery task by ID."""
-    from platform.scheduler.store import remove_task
+    from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
+    from infrastructure.scheduling.scheduler.store import get_task, remove_task
 
+    task = get_task(task_id)
     if remove_task(task_id):
+        if task is not None:
+            record_scheduler_task_operation(
+                "scheduled_task_deleted",
+                task,
+                extra={"command": "cron_remove"},
+            )
         _console.print(f"[green]Task {task_id} removed.[/green]")
     else:
         _console.print(f"[red]Error: task {task_id} not found.[/red]")
@@ -182,8 +202,9 @@ def cron_remove(task_id: str) -> None:
 def cron_run(task_id: str) -> None:
     """Run a scheduled task immediately (ad-hoc one-shot for debugging)."""
     from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
-    from platform.scheduler.runner import run_task_now
-    from platform.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
+    from infrastructure.scheduling.scheduler.runner import run_task_now
+    from infrastructure.scheduling.scheduler.store import get_task
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
 
@@ -193,6 +214,11 @@ def cron_run(task_id: str) -> None:
         raise SystemExit(1)
 
     _console.print(f"Running task {task_id} ({task.kind.value})...")
+    record_scheduler_task_operation(
+        "scheduled_task_run_requested",
+        task,
+        extra={"command": "cron_run"},
+    )
     success = run_task_now(task_id)
     if success:
         _console.print("[green]Done.[/green]")
@@ -212,8 +238,8 @@ def cron_run(task_id: str) -> None:
 )
 def cron_logs(task_id: str, limit: int) -> None:
     """Show execution history for a scheduled task."""
-    from platform.scheduler.claim_store import get_runs
-    from platform.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.claim_store import get_runs
+    from infrastructure.scheduling.scheduler.store import get_task
 
     task = get_task(task_id)
     if task is None:
@@ -255,7 +281,7 @@ def cron_logs(task_id: str, limit: int) -> None:
 def cron_start() -> None:
     """Start the scheduler daemon (blocks until interrupted)."""
     from bootstrap.process import SCHEDULER_WORKER_PROFILE, configure_process
-    from platform.scheduler.runner import start_scheduler
+    from infrastructure.scheduling.scheduler.runner import start_scheduler
 
     # Dedicated scheduler process — not SCHEDULED_COMMAND (one-shot CLI helpers).
     configure_process(SCHEDULER_WORKER_PROFILE)
@@ -265,33 +291,12 @@ def cron_start() -> None:
     start_scheduler()
 
 
-def _validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
-    """Validate cron expression and timezone by constructing an APScheduler trigger.
-
-    Fails fast with a clear error message instead of creating inert tasks.
-    """
-    parts = cron_expr.split()
-    if len(parts) != 5:
-        _console.print("[red]Error: cron expression must have exactly 5 fields.[/red]")
-        _console.print("  Format: minute hour day month day_of_week")
-        _console.print("  Example: 0 9 * * 1-5  (weekdays at 09:00)")
-        raise SystemExit(1)
-
-    try:
-        from apscheduler.triggers.cron import CronTrigger
-
-        CronTrigger.from_crontab(cron_expr, timezone=timezone)
-    except (ValueError, TypeError, KeyError) as exc:
-        _console.print(f"[red]Error: invalid cron expression or timezone: {exc}[/red]")
-        raise SystemExit(1) from exc
-
-
 def _validate_chat_id_for_provider(provider: str, chat_id: str) -> None:
     """Reject a task with no destination the scheduler could deliver to.
 
     Which providers can resolve a destination on their own is the scheduler's
     knowledge, not the CLI's — see
-    :func:`platform.scheduler.credentials.requires_explicit_chat_id`.
+    :func:`infrastructure.scheduling.scheduler.credentials.requires_explicit_chat_id`.
     """
     if chat_id.strip() or not requires_explicit_chat_id(provider):
         return

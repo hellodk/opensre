@@ -40,7 +40,7 @@ from surfaces.interactive_shell.runtime.loop_scheduler import (
     start_loop_scheduler,
 )
 from surfaces.interactive_shell.runtime.turn_host import (
-    AgentTurnRuntime,
+    AgentTurnResources,
     run_agent_turn,
     run_agent_turn_queue,
     run_input_loop,
@@ -83,15 +83,17 @@ def _alert_listener(
         yield None
         return
 
-    from gateway.web.web_server import WebAppServerHandle, serve_webapp_in_thread
+    from infrastructure.alert_intake import build_alert_intake_app
+    from infrastructure.asgi_server import AsgiServerHandle, serve_asgi_in_thread
 
     inbox: _alert_inbox.AlertInbox | None = None
-    handle: WebAppServerHandle | None = None
+    handle: AsgiServerHandle | None = None
     try:
         inbox = _alert_inbox.AlertInbox()
         _alert_inbox.set_current_inbox(inbox)
         with _alert_listener_token(cfg.alert_listener_token):
-            handle = serve_webapp_in_thread(
+            handle = serve_asgi_in_thread(
+                build_alert_intake_app(),
                 host=cfg.alert_listener_host,
                 port=cfg.alert_listener_port,
             )
@@ -135,6 +137,20 @@ def _resolve_runtime_context(
     )
 
 
+def _should_wait_until_turn_finishes(
+    *,
+    exclusive_stdin: bool,
+    goal_condition_autosubmitted: bool,
+) -> bool:
+    """True when the next prompt must not open until this turn completes.
+
+    Exclusive-stdin slash commands already wait. ``/goal`` autosubmit is prose
+    (no exclusive stdin) but must still wait — otherwise ``[N] ❯`` appears under
+    the live crawl spinner and looks like a second / finished goal.
+    """
+    return exclusive_stdin or goal_condition_autosubmitted
+
+
 class InteractiveShellController:
     """Coordinate prompt input, queued dispatch, background workers, and shutdown."""
 
@@ -173,19 +189,24 @@ class InteractiveShellController:
             self.spinner,
             self.runtime_context.pt_session,
         )
-        from surfaces.interactive_shell.runtime.action_turn import ShellActionRunner
+        # Lazy: TurnHandler pulls the agent/action stack — must not load at
+        # ``import surfaces.interactive_shell.main``.
+        from infrastructure.turn_host.turn_handler import TurnHandler
+        from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 
-        self.turn_runtime = AgentTurnRuntime(
+        self.turn_runtime = AgentTurnResources(
             session=self.session,
             state=self.state,
             spinner=self.spinner,
             invalidate_prompt=lambda: self.prompt.invalidate_prompt(),
             request_exit=self.prompt.request_exit,
             console=self.service_console,
-            action_runner=ShellActionRunner(
-                session=self.session,
+            turn_handler=TurnHandler(
                 console=self.service_console,
-                request_exit=self.prompt.request_exit,
+                agent_build=shell_agent_build_config(request_exit=self.prompt.request_exit),
+                # One handler for the REPL lifetime; /new and /resume rotate
+                # session_id on the live handle — keep only that id's agent.
+                retain_only_current_session=True,
             ),
         )
         # Prompt echoes belong in the same stream as everything else this turn
@@ -260,11 +281,18 @@ class InteractiveShellController:
                 self.state.deliver_confirmation(text)
                 return True
             case SubmitTurn(text=text, wait_until_idle=wait, warning=warning):
+                # Read before render_submitted_prompt — that clears the flag.
+                wait_for_turn = _should_wait_until_turn_finishes(
+                    exclusive_stdin=wait,
+                    goal_condition_autosubmitted=bool(
+                        self.session.terminal.last_input_autosubmitted
+                    ),
+                )
                 if warning:
                     self.echo_console.print(warning)
                 self.prompt.render_submitted_prompt(self.echo_console, text)
                 await self.state.queue.put(text)
-                if wait:
+                if wait_for_turn:
                     await self.state.queue.join()
                 return True
         raise AssertionError(f"Unhandled input action: {action!r}")

@@ -7,16 +7,15 @@ from typing import Self
 from prompt_toolkit import PromptSession
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf, field_validator, model_validator
 
-from core.agent_harness.session import SessionManager
+from core.agent_harness import SessionManager
 from core.domain.alerts import inbox as _alert_inbox
-from platform.observability.trace.spans import set_session_trace_sink
 from surfaces.interactive_shell.runtime.core.state import (
     ReplState,
     SpinnerState,
     create_repl_mutable_state,
 )
 from surfaces.interactive_shell.session.session import Session
-from surfaces.interactive_shell.session.trace_sink import jsonl_trace_sink_for_session
+from surfaces.interactive_shell.session.trace_store import jsonl_trace_store_for_session
 
 
 class SessionBootstrapSpec(BaseModel):
@@ -98,7 +97,7 @@ class ReplRuntimeContext(BaseModel):
 
 
 def _current_theme_name() -> str:
-    from platform.terminal.theme import get_active_theme_name
+    from infrastructure.terminal.theme import get_active_theme_name
 
     return get_active_theme_name()
 
@@ -141,7 +140,9 @@ def create_repl_runtime_context(
         hydrate_integrations=hydrate_integrations,
         persistent_tasks=persistent_tasks,
     )
-    set_session_trace_sink(jsonl_trace_sink_for_session(prepared_session))
+    from infrastructure.observability.trace.spans import set_session_trace_store
+
+    set_session_trace_store(jsonl_trace_store_for_session(prepared_session))
     mutable_state = create_repl_mutable_state(state=state, spinner=spinner)
     return ReplRuntimeContext(
         session=prepared_session,

@@ -9,10 +9,11 @@ import concurrent.futures
 import re
 from typing import Any
 
+from core.tool import EvidenceType, SideEffectLevel
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
+from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
 from integrations.datadog._client import make_async_client
-from platform.common.evidence_compaction import compact_logs, summarize_counts
 
 
 def _run_in_thread(coro: Any) -> Any:
@@ -557,8 +558,8 @@ def _metrics_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     ],
     requires=[],
     source_id="datadog_metrics_api",
-    evidence_type="metrics",
-    side_effect_level="read_only",
+    evidence_type=EvidenceType.METRICS,
+    side_effect_level=SideEffectLevel.READ_ONLY,
     examples=[
         "Check `system.cpu.user` around incident window for saturation patterns.",
         "Run a custom metrics query string for service-specific error-rate metrics.",

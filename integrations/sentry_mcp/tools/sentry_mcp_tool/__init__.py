@@ -9,11 +9,15 @@ individual MCP-side tools.
 
 from __future__ import annotations
 
-from core.tool_framework.telemetry import report_run_error
+from core.domain.types.tools import ToolSurface
+from core.tool import report_run_error
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.mcp_bridge import unavailable_response
-from core.tool_framework.utils.mcp_params import first_list, first_string
-from core.tool_framework.utils.mcp_tool_listing import build_mcp_tool_listing
+from core.tool_framework.utils import (
+    build_mcp_tool_listing,
+    first_list,
+    first_string,
+    unavailable_response,
+)
 from integrations.sentry_mcp import (
     SentryMCPConfig,
     SentryMCPToolCallResult,
@@ -121,7 +125,7 @@ def _normalize_tool_result(result: SentryMCPToolCallResult) -> SentryMCPResponse
         "Finding the right tool for a task by passing a name_filter (e.g. 'issue event trace')",
         "Fetching the input schema of a specific tool with include_schema before calling it",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     input_schema={
         "type": "object",
         "properties": {
@@ -226,7 +230,7 @@ def list_sentry_tools(
         "Running Seer root-cause analysis on an issue to pinpoint the fix",
     ],
     requires=["tool_name"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     input_schema={
         "type": "object",
         "properties": {

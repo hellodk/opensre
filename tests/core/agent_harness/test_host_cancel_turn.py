@@ -6,7 +6,7 @@ import threading
 from typing import Any
 
 from core.agent_harness.session import SessionCore
-from core.agent_harness.session.persistence.memory import InMemorySessionStorage
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.host_cancel import host_cancel_requested
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import (
@@ -45,8 +45,8 @@ class _CancelSink:
         self.streamed.append(text)
         return text
 
-    def finalize(self, text: str) -> None:
-        _ = text
+    def finalize(self, answer: str) -> None:
+        _ = answer
 
 
 def test_host_cancel_requested_reads_sink_event() -> None:
@@ -83,7 +83,7 @@ def test_run_turn_cancelled_action_skips_gather_and_answer() -> None:
 
     result = run_turn(
         "question?",
-        SessionCore(storage=InMemorySessionStorage()),
+        SessionCore(store=InMemorySessionStore()),
         execute_actions=execute_actions,
         answer=answer,
         gather=gather,
@@ -114,7 +114,7 @@ def test_run_turn_cancel_during_gather_skips_answer() -> None:
 
     result = run_turn(
         "question?",
-        SessionCore(storage=InMemorySessionStorage()),
+        SessionCore(store=InMemorySessionStore()),
         execute_actions=execute_actions,
         answer=answer,
         gather=gather,
@@ -125,8 +125,8 @@ def test_run_turn_cancel_during_gather_skips_answer() -> None:
     assert answer_calls == []
 
 
-def test_live_sink_stream_stops_when_turn_cancel_set() -> None:
-    from gateway.core.runtime.live_sink import LiveOutputSink
+def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
+    from infrastructure.turn_host.bindable_output import BindableOutput
 
     class _Inner:
         def __init__(self) -> None:
@@ -141,18 +141,18 @@ def test_live_sink_stream_stops_when_turn_cancel_set() -> None:
                 parts.append(str(chunk))
             return "".join(parts)
 
-        def finalize(self, text: str) -> None:
-            _ = text
+        def finalize(self, answer: str) -> None:
+            _ = answer
 
         def render_error(self, message: str) -> None:
             _ = message
 
-        def set_tool_status(self, text: str) -> None:
-            _ = text
+        def set_tool_status(self, status: str) -> None:
+            _ = status
 
     inner = _Inner()
-    live = LiveOutputSink()
-    live.bind(inner)  # type: ignore[arg-type]
+    bindable = BindableOutput()
+    bindable.bind(inner)  # type: ignore[arg-type]
 
     def _chunks() -> Any:
         yield "a"
@@ -160,6 +160,6 @@ def test_live_sink_stream_stops_when_turn_cancel_set() -> None:
         yield "b"
         yield "c"
 
-    text = live.stream(label="assistant", chunks=_chunks())
+    text = bindable.stream(label="assistant", chunks=_chunks())
     assert text == "a"
     assert inner.seen == ["a"]

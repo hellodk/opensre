@@ -18,8 +18,6 @@ build/
 develop-eggs/
 dist/
 .stdlib_vendor/
-# PyInstaller generates this from CLI args during the release build.
-opensre.spec
 downloads/
 eggs/
 .eggs/
@@ -195,4 +193,4 @@ crash.log
 factory-ai-extract/
 
 # Local checkout of opensre-infra-aws — separate repo, never track here
-platform/deployment_multi_tenant/
+infrastructure/deployment_multi_tenant/

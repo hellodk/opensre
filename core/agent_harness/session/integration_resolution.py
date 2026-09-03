@@ -6,7 +6,7 @@ names, the resolved-config cache, repository scopes, background warm tasks, and
 
 ``SessionCore`` composes :class:`IntegrationState` as ``session.integrations`` and
 re-exposes public fields via properties for API stability. Port-level fetch/classify
-logic lives in :mod:`platform.harness_ports` (wired at startup from
+logic lives in :mod:`infrastructure.harness_ports` (wired at startup from
 ``integrations/harness_adapters``).
 """
 
@@ -16,13 +16,13 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from platform.harness_ports import (
+from infrastructure.harness_ports import (
     IntegrationResolutionResult,
     resolve_integrations,
 )
 
 if TYPE_CHECKING:
-    from core.agent_harness.ports import SessionStore
+    from core.agent_harness.ports import SessionState
 
 __all__ = [
     "IntegrationResolutionResult",
@@ -81,7 +81,7 @@ def _has_usable_cache(cache: dict[str, Any] | None) -> bool:
     return has_resolved_integrations(cache) or not has_only_underscore_prefixed_keys(cache)
 
 
-def resolve_and_cache_integrations(session: SessionStore) -> dict[str, Any]:
+def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
     """Resolve a session's integration configs, using and updating its cache."""
     cached = session.resolved_integrations_cache
     if _has_usable_cache(cached):
@@ -130,7 +130,7 @@ class IntegrationState:
         secrets; full configs are resolved on demand via :meth:`warm`/:meth:`get`.
         """
         try:
-            from platform.harness_ports import configured_integration_services
+            from infrastructure.harness_ports import configured_integration_services
 
             self.configured = tuple(sorted(configured_integration_services()))
             self.configured_known = True

@@ -68,6 +68,10 @@ class AssistantPromptContextProvider(Protocol):
         """Emit grounding-cache diagnostics for ``reason``."""
 
 
+def _handoff_has_session_goal(handoff_contents: tuple[str, ...]) -> bool:
+    return any(tag.startswith("session_goal:") for tag in handoff_contents)
+
+
 def _assistant_context_blocks(
     *,
     turn_snapshot: TurnSnapshot,
@@ -76,28 +80,79 @@ def _assistant_context_blocks(
     tool_observation_on_screen: bool,
     suggested_prompt: str = SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST,
 ) -> str:
+    omit_want_me_to = _handoff_has_session_goal(handoff_contents)
     return "".join(
         (
             _build_integration_guard(turn_snapshot),
             build_handoff_guidance_block(handoff_contents),
-            build_observation_block(tool_observation, on_screen=tool_observation_on_screen),
+            build_observation_block(
+                tool_observation,
+                on_screen=tool_observation_on_screen,
+                omit_want_me_to=omit_want_me_to,
+            ),
             synthetic_failure.build_block(turn_snapshot, suggested_prompt=suggested_prompt),
         )
     )
 
 
 def _build_integration_guard(ctx: TurnSnapshot) -> str:
-    """Render the no-integrations guidance block from the turn snapshot."""
-    if not (ctx.configured_integrations_known and not ctx.configured_integrations):
+    """Render what is connected, and the no-integrations guidance when empty.
+
+    Naming the connected set lets "X is not connected" be answered with what
+    *is* — the difference between an assertion and a checked result. The data
+    already reaches the gather prompt; the answer path was told only when the
+    set was empty, so a reply could not say what it had looked at.
+
+    When something is connected, also name the valid ``/integrations setup``
+    ids and any evidence kinds whose preferred sources are already covered.
+    Replies must only recommend ids from those session facts — never invent a
+    service that is not listed. An empty session gets neither roster: hundreds
+    of setupable ids would crowd out the user's actual question.
+    """
+    from infrastructure.harness_ports import (
+        preferred_evidence_sources_by_kind,
+        setupable_integration_services,
+    )
+
+    if not ctx.configured_integrations_known:
         return ""
 
-    return (
-        "No integrations are configured in this session. You may still help the user "
-        "configure one: explain `/integrations setup <service>` for integrations or "
-        "`/mcp connect <server>` for MCP servers. Do not claim any integration is "
-        "already connected, and for show/verify/remove requests against unconfigured "
-        "integrations, answer with guidance only.\n\n"
-    )
+    parts: list[str] = []
+    connected = tuple(ctx.configured_integrations)
+    if connected:
+        parts.append(
+            f"Integrations connected in this session: {', '.join(connected)}. When the user "
+            "asks about a data source that is not in that list, say which ones "
+            "are connected rather than only that theirs is missing."
+        )
+    else:
+        parts.append(
+            "No integrations are configured in this session. You may still help the user "
+            "configure one: explain `/integrations setup <service>` for integrations or "
+            "`/mcp connect <server>` for MCP servers. Do not claim any integration is "
+            "already connected, and for show/verify/remove requests against unconfigured "
+            "integrations, answer with guidance only."
+        )
+
+    setupable = tuple(setupable_integration_services()) if connected else ()
+    if setupable:
+        parts.append(
+            "Only these service ids are valid in `/integrations setup <id>`: "
+            f"{', '.join(setupable)}. Never invent a service id that is not in "
+            "that list."
+        )
+
+    if connected:
+        for kind, preferred in preferred_evidence_sources_by_kind().items():
+            if preferred and all(service_id in connected for service_id in preferred):
+                parts.append(
+                    f"Preferred source(s) for evidence kind `{kind}` already "
+                    f"connected: {', '.join(preferred)}. That kind is covered — "
+                    "do not invent another vendor or a setup CTA for a different "
+                    "id for this kind."
+                )
+
+    return "\n".join(parts) + "\n\n"
 
 
 @dataclass(frozen=True)

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.code_host_unavailable import code_host_unavailable_payload
+from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -45,7 +46,7 @@ def _search_github_issues_available(sources: dict[str, dict]) -> bool:
         "Finding related bug reports that may explain a failure",
     ],
     requires=["owner", "repo", "query"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     input_schema={
         "type": "object",
         "properties": {

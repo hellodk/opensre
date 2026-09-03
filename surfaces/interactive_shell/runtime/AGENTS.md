@@ -21,7 +21,7 @@ owner module instead of broadening module responsibilities.
 - `../controller.py` — `InteractiveShellController`: prompt lifecycle,
   submitted-input handling, queued-turn consumption, per-turn task scheduling,
   alert listener setup/teardown (the inbox is part of the running shell
-  lifecycle), `AgentTurnRuntime` construction and shutdown, prompt-mediated
+  lifecycle), `AgentTurnResources` construction and shutdown, prompt-mediated
   confirmation waiting, turn telemetry, coordination between prompt/background/
   shutdown helpers. Nothing else should own shell lifecycle orchestration.
 - `core/prompt_manager.py` — prompt-toolkit setup, prompt rendering callbacks,
@@ -38,14 +38,14 @@ owner module instead of broadening module responsibilities.
   `core.agent_harness.session.background`).
 - `core/state.py` — `ReplState`, `SpinnerState`: runtime state and transition
   helpers only (see State ownership rules below).
-- `core/turn_detection.py` — pure text classifiers for cancel/confirm/
-  correction detection only.
+- `core/turn_detection.py` — pure text classifiers for cancel/confirm
+  detection only.
 - `core/confirmation.py` — prompt-mediated confirmation waiting only.
 - `turn_host.py` — `run_input_loop` (read/handle input until exit),
   `run_agent_turn_queue` (consume queued prompts via an injected `run_turn`),
   and `run_agent_turn(runtime, text)` (presentation, dispatch state,
   prompt-mediated confirmation, turn-entry invocation) over an
-  `AgentTurnRuntime` — the immutable dependency bundle (`session`, `state`,
+  `AgentTurnResources` — the immutable dependency bundle (`session`, `state`,
   `spinner`, `invalidate_prompt`, `request_exit`) the controller constructs.
 - `agent_presentation.py` — `ConsoleAgentEventSink`: terminal presentation for
   agent lifecycle events (spinner, prompt suppression, `console.print`, CPR

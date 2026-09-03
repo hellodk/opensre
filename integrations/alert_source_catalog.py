@@ -69,6 +69,7 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "jenkins": routing(("jenkins",), ("jenkins",)),
     "tempo": routing(("tempo",), ("tempo",)),
     "temporal": routing(("temporal",), ("temporal",)),
+    "new_relic": routing(("new_relic",), ("new_relic",)),
 }
 
 _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
@@ -118,6 +119,7 @@ _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
     "jenkins": ("jenkins",),
     "tempo": ("tempo",),
     "temporal": ("temporal", "temporal workflow", "task queue"),
+    "new_relic": ("new relic", "newrelic", "nrql", "nr alert"),
 }
 
 

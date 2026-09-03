@@ -22,7 +22,9 @@ def test_registry_declares_each_service_once() -> None:
 
 
 def test_registry_supported_lists_are_derived_from_specs() -> None:
-    expected_verify = tuple(
+    # Lists, not tuples: the derived tables are mutated in place on registration
+    # so that readers holding an imported reference keep seeing current data.
+    expected_verify = [
         spec.service
         for spec in sorted(
             (candidate for candidate in INTEGRATION_SPECS if candidate.has_verifier),
@@ -30,8 +32,8 @@ def test_registry_supported_lists_are_derived_from_specs() -> None:
                 candidate.verify_order if candidate.verify_order is not None else 10_000
             ),
         )
-    )
-    expected_setup = tuple(
+    ]
+    expected_setup = [
         spec.service
         for spec in sorted(
             (candidate for candidate in INTEGRATION_SPECS if candidate.setup_order is not None),
@@ -39,7 +41,7 @@ def test_registry_supported_lists_are_derived_from_specs() -> None:
                 candidate.setup_order if candidate.setup_order is not None else 10_000
             ),
         )
-    )
+    ]
 
     assert expected_verify == SUPPORTED_VERIFY_SERVICES
     assert expected_setup == SUPPORTED_SETUP_SERVICES
@@ -82,6 +84,21 @@ def test_railway_is_registered_as_a_configurable_verified_integration() -> None:
     assert railway.direct_effective is True
     assert railway.setup_order is not None
     assert "railway" not in SKIP_CLASSIFIED_SERVICES
+
+
+def test_prefect_is_registered_as_a_directly_effective_integration() -> None:
+    # prefect's classify() resolves store credentials into a config object
+    # just like dagster/temporal, but its spec was missing direct_effective=True
+    # — resolve_effective_integrations() only publishes services listed in
+    # DIRECT_CLASSIFIED_EFFECTIVE_SERVICES, so a prefect integration saved in
+    # the local store silently never resolved, breaking both
+    # `opensre integrations verify prefect` and the prefect tools'
+    # is_available() check for any store-configured instance.
+    prefect = next(spec for spec in INTEGRATION_SPECS if spec.service == "prefect")
+
+    assert prefect.has_verifier is True
+    assert prefect.direct_effective is True
+    assert "prefect" not in SKIP_CLASSIFIED_SERVICES
 
 
 def test_resolve_management_service_keeps_posthog_and_posthog_mcp_distinct() -> None:
