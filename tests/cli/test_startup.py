@@ -21,6 +21,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,10 +30,10 @@ from surfaces.cli.app import cli
 # Env is bound via bootstrap.process; Sentry/adapters are imported
 # inside CLI ``run()`` so those patches target the defining module.
 _ENV = "bootstrap.process.bootstrap_opensre_env_once"
-_SENTRY = "platform.observability.errors.sentry.init_sentry"
-_ADAPTERS = "surfaces.interactive_shell.ui.output.boundary.install_product_adapters"
-_ESCAPE = "platform.terminal.prompt_support.install_questionary_escape_cancel"
-_CTRL_C = "platform.terminal.prompt_support.install_questionary_ctrl_c_double_exit"
+_SENTRY = "infrastructure.observability.errors.sentry.init_sentry"
+_ADAPTERS = "surfaces.shared.terminal.output.boundary.install_product_adapters"
+_ESCAPE = "infrastructure.terminal.prompt_support.install_questionary_escape_cancel"
+_CTRL_C = "infrastructure.terminal.prompt_support.install_questionary_ctrl_c_double_exit"
 _SIGINT = "surfaces.cli.signals.install_sigint_handler"
 
 
@@ -66,6 +67,42 @@ def test_startup_runs_the_steps_in_the_required_order(monkeypatch: pytest.Monkey
     # Assert — shared bootstrap.process boots env; CLI owns Sentry then Rich adapters.
     assert order.index("env") < order.index("sentry"), order
     assert order.index("sentry") < order.index("adapters"), order
+
+
+def test_startup_installs_the_cli_auth_checker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`doctor`/`config` must reach registered CLI adapters on the bare CLI path.
+
+    CLI_PROFILE boots env only, so unless startup wires the CLI-auth checker, a
+    status check for an installed CLI provider resolves to no adapter and
+    misreports it as unavailable. This pins that startup installs the checker.
+    """
+    # Arrange: a registry that reports claude-code installed + logged in, and no
+    # checker installed yet (undo the autouse fixture's install).
+    from bootstrap.process import reset_process_runtime_for_tests
+    from config.llm_auth import cli_auth
+    from surfaces.cli import startup
+
+    reset_process_runtime_for_tests()
+    _silence_all(monkeypatch)
+    monkeypatch.setattr(_SENTRY, lambda **_kw: None)
+
+    ready = MagicMock()
+    ready.adapter_factory.return_value.detect.return_value = MagicMock(
+        installed=True, logged_in=True, detail="Logged in."
+    )
+    monkeypatch.setattr(
+        "integrations.llm_cli.registry.get_cli_provider_registration",
+        lambda provider: ready if provider == "claude-code" else None,
+    )
+    monkeypatch.setattr(cli_auth, "_installed", None)
+
+    # Act
+    startup.run(cli, ["doctor"])
+
+    # Assert: the port now reaches the registered adapter.
+    state = cli_auth.resolve_cli_auth_state("claude-code")
+    assert state is not None
+    assert state.installed is True
 
 
 def test_missing_sentry_module_is_tolerated_during_update(monkeypatch: pytest.MonkeyPatch) -> None:

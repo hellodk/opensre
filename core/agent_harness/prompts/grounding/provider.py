@@ -5,14 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from config.constants.prompts import SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
-from core.agent_harness.grounding.investigation_flow_reference import (
-    build_investigation_flow_reference_text,
-)
-from core.agent_harness.llm_resolution import resolve_provider_models
-from core.agent_harness.prompts.assistant.environment import build_environment_block
+from core.agent_harness.prompts.grounding.environment import build_environment_block
 from core.agent_harness.prompts.kernel.surfaces import profile_for
-from platform.observability.trace.spans import component_span
+from core.llm.provider_models import resolve_provider_models
+from infrastructure.observability.trace.spans import component_span
 
 # Minimum retrieval score for a docs page to ground an assistant answer. A
 # genuine setup/config question scores ~30 on its page (slug + exact-slug +
@@ -25,7 +21,7 @@ _DOCS_RELEVANCE_FLOOR = 8
 def load_llm_settings() -> Any | None:
     """Best-effort LLM settings load for prompt environment grounding."""
     try:
-        from config.config import LLMSettings
+        from config.llm_settings import LLMSettings
 
         return LLMSettings.from_env()
     except Exception:
@@ -85,9 +81,6 @@ class DefaultPromptContextProvider:
         # the answer. Below the floor the block is omitted entirely.
         return str(self._session.grounding.docs.build_text(query, min_score=_DOCS_RELEVANCE_FLOOR))
 
-    def investigation_flow(self) -> str:
-        return build_investigation_flow_reference_text()
-
     def runtime_facts(self) -> Mapping[str, Any]:
         from config.runtime_metadata import capture_runtime_facts
 
@@ -142,19 +135,16 @@ class DefaultPromptContextProvider:
     def setup_state(self) -> str:
         """The install's integrations and schedules, recomputed when they change.
 
-        Shares the memoized block in :mod:`platform.setup_state`, so connecting
+        Shares the memoized block in :mod:`infrastructure.setup_state`, so connecting
         an integration or adding a schedule mid-session shows up on the next
         turn instead of serving the first turn's facts all session.
         """
-        from platform.setup_state import cached_setup_state
+        from infrastructure.setup_state import cached_setup_state
 
         profile = profile_for(self._surface)
         if not profile.setup_state:
             return ""
         return cached_setup_state(self._visible_integrations())
-
-    def suggested_synthetic_prompt(self) -> str:
-        return SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
 
     def log_diagnostics(self, reason: str) -> None:
         self._session.grounding.log_cache_diagnostics(reason)

@@ -117,6 +117,29 @@ class TestSaveAndLoad:
 
 
 class TestListDeleteSearch:
+    def test_multiple_repository_memories_are_retained_independently(self) -> None:
+        first = save_memory(
+            slug="repo-tracer-cloud-opensre",
+            memory_type="repository",
+            description="OpenSRE repository",
+            body="Tracer-Cloud/opensre uses main as its default branch.",
+        )
+        second = save_memory(
+            slug="repo-acme-payments",
+            memory_type="repository",
+            description="Payments repository",
+            body="acme/payments deploys the checkout API from release.",
+        )
+
+        assert first is not None and second is not None
+        assert {record.slug for record in list_memories()} == {
+            "repo-tracer-cloud-opensre",
+            "repo-acme-payments",
+        }
+        rendered = render_prompt_index()
+        assert "Tracer-Cloud/opensre" in rendered
+        assert "acme/payments" in rendered
+
     def test_list_orders_by_updated_desc(self, monkeypatch: pytest.MonkeyPatch) -> None:
         stamps = iter(["2026-07-01T00:00:00+00:00", "2026-07-02T00:00:00+00:00"])
         monkeypatch.setattr("core.domain.memory.store._now_iso", lambda: next(stamps))
@@ -226,9 +249,9 @@ class TestSettings:
     def test_gateway_surfaces_require_opt_in(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from config.constants import OPENSRE_MEMORY_GATEWAY_ENABLED_ENV
         from core.domain.memory import gateway_memory_enabled, memory_available_here
-        from platform.analytics.usage_context import SURFACE_SLACK, bound_usage_context
+        from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 
-        with bound_usage_context(surface=SURFACE_SLACK):
+        with bound_usage_context(surface=UsageSurface.SLACK):
             assert memory_enabled() is True
             assert gateway_memory_enabled() is False
             assert memory_available_here() is False

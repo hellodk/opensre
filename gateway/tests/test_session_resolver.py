@@ -6,7 +6,7 @@ import pytest
 
 from config.principal import Principal
 from core.agent_harness.prompts import build_action_system_prompt
-from core.agent_harness.session import InMemorySessionStorage, SessionCore, SessionManager
+from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from gateway.core.storage import FileBindingStore, SessionResolver
 
@@ -25,7 +25,7 @@ def resolver(tmp_path, monkeypatch) -> SessionResolver:
     store = FileBindingStore(tmp_path / "bindings.json")
     # A mutable fake repo whose load_session each test can override.
     repo = SimpleNamespace(load_session=lambda _session_id: None)
-    manager = SessionManager(storage=InMemorySessionStorage(), repo=repo)
+    manager = SessionManager(store=InMemorySessionStore(), repo=repo)
     resolver = SessionResolver(store, manager=manager)
     resolver._fake_repo = repo  # test handle to swap load_session
     return resolver
@@ -33,7 +33,7 @@ def resolver(tmp_path, monkeypatch) -> SessionResolver:
 
 def test_resolve_creates_and_injects_gateway_chat_context(resolver: SessionResolver) -> None:
     resolved = resolver.resolve(
-        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42")
+        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"), actor=None
     )
 
     # New session was created, bound, and tagged with the per-turn chat id.
@@ -70,7 +70,7 @@ def test_resolve_restores_persisted_conversation_context(resolver: SessionResolv
     }
 
     resolved = resolver.resolve(
-        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42")
+        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"), actor=None
     )
 
     assert resolved.cli_agent_messages[-1] == (
@@ -109,7 +109,7 @@ def test_resolved_telegram_context_is_visible_as_prior_action_facts(
     }
 
     resolved = resolver.resolve(
-        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42")
+        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"), actor=None
     )
 
     prompt = build_action_system_prompt(
@@ -129,10 +129,10 @@ def test_resolved_telegram_context_is_visible_as_prior_action_facts(
 
 def test_rotate_flushes_old_and_binds_new(resolver: SessionResolver) -> None:
     first = resolver.resolve(
-        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42")
+        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"), actor=None
     )
     rotated = resolver.rotate(
-        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42")
+        user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"), actor=None
     )
 
     assert rotated.session_id != first.session_id
@@ -208,3 +208,21 @@ def test_slack_actors_get_distinct_sessions(resolver: SessionResolver) -> None:
             )
             == session.session_id
         )
+
+
+def test_resolve_and_rotate_require_explicit_principal_and_actor(
+    resolver: SessionResolver,
+) -> None:
+    """Omitting scope must fail loudly, not silently degrade the binding key.
+
+    The parameters defaulted to ``None``, and a transport that forgot them
+    (Buzz) shipped with scoped binding silently short-circuited to legacy
+    empty-key rows. Legacy rows stay expressible — by passing ``None``
+    explicitly — but silence is no longer an option.
+    """
+    with pytest.raises(TypeError):
+        resolver.resolve(user_id="42", chat_id="99")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        resolver.resolve(user_id="42", chat_id="99", principal=Principal.individual("tg-user-42"))  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        resolver.rotate(user_id="42", chat_id="99")  # type: ignore[call-arg]

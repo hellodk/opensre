@@ -1,6 +1,6 @@
 # Development guide
 
-Contributor-focused workflows: local setup details stay in [SETUP.md](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) at the repo root (Windows, troubleshooting, MCP/OpenClaw).
+Contributor-focused workflows: local setup details stay in [SETUP.md](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) at the repo root (Windows, troubleshooting, MCP).
 
 ## Clone and install
 
@@ -14,7 +14,7 @@ make install
 
 ```bash
 opensre onboard
-opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+uv run opensre   # open the interactive shell
 ```
 
 ## Quality gates (same as CI)
@@ -24,7 +24,7 @@ From the repo root:
 ```bash
 make lint          # ruff check
 make format-check  # ruff format --check (CI-enforced)
-make typecheck     # mypy config core gateway integrations platform surfaces tools
+make typecheck     # mypy config core gateway integrations infrastructure surfaces tools
 make test-cov      # pytest + coverage (default unit suite)
 ```
 
@@ -53,14 +53,6 @@ Loading every vendor tool at startup was slow. A static index
 
 Adding a vendor tool is a `@tool`/`BaseTool` module; the index finds it and no other vendor is imported. `tests/tools/test_registry_index.py` checks the index matches the imported registry exactly, so they cannot drift.
 
-## Investigation pipeline architecture
-
-The six-stage investigation pipeline (resolve integrations → extract alert → plan → ReAct evidence loop → diagnose → deliver), the loop's guardrails (tool cap, stagnation breaker, context budget, duplicate detection), and diagrams are documented in [`docs/investigation-pipeline-architecture.md`](investigation-pipeline-architecture.md).
-
-## Investigation tool calling
-
-Tool schemas, provider adapters (`transports/sdk/agent_clients.py`), and investigation message shapes are documented in [`docs/investigation-tool-calling.md`](investigation-tool-calling.md) (all LLM providers, not vendor-specific).
-
 ## Interactive shell: REPL watchdog demo
 
 PR reviewers expect a **visible demo** (terminal log or screenshot) in the PR under **Demo/Screenshot**, not only tests. Copy the exact steps from this section into your PR description, then attach your terminal output or recording.
@@ -80,14 +72,6 @@ Longer transcript (optional): [tests/interactive_shell/repl_watchdog_demo.md](ht
 ## VS Code dev container
 
 The dev container is defined under [`.devcontainer/`](https://github.com/Tracer-Cloud/opensre/tree/main/.devcontainer). It builds from [`.devcontainer/Dockerfile`](https://github.com/Tracer-Cloud/opensre/blob/main/.devcontainer/Dockerfile) (Python **3.13**), then **`postCreateCommand`** creates `.venv-devcontainer` and runs **`pip install -e '.[dev]'`** (not `uv`). Docker Desktop, OrbStack, Colima, or another compatible runtime must be available on the host.
-
-## Benchmark
-
-```bash
-make benchmark
-```
-
-To refresh README benchmark copy from cached results (no LLM calls): `make benchmark-update-readme`.
 
 ## Deployment
 
@@ -135,20 +119,7 @@ virtual traffic classification intentionally treats CLI HTTP clients as automati
 
 A random install ID is stored under `~/.opensre/anonymous_id`. PostHog `distinct_id` is scoped to that ID. Telemetry is off in GitHub Actions and pytest.
 
-### First-launch GitHub login
-
-On the first interactive launch (all platforms, except CI/CD and test harnesses), OpenSRE runs a GitHub device-flow sign-in gate before the REPL prompt. Installs are split offline into an A/B experiment via sticky bucketing on `~/.opensre/anonymous_id`:
-
-| Variant | Behavior | How to force locally |
-| --- | --- | --- |
-| `control` | Skip allowed (menu + Escape defer the gate) | `OPENSRE_GITHUB_GATE_VARIANT=control` |
-| `forced` | Skip removed; abandoning the gate aborts startup | `OPENSRE_GITHUB_GATE_VARIANT=forced` |
-
-Every gate exposure emits `github_login_prompted` with `github_gate_variant`. Outcomes are `github_login_completed`, `github_login_skipped` (control only), or `github_login_abandoned` (forced drop-off). The variant is also stamped as a persistent event property so later REPL events break down by cohort. On success OpenSRE sets `github_username` as a PostHog **person property** (via `$identify`/`$set`, which forces `$process_person_profile: True` for that one event — this is the only intentional PII OpenSRE sends). A configured GitHub integration suppresses re-prompting on later launches.
-
-Because bucketing is local and does not call PostHog feature flags, PostHog's built-in experiment exposure chart will not populate automatically. Configure `github_login_prompted` as the custom exposure event and use `github_gate_variant` as the breakdown/filter for funnels and trends.
-
-The existing kill-switches still apply: `OPENSRE_NO_TELEMETRY` / `DO_NOT_TRACK` make analytics calls no-ops, but the login itself still runs. Set `OPENSRE_SKIP_GITHUB_LOGIN=1` to bypass the login gate entirely (also auto-bypassed in CI — `CI=true`, `GITHUB_ACTIONS=true` — and in pytest).
+When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE sets `github_username` as a PostHog **person property** (via `$identify`/`$set`). That is the only intentional PII it sends.
 
 ### Kill-switch matrix
 

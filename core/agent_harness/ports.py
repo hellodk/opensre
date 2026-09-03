@@ -3,7 +3,7 @@
 These are the seams that keep ``agent/`` decoupled from any concrete surface.
 The interactive shell implements them as adapters over its ``Session``,
 Rich console, tool registry, and grounding caches; the headless adapters in
-:mod:`core.agent_harness.turns.headless_dispatch` implement minimal in-memory versions for API / test runs.
+:mod:`core.agent_harness.turns.headless_agent` implement minimal in-memory versions for API / test runs.
 
 Nothing here imports ``interactive_shell``.
 """
@@ -14,13 +14,22 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from config.llm_reasoning_effort import ReasoningEffortChoice
+from core.agent_harness.turns.gather_observation import GatheredEvidence
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from core.llm.types import AgentLLMClient
+from core.tool.execution import ToolExecutionHooks
 
 # A tool-loop event callback: ``(kind, data)`` where kind is e.g. "tool_start".
 ToolEventObserver = Callable[[str, dict[str, Any]], None]
 
 # Confirmation prompt: given a summary, return the user's response string.
 ConfirmFn = Callable[[str], str]
+
+# Builds the LLM client the action runner drives; hosts and tests inject one
+# to replace the configured provider. The loop calls ``invoke`` and
+# ``tool_schemas`` and nothing else, which is what ``AgentLLMClient`` states.
+LlmFactory = Callable[[], AgentLLMClient]
 
 
 @runtime_checkable
@@ -53,7 +62,7 @@ class OutputSink(Protocol):
 
 
 @runtime_checkable
-class SessionStore(Protocol):
+class SessionState(Protocol):
     """Mutable per-session state the engine reads and writes.
 
     ``Session`` satisfies this structurally. The fields mirror what the
@@ -70,9 +79,7 @@ class SessionStore(Protocol):
     def configured_integrations(self) -> Sequence[str]:
         raise NotImplementedError
 
-    last_state: dict[str, Any] | None
-    last_synthetic_observation_path: str | None
-    reasoning_effort: Any | None
+    reasoning_effort: ReasoningEffortChoice | None
 
     # --- turn execution state ---
     history: list[dict[str, Any]]
@@ -82,6 +89,8 @@ class SessionStore(Protocol):
     # --- gather caches ---
     resolved_integrations_cache: dict[str, Any] | None
     vcs_repo_scopes: dict[str, tuple[str, ...]]
+    active_vcs_repositories: dict[str, str]
+    known_vcs_repo_scopes: dict[str, dict[str, tuple[str, ...]]]
 
     def record(self, kind: str, text: str, *, ok: bool = True) -> None:
         """Append a record of an executed action/turn to the session log."""
@@ -97,8 +106,20 @@ class SessionBindable(Protocol):
     only invokes it when the port structurally matches.
     """
 
-    def bind_session(self, session: SessionStore) -> None:
+    def bind_session(self, session: SessionState) -> None:
         """Point this port at ``session`` (same logical session, new object)."""
+
+
+@runtime_checkable
+class CancelCapableConsole(Protocol):
+    """Console that exposes a cancellation flag and basic print capability."""
+
+    @property
+    def cancel_requested(self) -> bool:
+        """True if the user requested to cancel the current operation."""
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        """Print output to the console."""
 
 
 @runtime_checkable
@@ -109,7 +130,7 @@ class ConsoleBindable(Protocol):
     the shared ``sink.turn_cancel`` Event for that message.
     """
 
-    def bind_console(self, console: Any) -> None:
+    def bind_console(self, console: CancelCapableConsole) -> None:
         """Point tool UI / cancel probes at ``console`` for this turn."""
 
 
@@ -119,8 +140,8 @@ class OutputBindable(Protocol):
 
     ``HeadlessAgent.bind_turn(output=…)`` updates the agent's sink and must
     retarget every port that cached the previous sink (e.g. reasoning error
-    rendering). Gateway usually keeps a stable ``LiveOutputSink`` and rebinds
-    the outer transport sink via ``LiveOutputSink.bind`` — that path does not
+    rendering). Gateway usually keeps a stable ``BindableOutput`` and rebinds
+    the outer transport output via ``BindableOutput.bind`` — that path does not
     need ``bind_turn(output=)``. Hosts that swap the ``OutputSink`` object
     itself must pass ``output=`` so :class:`OutputBindable` ports follow.
     """
@@ -155,17 +176,6 @@ class ToolProvider(Protocol):
 
 
 @runtime_checkable
-class ToolRegistry(Protocol):
-    """Resolves the registered tools available to a named surface."""
-
-    def tools_for_surface(self, surface: str) -> list[Any]:
-        """Return the registered tools for ``surface`` (e.g. ``"action"``)."""
-
-    def tool_map_for_surface(self, surface: str) -> dict[str, Any]:
-        """Return the registered tools for ``surface`` keyed by tool name."""
-
-
-@runtime_checkable
 class ErrorReporter(Protocol):
     """Reports caught exceptions (telemetry / logging)."""
 
@@ -177,9 +187,9 @@ class ErrorReporter(Protocol):
 class PromptContextProvider(Protocol):
     """Supplies grounding text for the conversational assistant prompt.
 
-    The grounding corpora (CLI reference, repo map, docs, investigation-flow,
-    environment) are surface/repo content; the shell adapter wires its grounding
-    caches, the headless adapter returns empty strings.
+    The grounding corpora (CLI reference, repo map, docs, environment) are
+    surface/repo content; the shell adapter wires its grounding caches, the
+    headless adapter returns empty strings.
     """
 
     def surface(self) -> str:
@@ -193,9 +203,6 @@ class PromptContextProvider(Protocol):
         raise NotImplementedError
 
     def docs(self, query: str) -> str:
-        raise NotImplementedError
-
-    def investigation_flow(self) -> str:
         raise NotImplementedError
 
     def runtime_facts(self) -> Mapping[str, Any]:
@@ -212,62 +219,8 @@ class PromptContextProvider(Protocol):
     def setup_state(self) -> str:
         """The operator's connected integrations and schedules, as a fact block."""
 
-    def suggested_synthetic_prompt(self) -> str:
-        raise NotImplementedError
-
     def log_diagnostics(self, reason: str) -> None:
         raise NotImplementedError
-
-
-@runtime_checkable
-class ReasoningClientProvider(Protocol):
-    """Provides the streaming reasoning LLM client for the assistant answer."""
-
-    def get(self) -> Any | None:
-        raise NotImplementedError
-
-
-@runtime_checkable
-class RunRecordFactory(Protocol):
-    """Builds the opaque per-answer LLM-run record (telemetry) from raw inputs."""
-
-    def build(self, *, client: Any, prompt: str, response_text: str, started: float) -> Any:
-        raise NotImplementedError
-
-
-@dataclass(frozen=True)
-class AnswerRequest:
-    """Per-turn inputs for the direct-answer (no tools) path.
-
-    Surface-bound ports (session, output, prompts, …) live on the caller;
-    only what varies per turn goes here. Confirm/TTY stay on the action path —
-    the direct answer never prompts or branches on them.
-    """
-
-    tool_observation: str | None = None
-    tool_observation_on_screen: bool = True
-    handoff_contents: tuple[str, ...] = ()
-    # ``Any`` rather than ``TurnPlan``: that type imports ``SessionStore`` from
-    # here, so naming it — even under ``TYPE_CHECKING`` — closes an import cycle
-    # this repo's check rejects.
-    turn_plan: Any = None
-    # Gather answers defer Want-me-to paint until the harness normalizes the
-    # closer (dual paste/integrations menus must not be what the user sees).
-    defer_want_me_to_closer: bool = False
-
-
-class StreamAnswerFn(Protocol):
-    """Bound direct-answer callable (no tools) handed to ``run_turn``."""
-
-    def __call__(self, text: str, request: AnswerRequest) -> Any:
-        """Stream one grounded answer; return the LLM-run record or None."""
-
-
-class EvidenceGatherer(Protocol):
-    """Bound evidence-gather callable handed to ``run_turn``."""
-
-    def __call__(self, text: str, *, turn_plan: Any = None) -> str | None:
-        """Gather read-only evidence for ``text``, or return None."""
 
 
 class ExecuteActions(Protocol):
@@ -295,22 +248,70 @@ class TurnAccounting(Protocol):
         raise NotImplementedError
 
 
+@dataclass(frozen=True, slots=True)
+class TurnBinding:
+    """Everything a host binds on an agent for one turn, stated whole.
+
+    A binding replaces the previous turn's values rather than layering on
+    them, so a host cannot inherit another conversation's hooks or callback
+    by omission. ``session`` and ``output`` are identity ports: ``None`` keeps
+    the agent's current one. Every other field is the turn's value — ``None``
+    means "none this turn" (no approval hooks, no confirmation callback, tty
+    unknown), not "leave alone".
+    """
+
+    session: SessionState | None = None
+    output: OutputSink | None = None
+    accounting: TurnAccounting | None = None
+    tool_hooks: ToolExecutionHooks | None = None
+    console: CancelCapableConsole | None = None
+    confirm_fn: ConfirmFn | None = None
+    is_tty: bool | None = None
+
+
 __all__ = [
-    "AnswerRequest",
-    "StreamAnswerFn",
+    "CancelCapableConsole",
     "ConfirmFn",
     "ConsoleBindable",
     "ErrorReporter",
-    "EvidenceGatherer",
     "ExecuteActions",
+    "GatheredEvidence",
+    "LlmFactory",
+    "LlmProviderPortsFactory",
+    "OutputBindable",
     "OutputSink",
     "PromptContextProvider",
-    "ReasoningClientProvider",
-    "RunRecordFactory",
     "SessionBindable",
-    "SessionStore",
+    "SessionState",
+    "SlashPortsFactory",
+    "SubprocessPresenterFactory",
+    "TaskCancelPortsFactory",
     "ToolEventObserver",
     "ToolProvider",
-    "ToolRegistry",
     "TurnAccounting",
+    "TurnBinding",
 ]
+
+
+# Builds the presenter that streams a subprocess tool's output. The concrete
+# presenter lives in ``tools`` (process helpers), so this seam is how a host
+# hands one to the agent without ``core`` importing ``tools``.
+SubprocessPresenterFactory = Callable[
+    [Any, Any, "ConfirmFn | None", bool | None, bool],
+    Any,
+]
+
+
+# Host capabilities an action tool calls back into: named commands, LLM-provider
+# switching, and task cancellation. Their contracts live in
+# ``tools`` beside the tools that call them (see
+# ``tools.interactive_shell.shared.host_contracts.ExecutionGate``), and naming those
+# Protocols here would mean ``core`` importing ``tools``.
+#
+# The return is ``object``, not ``Any``: ``core`` calls the factory and hands the
+# result to ``ActionToolScope`` without reading a single attribute, and
+# ``object`` is the type that says so. ``Any`` would silence a typo here as
+# readily as it silences the import ``core`` is avoiding.
+LlmProviderPortsFactory = Callable[[], object]
+TaskCancelPortsFactory = Callable[[], object]
+SlashPortsFactory = Callable[[], object]

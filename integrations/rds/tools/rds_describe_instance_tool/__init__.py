@@ -7,8 +7,10 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.domain.types.evidence import record_evidence_entry
+from core.tool import EvidenceType, SideEffectLevel
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.rds import (
     DEFAULT_RDS_REGION,
@@ -17,6 +19,33 @@ from integrations.rds import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _map_describe_rds_instance(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Cite the described RDS instance's status/engine as report evidence."""
+    if not output.get("available"):
+        return
+    status = output.get("status")
+    engine = output.get("engine")
+    engine_version = output.get("engine_version")
+    parts = [
+        part
+        for part in (
+            status,
+            f"{engine} {engine_version}".strip() if engine else None,
+        )
+        if part
+    ]
+    if not parts:
+        return
+    record_evidence_entry(
+        evidence,
+        source="describe_rds_instance",
+        label="RDS Instance",
+        summary=", ".join(parts),
+    )
 
 
 class DescribeRDSInstanceInput(BaseModel):
@@ -66,8 +95,8 @@ class DescribeRDSInstanceOutput(BaseModel):
     ],
     requires=["db_instance_identifier"],
     source_id="aws_rds",
-    evidence_type="deployment_metadata",
-    side_effect_level="read_only",
+    evidence_type=EvidenceType.DEPLOYMENT_METADATA,
+    side_effect_level=SideEffectLevel.READ_ONLY,
     examples=[
         "Describe `prod-orders-db` to confirm if status is `modifying` during an incident.",
         "Check engine version and backup configuration before rollback decisions.",
@@ -78,6 +107,7 @@ class DescribeRDSInstanceOutput(BaseModel):
     injected_params=("aws_backend",),
     is_available=rds_is_available,
     extract_params=rds_extract_params,
+    evidence_mapper=_map_describe_rds_instance,
 )
 def describe_rds_instance(
     db_instance_identifier: str,

@@ -11,10 +11,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.jenkins import jenkins_config_from_env
 from integrations.jenkins.client import JenkinsClient, make_jenkins_client
+from integrations.jenkins.tools._evidence import (
+    map_get_jenkins_build_log,
+    map_get_jenkins_pipeline_stages,
+    map_list_jenkins_builds,
+    map_list_jenkins_jobs,
+    map_list_jenkins_running_builds,
+)
 
 
 def _jenkins_available(sources: dict) -> bool:
@@ -91,7 +99,7 @@ def _list_jenkins_builds_extract_params(sources: dict[str, dict]) -> dict[str, A
         "Correlating a deployment window with downstream errors in logs or metrics",
     ],
     requires=["job_name"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -114,6 +122,7 @@ def _list_jenkins_builds_extract_params(sources: dict[str, dict]) -> dict[str, A
     },
     is_available=_jenkins_available,
     extract_params=_list_jenkins_builds_extract_params,
+    evidence_mapper=map_list_jenkins_builds,
 )
 def list_jenkins_builds(
     job_name: str,
@@ -166,7 +175,7 @@ def _get_jenkins_build_log_extract_params(sources: dict[str, dict]) -> dict[str,
         "Finding the stack trace or failing step that broke a deployment",
     ],
     requires=["job_name", "build_number"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -184,6 +193,7 @@ def _get_jenkins_build_log_extract_params(sources: dict[str, dict]) -> dict[str,
     },
     is_available=_jenkins_available,
     extract_params=_get_jenkins_build_log_extract_params,
+    evidence_mapper=map_get_jenkins_build_log,
 )
 def get_jenkins_build_log(
     job_name: str,
@@ -234,7 +244,7 @@ def _get_jenkins_pipeline_stages_extract_params(sources: dict[str, dict]) -> dic
         "Seeing how long each stage took to spot a slow or stuck stage",
     ],
     requires=["job_name", "build_number"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -252,6 +262,7 @@ def _get_jenkins_pipeline_stages_extract_params(sources: dict[str, dict]) -> dic
     },
     is_available=_jenkins_available,
     extract_params=_get_jenkins_pipeline_stages_extract_params,
+    evidence_mapper=map_get_jenkins_pipeline_stages,
 )
 def get_jenkins_pipeline_stages(
     job_name: str,
@@ -298,7 +309,7 @@ def _list_jenkins_jobs_extract_params(sources: dict[str, dict]) -> dict[str, Any
         "Discovering which jobs exist when the failing job name is unknown",
         "Getting an overview of which pipelines are passing or failing",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -310,6 +321,7 @@ def _list_jenkins_jobs_extract_params(sources: dict[str, dict]) -> dict[str, Any
     outputs={"jobs": "Jobs with name, url, status, and last-build info"},
     is_available=_jenkins_available,
     extract_params=_list_jenkins_jobs_extract_params,
+    evidence_mapper=map_list_jenkins_jobs,
 )
 def list_jenkins_jobs(
     jenkins_url: str | None = None,
@@ -352,7 +364,7 @@ def _list_jenkins_running_builds_extract_params(sources: dict[str, dict]) -> dic
         "Checking whether a build is running right now during an active incident",
         "Spotting a long-running or stuck build that may be causing impact",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -364,6 +376,7 @@ def _list_jenkins_running_builds_extract_params(sources: dict[str, dict]) -> dic
     outputs={"running_builds": "Builds currently in progress with job, number, and url"},
     is_available=_jenkins_available,
     extract_params=_list_jenkins_running_builds_extract_params,
+    evidence_mapper=map_list_jenkins_running_builds,
 )
 def list_jenkins_running_builds(
     jenkins_url: str | None = None,

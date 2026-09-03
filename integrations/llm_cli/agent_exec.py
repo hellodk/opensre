@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from typing import IO
 
-from platform.masking import MaskingContext, MaskingPolicy
+from infrastructure.safety.masking import MaskingPolicy, MaskingRules
 
 _MAX_OUTPUT_CHARS = 8000
 _POLL_INTERVAL_SEC = 0.5
@@ -166,7 +166,12 @@ def _drain(pipe: IO[str] | None, buffer: list[str]) -> None:
 
 
 def poll_agent_process(
-    argv: list[str], *, cwd: str, env: dict[str, str], timeout_sec: float
+    argv: list[str],
+    *,
+    cwd: str,
+    env: dict[str, str],
+    timeout_sec: float,
+    stdin: str | None = None,
 ) -> AgentProcessOutcome:
     """Spawn the agent CLI, drain its pipes, and poll it to completion or *timeout_sec*.
 
@@ -180,6 +185,7 @@ def poll_agent_process(
             argv,
             cwd=cwd,
             env=env,
+            stdin=subprocess.PIPE if stdin is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -199,6 +205,15 @@ def poll_agent_process(
     )
     for reader in readers:
         reader.start()
+
+    # Start drains before writing stdin so a chatty child cannot fill its output
+    # pipes while the parent is blocked feeding a large prompt.
+    stdin_pipe = getattr(proc, "stdin", None)
+    if stdin_pipe is not None and stdin is not None:
+        # Child may exit or close stdin early; nothing more to feed in that case.
+        with contextlib.suppress(OSError, ValueError):
+            stdin_pipe.write(stdin)
+            stdin_pipe.close()
 
     deadline = time.monotonic() + max(timeout_sec, 0.0)
     timed_out = False
@@ -234,7 +249,7 @@ def classify_agent_outcome(
     """Classify a run into success / error from output, exit code, and changes."""
     # Mask free-text fields (the agent may echo env/secrets); the diff is handled by
     # the caller verbatim since masking would corrupt code that must be reviewed.
-    masker = MaskingContext(MaskingPolicy.from_env())
+    masker = MaskingRules(MaskingPolicy.from_env())
     out_text = outcome.stdout.strip()
     err_text = outcome.stderr.strip()
     summary = masker.mask(out_text[:_MAX_OUTPUT_CHARS])

@@ -5,18 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from core.agent_harness.harness import AgentSession
-from core.agent_harness.session.integration_resolution import (
+from core.agent_harness import AgentSession, TurnResult
+from core.agent_harness.spi.integrations import (
     merge_resolved_integrations,
     resolve_and_cache_integrations,
 )
-from core.agent_harness.turns.turn_results import TurnResult
+from infrastructure.harness_providers import configured_integration_services
+from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from integrations.sentry.project_scope import (
     apply_sentry_project_scope,
     payload_project_slug,
 )
-from platform.harness_ports import configured_integration_services
-from platform.scheduler.agent_runner import AgentPayload
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,6 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
         message,
         prepare_session=lambda session: _apply_digest_project_scope(session, payload),
         logger=logger,
-        gather_enabled=True,
         is_tty=False,
     )
 

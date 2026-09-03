@@ -22,14 +22,15 @@ from kubernetes import config as k8s_config
 from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 
+from infrastructure.observability.errors.service import capture_service_error
 from integrations.config_models import KubernetesIntegrationConfig
 from integrations.probes import ProbeResult
-from platform.observability.errors.service import capture_service_error
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TAIL_LINES = 100
 _DEFAULT_LIMIT = 50
+
 
 # Resource types that carry env vars and require value redaction before returning to the LLM.
 _WORKLOAD_TYPES: frozenset[str] = frozenset(
@@ -278,7 +279,17 @@ class KubernetesClient:
             kwargs: dict[str, Any] = {"tail_lines": tail_lines}
             if container:
                 kwargs["container"] = container
-            logs = core_v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, **kwargs)
+            # kubernetes-client's generated deserializer declares this endpoint's
+            # response type as ``str``, but a plain-text log body is never valid
+            # JSON, so its fallback path calls ``str()`` directly on the raw response
+            # bytes instead of decoding them -- producing the literal text
+            # "b'...'" rather than the actual log content (confirmed against
+            # kubernetes-client 36.0.3). ``_preload_content=False`` returns the raw
+            # urllib3 response so we can decode it correctly ourselves.
+            raw = core_v1.read_namespaced_pod_log(
+                name=pod_name, namespace=namespace, _preload_content=False, **kwargs
+            )
+            logs = raw.data.decode("utf-8", errors="replace")
             lines = logs.splitlines() if logs else []
             return {
                 "success": True,
@@ -409,6 +420,8 @@ class KubernetesClient:
                 return {
                     "name": c.name,
                     "image": c.image,
+                    "command": list(c.command) if c.command else [],
+                    "args": list(c.args) if c.args else [],
                     "ports": [
                         {"container_port": p.container_port, "protocol": p.protocol}
                         for p in (c.ports or [])

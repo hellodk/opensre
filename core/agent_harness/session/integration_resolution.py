@@ -6,7 +6,7 @@ names, the resolved-config cache, repository scopes, background warm tasks, and
 
 ``SessionCore`` composes :class:`IntegrationState` as ``session.integrations`` and
 re-exposes public fields via properties for API stability. Port-level fetch/classify
-logic lives in :mod:`platform.harness_ports` (wired at startup from
+logic lives in :mod:`infrastructure.harness_providers` (wired at startup from
 ``integrations/harness_adapters``).
 """
 
@@ -16,13 +16,13 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from platform.harness_ports import (
+from infrastructure.harness_providers import (
     IntegrationResolutionResult,
     resolve_integrations,
 )
 
 if TYPE_CHECKING:
-    from core.agent_harness.ports import SessionStore
+    from core.agent_harness.ports import SessionState
 
 __all__ = [
     "IntegrationResolutionResult",
@@ -81,7 +81,7 @@ def _has_usable_cache(cache: dict[str, Any] | None) -> bool:
     return has_resolved_integrations(cache) or not has_only_underscore_prefixed_keys(cache)
 
 
-def resolve_and_cache_integrations(session: SessionStore) -> dict[str, Any]:
+def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
     """Resolve a session's integration configs, using and updating its cache."""
     cached = session.resolved_integrations_cache
     if _has_usable_cache(cached):
@@ -110,12 +110,19 @@ class IntegrationState:
     """Resolved integration configs (env/store) shared across turns.
 
     Populated silently at REPL boot and again after integration mutations so the
-    conversational assistant and investigations can call registered tools without
+    conversational assistant can call registered tools without
     waiting for the first user message to trigger a visible "Loading integrations"
     pass. Cleared by :meth:`refresh` when integrations change."""
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    """Sticky per-vendor repo scopes (owner/repo, project/ref/file, …) keyed by
-    vendor name, inferred from chat, env, or git remote for VCS tools."""
+    """Active per-vendor repo scopes used for unqualified VCS tool calls."""
+    active_vcs_repositories: dict[str, str] = field(default_factory=dict)
+    """Stable repository identity for each active per-vendor scope."""
+    known_vcs_repo_scopes: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
+    """All repository scopes encountered this session, keyed by vendor and repo.
+
+    Switching the active scope updates :attr:`vcs_repo_scopes` without
+    discarding scopes for repositories used earlier in the session.
+    """
 
     _warm_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
     _warm_generation: int = field(default=0, repr=False, compare=False)
@@ -130,7 +137,7 @@ class IntegrationState:
         secrets; full configs are resolved on demand via :meth:`warm`/:meth:`get`.
         """
         try:
-            from platform.harness_ports import configured_integration_services
+            from infrastructure.harness_providers import configured_integration_services
 
             self.configured = tuple(sorted(configured_integration_services()))
             self.configured_known = True
@@ -205,5 +212,7 @@ class IntegrationState:
             if drop_cache:
                 self.resolved_cache = None
                 self.vcs_repo_scopes = {}
+                self.active_vcs_repositories = {}
+                self.known_vcs_repo_scopes = {}
         if pending is not None and not pending.done():
             pending.cancel()

@@ -21,7 +21,7 @@ class ThemeParamType(click.ParamType):
     name = "theme"
 
     def _choices(self) -> tuple[str, ...]:
-        from platform.terminal.theme import list_theme_names
+        from infrastructure.terminal.theme import list_theme_names
 
         return list_theme_names()
 
@@ -125,6 +125,6 @@ class LazyRichGroup(click.Group):
 
     def format_help(self, ctx: click.Context, _formatter: click.HelpFormatter) -> None:
         assert isinstance(ctx.command, click.Group)
-        from surfaces.interactive_shell.ui.layout import render_help
+        from surfaces.cli.layout import render_help
 
         render_help(ctx.command)

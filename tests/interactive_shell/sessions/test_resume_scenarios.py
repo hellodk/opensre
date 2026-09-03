@@ -12,17 +12,17 @@ import pytest
 from pydantic import ValidationError
 from rich.console import Console
 
-from config.config import (
+from config.llm_auth.credentials import status as credential_status
+from config.llm_settings import (
     get_configured_llm_provider,
     get_llm_provider_api_key_env,
     resolve_llm_settings_verbose,
 )
-from config.llm_auth.credentials import status as credential_status
-from core.agent_harness.session import JsonlSessionStorage
+from core.agent_harness.session import JsonlSessionStore
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.session import Session
 
-SessionStore = JsonlSessionStorage()
+SessionState = JsonlSessionStore()
 
 
 def _capture() -> tuple[Console, io.StringIO]:
@@ -127,7 +127,7 @@ def _write_finalized_session(
 
 @pytest.fixture
 def isolated_sessions(tmp_path: Path) -> Path:
-    """Sessions directory with SessionStore patched for the test."""
+    """Sessions directory with SessionState patched for the test."""
     directory = tmp_path / "sessions"
     directory.mkdir()
     with (
@@ -138,7 +138,7 @@ def isolated_sessions(tmp_path: Path) -> Path:
 
 
 def _open_current(session: Session) -> None:
-    SessionStore.open_session(session)
+    SessionState.open_session(session)
 
 
 def _require_live_llm_for_repl_planner() -> None:
@@ -510,10 +510,6 @@ class TestResumeLiveRepl:
         _write_finalized_session(sessions_dir, target_id, chat_text="live redis investigation")
 
         with ReplDriver(home=home, startup_wait=10.0) as repl:
-            if repl.contains("Press Enter to continue"):
-                repl.send("", wait=3.0)
-                repl.reset_output()
-
             repl.send("/sessions", wait=1.0)
             assert repl.wait_until_contains("live9999", "live redis", timeout=60.0)
 

@@ -12,9 +12,9 @@ from typing import Any
 import pytest
 
 from core.agent_harness.session import SessionCore
-from core.agent_harness.session.persistence.memory import InMemorySessionStorage
-from gateway.core.runtime.active_turns import ActiveTurnCancels
-from gateway.core.runtime.approvals import ApprovalBroker
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from gateway.core.middleware.active_turns import ActiveTurnRegistry
+from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.transports.telegram.inbound_handler import handle_polled_inbound_telegram_message
 from gateway.transports.telegram.inbound_security import InboundDecision
 from gateway.transports.telegram.settings import GatewaySettings, TelegramInboundMessage
@@ -87,7 +87,7 @@ def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
     """Soft timeout finalizes UX and sets sink.turn_cancel for cooperative stop."""
     client = _FakeClient()
     release = threading.Event()
-    session = SessionCore(storage=InMemorySessionStorage())
+    session = SessionCore(store=InMemorySessionStore())
     seen_cancel: list[threading.Event] = []
 
     def hanging_handler(
@@ -119,7 +119,7 @@ def test_turn_timeout_finalizes_placeholder_when_handler_hangs() -> None:
                 chat_locks={},
                 turn_semaphore=asyncio.Semaphore(1),
                 approvals=ApprovalBroker(),
-                active_cancels=ActiveTurnCancels(),
+                active_cancels=ActiveTurnRegistry(),
                 handle_callback_to_gateway_agent=hanging_handler,
             )
         finally:

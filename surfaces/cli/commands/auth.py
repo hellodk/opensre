@@ -13,20 +13,19 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from platform.terminal.prompt_support import (
+from infrastructure.terminal.prompt_support import (
     QUESTIONARY_QMARK,
     questionary_prompt_style,
 )
-from platform.terminal.theme import BOLD_BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
-from surfaces.cli.llm_auth.providers import (
+from infrastructure.terminal.theme import BOLD_BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
+from surfaces.shared.llm_setup.auth_profiles import (
     ProviderAuthProfile,
     iter_auth_profiles,
     resolve_auth_profile,
 )
-from surfaces.cli.llm_auth.service import (
+from surfaces.shared.llm_setup.auth_service import (
     AuthSetupError,
     configure_api_key_provider,
-    configure_cli_subscription_provider,
     logout_provider,
     provider_status,
     verify_provider,
@@ -50,25 +49,37 @@ def _provider_choice(profile: ProviderAuthProfile) -> questionary.Choice:
     return questionary.Choice(f"{profile.name} ({profile.label})", value=profile.name)
 
 
+def _configured_profile_name() -> str | None:
+    """The auth-profile name matching the install's active LLM provider, if any."""
+    from config.llm_settings import get_configured_llm_provider
+
+    configured = get_configured_llm_provider()
+    for profile in iter_auth_profiles():
+        if configured == profile.provider_value or configured in profile.all_names:
+            return profile.name
+    return None
+
+
 def _prompt_provider() -> ProviderAuthProfile:
     choices: list[questionary.Choice | questionary.Separator] = [
         questionary.Separator(" "),
-        questionary.Separator("Subscription logins"),
+        questionary.Separator("API-key providers"),
     ]
-    choices.extend(
-        _provider_choice(profile)
-        for profile in iter_auth_profiles()
-        if profile.kind == "cli_subscription"
-    )
-    choices.append(questionary.Separator(" "))
-    choices.append(questionary.Separator("API-key providers"))
-    choices.extend(
-        _provider_choice(profile) for profile in iter_auth_profiles() if profile.kind == "api_key"
-    )
+    choices.extend(_provider_choice(profile) for profile in iter_auth_profiles())
 
+    configured = _configured_profile_name()
+    default = next(
+        (
+            choice
+            for choice in choices
+            if isinstance(choice, questionary.Choice) and choice.value == configured
+        ),
+        None,
+    )
     provider = questionary.select(
         "Choose a provider:",
         choices=choices,
+        default=default,
         qmark=QUESTIONARY_QMARK,
         style=questionary_prompt_style(),
         instruction="(use arrow keys)",
@@ -88,7 +99,7 @@ def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> No
         webbrowser.open(profile.setup_url)
 
 
-# Mirrors render_health_report's table style (surfaces/interactive_shell/ui/health) so
+# Mirrors render_health_report's table style (surfaces/shared/terminal/health) so
 # /auth and /health read consistently. Real ANSI colour is intentional: run_cli_command
 # captures this command's stdout with FORCE_COLOR=1 and Text.from_ansi() re-parses it
 # for the REPL, so force_terminal=True here is what makes that styling survive.
@@ -148,12 +159,6 @@ def auth_command(ctx: click.Context) -> None:
     show_default=True,
     help="Offer to open the provider setup page for API-key flows.",
 )
-@click.option(
-    "--launch-login/--no-launch-login",
-    default=True,
-    show_default=True,
-    help="Launch the vendor CLI login command for subscription flows when needed.",
-)
 def auth_login(
     provider: str | None,
     api_key: str | None,
@@ -161,36 +166,26 @@ def auth_login(
     set_provider: bool,
     validate: bool,
     open_browser: bool,
-    launch_login: bool,
 ) -> None:
     """Configure one LLM provider auth path."""
     profile = _resolve_or_raise(provider) if provider else _prompt_provider()
     try:
-        if profile.kind == "api_key":
-            _maybe_open_setup_page(profile, enabled=open_browser)
-            resolved_key = api_key
-            if resolved_key is None:
-                resolved_key = click.prompt(
-                    f"{profile.label} key",
-                    hide_input=True,
-                    confirmation_prompt=False,
-                    type=str,
-                )
-            result = configure_api_key_provider(
-                profile=profile,
-                api_key=resolved_key,
-                model=model,
-                set_provider=set_provider,
-                validate=validate,
+        _maybe_open_setup_page(profile, enabled=open_browser)
+        resolved_key = api_key
+        if resolved_key is None:
+            resolved_key = click.prompt(
+                f"{profile.label} key",
+                hide_input=True,
+                confirmation_prompt=False,
+                type=str,
             )
-        else:
-            _maybe_open_setup_page(profile, enabled=open_browser)
-            result = configure_cli_subscription_provider(
-                profile=profile,
-                model=model,
-                set_provider=set_provider,
-                launch_login=launch_login,
-            )
+        result = configure_api_key_provider(
+            profile=profile,
+            api_key=resolved_key,
+            model=model,
+            set_provider=set_provider,
+            validate=validate,
+        )
     except AuthSetupError as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -233,16 +228,11 @@ def auth_verify(provider: str) -> None:
 
 @auth_command.command(name="logout")
 @click.argument("provider")
-@click.option(
-    "--vendor",
-    is_flag=True,
-    help="Also run the vendor CLI logout command for subscription providers.",
-)
-def auth_logout(provider: str, vendor: bool) -> None:
+def auth_logout(provider: str) -> None:
     """Clear OpenSRE-managed auth for a provider."""
     _resolve_or_raise(provider)
     try:
-        detail = logout_provider(provider, vendor=vendor)
+        detail = logout_provider(provider)
     except AuthSetupError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(detail)

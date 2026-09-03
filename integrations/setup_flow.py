@@ -21,7 +21,7 @@ Before this module each surface reimplemented step 4, and they disagreed: the
 wizard wrote all three tiers while ``integrations setup`` wrote only the store.
 Runtime resolution hides that (it checks the store first), but anything reading
 the environment — notably the deploy preflight in
-``platform/deployment/ecr_deploy/prep.py`` — sees a half-configured integration.
+``infrastructure/deployment/ecr_deploy/prep.py`` — sees a half-configured integration.
 
 Callers now describe *what* the integration needs with an
 :class:`IntegrationSetupSpec` and hand collected values to :func:`apply_setup`;
@@ -86,6 +86,15 @@ class SetupMode:
     integration's always-on fields — Alertmanager's "None (unauthenticated)".
     """
 
+    required_fields: tuple[str, ...] = ()
+    """Subset of :attr:`fields` that must be non-empty when this mode is chosen.
+
+    A mode-gated field is declared ``required=False`` on the spec because it is
+    unset under every *other* mode; this is where "required within this mode"
+    lives, so a blank answer is refused at the prompt instead of surfacing later
+    as a config-model validation error.
+    """
+
 
 @dataclass(frozen=True)
 class SetupField:
@@ -133,8 +142,16 @@ class SetupField:
 
     When set, collection surfaces skip this field and :func:`apply_setup`
     ignores any submitted value under *name*. Use for transport modes and
-    other values the user must not choose — OpenClaw's ``stdio`` mode, for
-    example, whose config-model default is ``streamable-http``.
+    other values the user must not choose.
+    """
+
+    validate: Callable[[str], str | None] | None = None
+    """Shape check applied to a non-empty answer at the prompt.
+
+    Returns an error message to show (the surface re-asks) or ``None`` when
+    the value is acceptable. For the checks the config model would only reject
+    later with a stack of validation errors — a role *ID* pasted where a role
+    *ARN* belongs.
     """
 
     @property
@@ -199,6 +216,13 @@ class IntegrationSetupSpec:
     than rolling back the save.
     """
 
+    def is_required(self, field: SetupField, mode: str | None) -> bool:
+        """Whether *field* must be non-empty: spec-required, or required by *mode*."""
+        if field.required:
+            return True
+        chosen = next((one for one in self.modes if one.value == mode), None)
+        return chosen is not None and field.name in chosen.required_fields
+
     def collectable_fields(self, mode: str | None) -> tuple[SetupField, ...]:
         """Fields a collection surface should prompt for under *mode*.
 
@@ -242,7 +266,7 @@ def _collect_credentials(
     credentials: dict[str, str | None] = {}
     for field in spec.fields:
         if field.is_constant:
-            # Keep "" as "" — OpenClaw's empty url/auth_token are intentional.
+            # Keep "" as "" for optional constant fields.
             credentials[field.name] = field.constant
             continue
         value = (values.get(field.name) or "").strip() or field.default
@@ -267,11 +291,10 @@ def _verify(spec: IntegrationSetupSpec, credentials: dict[str, str | None]) -> t
 
 
 def _persist_env(spec: IntegrationSetupSpec, credentials: dict[str, str | None]) -> Path:
-    """Mirror env-backed fields into the keyring / ``.env`` and return the ``.env`` path.
+    """Mirror env-backed fields into the credentials file / ``.env`` and return the ``.env`` path.
 
-    ``.env`` is rewritten even when no field targets it: the rewrite also strips
-    any stale secret assignments left by an older setup (see
-    :func:`config.env_file.sync_env_values`).
+    ``.env`` is rewritten even when no field targets it so public keys stay in
+    sync. Existing secret assignments are left in place.
 
     Raises whatever the writers raise — notably ``PermissionError`` from
     :func:`config.env_file.write_env_lines` on an unwritable ``.env``.

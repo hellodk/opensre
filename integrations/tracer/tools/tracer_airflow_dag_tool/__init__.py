@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
 from integrations.airflow.config import (
     AirflowConfig,
     build_airflow_config,
@@ -18,6 +19,11 @@ from integrations.airflow.config import (
 )
 from integrations.airflow.config import (
     get_recent_airflow_failures as fetch_recent_airflow_failures,
+)
+from integrations.tracer.tools.tracer_airflow_dag_tool._evidence import (
+    map_get_airflow_dag_runs,
+    map_get_airflow_task_instances,
+    map_get_recent_airflow_failures,
 )
 
 
@@ -51,7 +57,7 @@ def _airflow_dag_id(sources: dict[str, Any]) -> str:
         "Finding failed or retrying task instances",
         "Grounding RCA in Airflow DAG/task evidence",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     requires=["dag_id"],
     input_schema={
         "type": "object",
@@ -66,6 +72,7 @@ def _airflow_dag_id(sources: dict[str, Any]) -> str:
         "config": _airflow_config(sources),
         "dag_id": _airflow_dag_id(sources),
     },
+    evidence_mapper=map_get_recent_airflow_failures,
 )
 def get_recent_airflow_failures(
     config: AirflowConfig,
@@ -97,7 +104,7 @@ def get_recent_airflow_failures(
         "Finding failed DAG runs",
         "Validating Airflow orchestration state",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     requires=["dag_id"],
     input_schema={
         "type": "object",
@@ -113,6 +120,7 @@ def get_recent_airflow_failures(
         "config": _airflow_config(sources),
         "dag_id": _airflow_dag_id(sources),
     },
+    evidence_mapper=map_get_airflow_dag_runs,
 )
 def get_airflow_dag_runs(
     config: AirflowConfig,
@@ -146,7 +154,7 @@ def get_airflow_dag_runs(
         "Finding task-level failure evidence",
         "Grounding RCA in Airflow task state",
     ],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     requires=["dag_id", "dag_run_id"],
     input_schema={
         "type": "object",
@@ -161,6 +169,7 @@ def get_airflow_dag_runs(
         "config": _airflow_config(sources),
         "dag_id": _airflow_dag_id(sources),
     },
+    evidence_mapper=map_get_airflow_task_instances,
 )
 def get_airflow_task_instances(
     config: AirflowConfig,

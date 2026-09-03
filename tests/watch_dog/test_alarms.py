@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 
+from infrastructure.errors import OpenSREError
 from integrations.telegram.alarms import AlarmDispatcher
 from integrations.telegram.credentials import (
     TelegramCredentials,
     load_credentials_from_env,
 )
-from platform.common.errors import OpenSREError
 
 
 def _stub_telegram(
@@ -177,7 +177,7 @@ def test_load_credentials_whitespace_override_falls_back_to_env(
 
 
 def test_load_credentials_from_store_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Guided setup (`opensre integrations setup telegram` / `onboard`) saves the
+    # Guided setup (`opensre integrations setup telegram`) saves the
     # token to the store, not the environment. The watchdog must find it there.
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_DEFAULT_CHAT_ID", raising=False)

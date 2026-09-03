@@ -1,4 +1,4 @@
-"""OpenSRE CLI - open-source SRE agent for automated incident investigation.
+"""OpenSRE CLI - open-source SRE agent.
 
 Enable shell tab-completion (add to your shell profile for persistence):
 
@@ -14,23 +14,20 @@ import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from config.platform_bootstrap import ensure_project_platform_package
+import click
 
-ensure_project_platform_package()
-
-import click  # noqa: E402
-
-from config.constants.product import RELEASE_STAGE_BANNER  # noqa: E402
-from config.version import get_opensre_version  # noqa: E402
-from surfaces.cli import startup  # noqa: E402
-from surfaces.cli.group import LazyRichGroup, ThemeParamType  # noqa: E402
-from surfaces.cli.invocation import (  # noqa: E402
+from config.constants.product import RELEASE_STAGE_BANNER
+from config.version import get_opensre_version
+from surfaces.cli import startup
+from surfaces.cli.group import LazyRichGroup, ThemeParamType
+from surfaces.cli.host import CLI_HOST_CONTEXT_KEY, CliHost, ShellLauncher, cli_host
+from surfaces.cli.invocation import (
     ensure_utf8_stdio,
     is_fast_version_invocation,
     print_fast_version,
     resolve_command_parts,
 )
-from surfaces.cli.telemetry import (  # noqa: E402
+from surfaces.cli.telemetry import (
     analytics_needs_flush,
     build_cli_invoked_properties,
     capture_cli_invoked,
@@ -45,11 +42,11 @@ from surfaces.cli.telemetry import (  # noqa: E402
 )
 
 if TYPE_CHECKING:
-    from platform.analytics.provider import Properties
+    from infrastructure.analytics.provider import Properties
 
-# One-shot CLI exit: a queued or in-flight event (e.g. ``investigation_completed``)
-# dies with the process because the sender runs on a daemon thread, so wait briefly
-# for the POST to land before returning.
+# One-shot CLI exit: a queued or in-flight analytics event dies with the
+# process because the sender runs on a daemon thread, so wait briefly for the
+# POST to land before returning.
 _ANALYTICS_FLUSH_TIMEOUT_SECONDS = 2.0
 
 _CAPTURE_CLI_ANALYTICS = "capture_cli_analytics"
@@ -107,7 +104,9 @@ def _repl_preference(
 def _run_without_subcommand(
     group: click.Group,
     *,
+    launch_shell: ShellLauncher | None,
     resume_session_id: str | None,
+    sync_on_exit: bool,
     interactive: bool,
     passed_on_command_line: bool,
     layout: str | None,
@@ -115,16 +114,15 @@ def _run_without_subcommand(
 ) -> int:
     """Serve a bare ``opensre``: open the shell, or print the landing page.
 
-    The shell needs a terminal on both ends, so a piped or redirected run falls
-    through to the landing page rather than waiting on a prompt nobody can
-    answer. ``--resume`` opens a session even when config has the shell off,
-    because resuming is the whole intent of that flag.
+    The shell needs a terminal on both ends and a host that can launch it, so a
+    piped or redirected run — or a CLI invoked without a host — falls through
+    to the landing page rather than waiting on a prompt nobody can answer.
+    ``--resume`` opens a session even when config has the shell off, because
+    resuming is the whole intent of that flag.
     """
     from config.repl_config import ReplConfig
 
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        from surfaces.interactive_shell import run_repl
-
+    if launch_shell is not None and sys.stdin.isatty() and sys.stdout.isatty():
         config = ReplConfig.load(
             cli_enabled=_repl_preference(
                 resume_session_id=resume_session_id,
@@ -135,7 +133,12 @@ def _run_without_subcommand(
             cli_theme=theme,
         )
         if config.enabled or resume_session_id:
-            return run_repl(config=config, resume_session_id=resume_session_id)
+            exit_code = launch_shell(config, resume_session_id)
+            if sync_on_exit:
+                from surfaces.cli.commands.remote_sync import run_remote_sync_on_exit
+
+                run_remote_sync_on_exit()
+            return exit_code
 
     click.echo(RELEASE_STAGE_BANNER, err=True)
     render_landing(group)
@@ -167,6 +170,11 @@ def _run_without_subcommand(
     help="Resume a previous interactive shell session by ID, prefix, or name substring.",
 )
 @click.option(
+    "--sync-on-exit",
+    is_flag=True,
+    help="Sync sessions and memory after the interactive shell exits.",
+)
+@click.option(
     "--layout",
     type=click.Choice(["classic", "pinned"]),
     default=None,
@@ -189,10 +197,11 @@ def cli(
     yes: bool,
     interactive: bool,
     resume_session_id: str | None,
+    sync_on_exit: bool,
     layout: str | None,
     theme: str | None,
 ) -> None:
-    """OpenSRE - open-source SRE agent for automated incident investigation and root cause analysis."""
+    """OpenSRE - open-source SRE agent."""
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_output
     ctx.obj["verbose"] = verbose
@@ -216,7 +225,9 @@ def cli(
         raise SystemExit(
             _run_without_subcommand(
                 cli,
+                launch_shell=cli_host(ctx).launch_shell,
                 resume_session_id=resume_session_id,
+                sync_on_exit=sync_on_exit,
                 interactive=interactive,
                 passed_on_command_line=(
                     interactive_source is not None and interactive_source.name == "COMMANDLINE"
@@ -227,7 +238,9 @@ def cli(
         )
 
     # Apply interactive.theme / OPENSRE_THEME / --theme for subcommands (onboard, etc.).
-    ReplConfig.load(cli_theme=theme)
+    from infrastructure.terminal.theme import set_active_theme
+
+    set_active_theme(ReplConfig.load(cli_theme=theme).theme)
 
 
 def _should_capture_cli_exception(exc: click.ClickException) -> bool:
@@ -235,8 +248,8 @@ def _should_capture_cli_exception(exc: click.ClickException) -> bool:
     return should_report_exception(exc)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for the ``opensre`` console script."""
+def main(argv: list[str] | None = None, *, host: CliHost | None = None) -> int:
+    """Run the CLI; ``host`` supplies what only the process entrypoint can (shell, gateway)."""
     ensure_utf8_stdio()
     cli_argv = list(sys.argv[1:] if argv is None else argv)
     if is_fast_version_invocation(cli_argv):
@@ -250,7 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         cli(
             args=cli_argv,
             standalone_mode=False,
-            obj={_CAPTURE_CLI_ANALYTICS: True, _CLI_ARGV: cli_argv},
+            obj={
+                _CAPTURE_CLI_ANALYTICS: True,
+                _CLI_ARGV: cli_argv,
+                CLI_HOST_CONTEXT_KEY: host or CliHost(),
+            },
         )
     except KeyboardInterrupt:
         # A KeyboardInterrupt that escapes cli() was not handled by our

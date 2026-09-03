@@ -32,7 +32,7 @@ Without Make (equivalent to `make install`):
 
 ```bash
 uv sync --frozen --extra dev
-uv run python -m platform.analytics.install
+uv run python -m infrastructure.analytics.install
 ```
 
 4. Verify:
@@ -92,18 +92,15 @@ Run equivalents from the repo root (same shell where `uv` is on `PATH`). Prefer 
 
 ```bash
 uv sync --frozen --extra dev
-uv run python -m platform.analytics.install
+uv run python -m infrastructure.analytics.install
 
-uv run ruff check config core gateway integrations platform surfaces tools tests/
-uv run ruff format --check config core gateway integrations platform surfaces tools tests/
-uv run mypy config core gateway integrations platform surfaces tools
+uv run ruff check config core gateway integrations infrastructure surfaces tools tests/
+uv run ruff format --check config core gateway integrations infrastructure surfaces tools tests/
+uv run mypy config core gateway integrations infrastructure surfaces tools
 
 uv run pytest -n auto -v \
   --cov=config --cov=core --cov=gateway --cov=integrations \
-  --cov=platform --cov=surfaces --cov=tools --cov-report=term-missing \
-  --ignore=tests/e2e/kubernetes_local_alert_simulation \
-  --ignore=tests/synthetic \
-  -m "not synthetic"
+  --cov=infrastructure --cov=surfaces --cov=tools --cov-report=term-missing
 ```
 
 ---
@@ -138,6 +135,20 @@ uv run pytest -n auto -v \
 - Use **`uv run`** from the repo root.
 - Re-run **`uv sync --frozen --extra dev`**.
 
+### Boot capability warnings (`curl`, `shell`, `network`, `python` gaps)
+
+Boot logs non-fatal warnings when a `PATH` tool is missing or a sandbox probe fails. Sandbox lines look like `<capability> is unavailable in this environment (probe returned unavailable) — the agent will not be able to use it.` The two network rows are **expected** on a normal machine.
+
+| Boot warning | Cause | Impact | What to do |
+| :--- | :--- | :--- | :--- |
+| **`curl is not on PATH`** | `curl` is not on `PATH`. | The agent is told not to shell out to `curl`. | **macOS:** `brew install curl`<br />**Linux:** `sudo apt-get install -y curl`<br />**Windows:** `winget install cURL.cURL` |
+| **`no interactive shell (bash/sh) on PATH`** | Neither `bash` nor `sh` is on `PATH`. | The agent is told it cannot run shell commands. | **Linux:** `sudo apt-get install -y bash`<br />**macOS:** keep `/bin` on `PATH`.<br />**Windows:** Git Bash (`winget install Git.Git`) or WSL. |
+| **`network egress is blocked for sandboxed code by default`** | Default sandbox policy blocks outbound sockets. | Sandboxed Python cannot open raw sockets. | Expected. Ignore it. Use configured integrations for outbound HTTP. Do **not** set `OPENSRE_ALLOW_NETWORK=1` — that only hides the warning. |
+| **`network requests is unavailable in this environment`** | The sandbox network probe uses the same default block. | Same as the previous row. | Expected. Same as the previous row. |
+| **`python execution is unavailable in this environment`** | The sandbox could not run a short Python snippet, often because the OpenSRE temp dir is not writable. That dir is `opensre` under Python's process temp (`tempfile.gettempdir()`), which may be `$TMPDIR`, `%TEMP%`, `%TMP%`, or `/tmp` — not a fixed path. | The agent is told it cannot run sandboxed Python. | Create the directory the process actually uses (it prints the path): `uv run python -c "from pathlib import Path; import tempfile; p = Path(tempfile.gettempdir()) / 'opensre'; p.mkdir(parents=True, exist_ok=True); p.chmod(0o700); print(p)"`<br />Then `make install` (or `uv sync --frozen --extra dev`). |
+| **`shell commands is unavailable in this environment`** | No `bash`/`sh` on `PATH` (same check as the shell row). | The agent is told it cannot run shell commands. | Same install steps as **`no interactive shell (bash/sh) on PATH`**. |
+| **`file reading is unavailable in this environment`** | The process cannot list the current working directory. | The agent is told it cannot read local files. | Run from a readable checkout (`ls .` should succeed). |
+
 ### `opensre` does not pick up local code edits
 
 `make install` installs this repo in **editable** mode into `.venv`, but another **`opensre`** may appear earlier on **`PATH`** (installer binary, version manager, `~/.local/bin`, etc.).
@@ -156,58 +167,3 @@ make lint && make format-check && make typecheck && make test-cov
 If those pass, you are ready to develop. Contribution flow: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Deeper contributor topics (benchmark, deployment, telemetry detail): **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 ---
-
-## Connecting OpenClaw
-
-OpenSRE no longer exposes a separate `opensre-mcp` server. Instead, OpenSRE connects to the OpenClaw bridge directly to read recent conversation context and write RCA findings back into OpenClaw.
-
-### 1. Configure observability
-
-Run the full wizard once (**recommended**):
-
-```bash
-uv run opensre onboard
-```
-
-To add or reconfigure a **single** integration non-interactively:
-
-```bash
-uv run opensre integrations setup <service>
-```
-
-### 2. Configure the OpenClaw bridge
-
-Use the wizard or the direct setup flow:
-
-```bash
-uv run opensre integrations setup openclaw
-uv run opensre integrations verify openclaw
-```
-
-Recommended local settings:
-
-```bash
-OPENCLAW_MCP_MODE=stdio
-OPENCLAW_MCP_COMMAND=openclaw
-OPENCLAW_MCP_ARGS="mcp serve"
-```
-
-### 3. Run a test
-
-```bash
-uv run opensre investigate -i tests/fixtures/openclaw_test_alert.json
-```
-
-### 4. Optional: OpenSRE calls OpenClaw during RCA
-
-```bash
-export OPENCLAW_MCP_MODE=stdio
-export OPENCLAW_MCP_COMMAND=openclaw
-export OPENCLAW_MCP_ARGS="mcp serve"
-```
-
-Keep the OpenClaw gateway running while you investigate, then verify:
-
-```bash
-opensre integrations verify openclaw
-```

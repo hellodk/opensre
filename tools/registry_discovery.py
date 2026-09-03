@@ -16,8 +16,7 @@ import pkgutil
 from dataclasses import replace
 from types import ModuleType
 
-from core.tool_framework.base import BaseTool
-from core.tool_framework.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
+from core.tool import REGISTERED_TOOL_ATTR, BaseTool, RegisteredTool
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.grafana.tools",
     "integrations.groundcover.tools",
     "integrations.helm.tools",
-    "integrations.hermes.tools",
     "integrations.honeycomb.tools",
     "integrations.incident_io.tools",
     "integrations.jenkins.tools",
@@ -63,7 +61,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.mongodb.tools",
     "integrations.mongodb_atlas.tools",
     "integrations.mysql.tools",
-    "integrations.openclaw.tools",
+    "integrations.new_relic.tools",
     "integrations.openobserve.tools",
     "integrations.opensearch.tools",
     "integrations.opsgenie.tools",
@@ -94,11 +92,11 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.vercel.tools",
     "integrations.victoria_logs.tools",
     "integrations.x_mcp.tools",
+    "integrations.yandex_cloud.tools",
 )
 
 _SKIP_MODULE_NAMES = {
     "__pycache__",
-    "investigation_registry",
     "registry",
 }
 _TOOL_MODULES_ATTR = "TOOL_MODULES"

@@ -5,9 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - "docs/**"
-      - "tests/benchmarks/cloudopsbench/infra/**"
-      - "platform/cloudflare_install_proxy/**"
-      - "tests/e2e/kubernetes/helm/scripts/**"
+      - "infrastructure/deployment/cloudflare_install_proxy/**"
       - "tests/**"
       - "**/*.md"
       - "**/*.mdx"
@@ -30,9 +28,8 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
-  models: read
 
 concurrency:
   group: release-${{ github.event_name == 'push' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
@@ -82,7 +79,13 @@ jobs:
             month="$(date -u +%-m)"
             day="$(date -u +%-d)"
             short_sha="${GITHUB_SHA:0:7}"
-            main_version="0.1.${year}.${month}.${day}+main.${short_sha}"
+            raw_version="0.1.${year}.${month}.${day}+main.${short_sha}"
+            # Hatchling/importlib report the PEP 440 canonical form: an all-digit
+            # SHA segment like 0273802 becomes 273802. Match that here so the
+            # binary smoke test and release notes agree with --version.
+            main_version="$(
+              python3 -c 'from infrastructure.deployment.packaging.sync_release_version import canonical_release_version; import sys; print(canonical_release_version(sys.argv[1]))' "$raw_version"
+            )"
 
             echo "channel=main" >> "$GITHUB_OUTPUT"
             echo "tag_name=main-build" >> "$GITHUB_OUTPUT"
@@ -114,8 +117,9 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "latest-known"  # avoid live ndjson "latest" fetch flakes
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
@@ -149,8 +153,9 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "latest-known"  # avoid live ndjson "latest" fetch flakes
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
@@ -163,7 +168,7 @@ jobs:
 
       - name: Sync release version
         shell: bash
-        run: python platform/packaging/sync_release_version.py --tag "$TAG_NAME"
+        run: python infrastructure/deployment/packaging/sync_release_version.py --tag "$TAG_NAME"
 
       - name: Build Python distributions
         run: |
@@ -178,6 +183,8 @@ jobs:
           VERSION="${TAG_NAME#v}"
           test -f "dist/opensre-${VERSION}.tar.gz"
           test -f "dist/opensre-${VERSION}-py3-none-any.whl"
+          uv run python infrastructure/deployment/packaging/validate_wheel.py \
+            "dist/opensre-${VERSION}-py3-none-any.whl"
 
       - name: Upload Python distributions
         uses: actions/upload-artifact@v4
@@ -232,8 +239,9 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "latest-known"  # avoid live ndjson "latest" fetch flakes
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
@@ -296,42 +304,16 @@ jobs:
 
       - name: Sync binary version
         shell: bash
-        run: python platform/packaging/sync_release_version.py --version "$VERSION_NAME"
+        run: python infrastructure/deployment/packaging/sync_release_version.py --version "$VERSION_NAME"
 
       - name: Install binary build dependencies
         shell: bash
         run: uv sync --frozen --extra release-binary
 
-      - name: Stage stdlib platform module for bundling
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The first-party ``platform`` package shadows the stdlib ``platform``
-          # module. PyInstaller does not lay out the stdlib as loose ``.py`` files,
-          # so bundle a copy of the genuine module that platform/__init__.py can
-          # load from ``sys._MEIPASS`` at runtime (see _FROZEN_STDLIB_DIR).
-          rm -rf .stdlib_vendor
-          mkdir -p .stdlib_vendor
-          uv run python -c "import os, shutil, sysconfig; src = os.path.join(sysconfig.get_path('stdlib'), 'platform.py'); shutil.copy(src, os.path.join('.stdlib_vendor', 'platform.py')); print('Staged stdlib platform from ' + src)"
-
       - name: Build binary
-        run: >-
-          uv run pyinstaller surfaces/cli/__main__.py
-          --name opensre
-          --${{ matrix.pyinstaller_mode }}
-          --clean
-          --noconfirm
-          --collect-data surfaces.cli
-          --collect-data config
-          --copy-metadata opensre
-          --collect-data litellm
-          --hidden-import tiktoken_ext
-          --hidden-import tiktoken_ext.openai_public
-          --collect-submodules integrations
-          --collect-submodules surfaces.interactive_shell
-          --collect-submodules tools
-          --add-data "platform:platform"
-          --add-data ".stdlib_vendor:_opensre_stdlib_platform"
+        env:
+          OPENSRE_PYINSTALLER_MODE: ${{ matrix.pyinstaller_mode }}
+        run: uv run pyinstaller opensre.spec --clean --noconfirm
 
       - name: Align bundled libssl with cryptography (macOS onedir)
         if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
@@ -385,6 +367,31 @@ jobs:
             exit 1
           fi
 
+      - name: Re-sign macOS onedir after post-build mutations
+        if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Replacing/rewriting bundled dylibs (libssl align) invalidates the
+          # adhoc signature PyInstaller applied. Consumer Macs then SIGKILL the
+          # binary on first exec (exit 137, CODESIGNING / Invalid Page) even when
+          # CI runners still let --version through. Sign nested libs first, then
+          # the main binary — ``codesign --deep`` on the directory fails with
+          # "invalid resource directory" for this PyInstaller layout.
+          APP_DIR="./dist/opensre"
+          APP_BIN="${APP_DIR}/opensre"
+          if [ ! -f "$APP_BIN" ]; then
+            echo "No onedir binary at ${APP_BIN}; skip re-sign"
+            exit 0
+          fi
+          find "$APP_DIR" -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \) -print0 \
+            | while IFS= read -r -d '' lib; do
+                codesign --force --sign - "$lib"
+              done
+          codesign --force --sign - "$APP_BIN"
+          codesign --verify --strict "$APP_BIN"
+          echo "Re-signed onedir libs + ${APP_BIN} (adhoc) after post-build mutations"
+
       - name: Smoke test binary (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -419,6 +426,7 @@ jobs:
               ;;
           esac
           "$BINARY_PATH" -h >/dev/null
+          "$BINARY_PATH" _package-smoke
           LITELLM_DATA="./dist/opensre/_internal/litellm/model_prices_and_context_window_backup.json"
           if [ ! -f "$LITELLM_DATA" ]; then
             echo "LiteLLM package data missing from Unix onedir bundle: ${LITELLM_DATA}" >&2
@@ -456,6 +464,7 @@ jobs:
             throw "Binary version mismatch. Expected '$expectedVersion' but saw '$versionText'."
           }
           & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
+          & ".\dist\${{ matrix.binary_name }}" _package-smoke
 
       - name: Package binary archive (Unix)
         if: runner.os != 'Windows'
@@ -495,6 +504,9 @@ jobs:
   publish-release:
     if: needs.prepare.outputs.channel == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     needs:
       - prepare
       - build-python-dist
@@ -549,7 +561,7 @@ jobs:
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           RANGE_SPEC: ${{ steps.release_ctx.outputs.range_spec }}
           PREVIOUS_TAG: ${{ steps.release_ctx.outputs.previous_tag }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -567,10 +579,12 @@ jobs:
             echo
           } > GENERATED_CHANGELOG.md
 
-          # Summarize commits into prose via GitHub Models (gpt-4o-mini).
-          # Falls back to raw changelog if the API is unavailable.
+          # Summarize commits into prose via OpenAI (gpt-4o-mini).
+          # Falls back to raw changelog if the key is unset or the API is unavailable.
           raw_commits="$(git log "$RANGE_SPEC" --no-merges --pretty='%s' | head -40 || true)"
-          if [ -n "$raw_commits" ]; then
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "OPENAI_API_KEY is not set; Discord will use raw changelog."
+          elif [ -n "$raw_commits" ]; then
             api_body="$(jq -n --arg commits "$raw_commits" '{
               model: "gpt-4o-mini",
               messages: [
@@ -584,9 +598,9 @@ jobs:
               temperature: 0.4
             }')"
             curl -sS --max-time 20 \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Authorization: Bearer $OPENAI_API_KEY" \
               -H "Content-Type: application/json" \
-              "https://models.inference.ai.azure.com/chat/completions" \
+              "https://api.openai.com/v1/chat/completions" \
               -d "$api_body" 2>/dev/null \
               | jq -r '.choices[0].message.content // empty' 2>/dev/null \
               | tr -d '\r' > DISCORD_NARRATIVE.md || true
@@ -692,9 +706,55 @@ jobs:
           export VERSION="${VERSION#v}"
           bash .github/scripts/sync-homebrew-tap-formula.sh
 
+      - name: Trigger installer canary
+        if: steps.github_release.outputs.created == 'true'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! gh api "repos/${{ github.repository }}/dispatches" \
+            -f event_type=installer-release-published \
+            -f "client_payload[tag]=${TAG_NAME}"; then
+            # continue-on-error keeps the release green on a dispatch hiccup;
+            # surface it loudly so it isn't silently missed until the next
+            # scheduled installer-canary run (up to ~24h later).
+            echo "::warning::Failed to dispatch installer-canary for ${TAG_NAME}. It will still run on the next scheduled canary." >&2
+            exit 1
+          fi
+
+  publish-python-dist:
+    name: Publish Python distributions to PyPI
+    runs-on: ubuntu-latest
+    needs:
+      - build-python-dist
+      - publish-release
+    environment:
+      name: pypi
+      url: https://pypi.org/p/opensre
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download Python distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-python-dist
+          path: dist
+
+      - name: Publish Python distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          skip-existing: true
+
   publish-main-release:
     if: always() && needs.prepare.outputs.channel == 'main' && needs.build-binaries.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     needs:
       - prepare
       - build-binaries

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from core.agent_harness.harness import AgentSession
-from platform.harness_ports import configured_integration_services
-from platform.scheduler.agent_runner import AgentPayload
+from core.agent_harness import AgentSession
+from infrastructure.harness_providers import configured_integration_services
+from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,6 @@ def run_github_pr_sweep(payload: AgentPayload) -> str:
     result = AgentSession.run_headless_turn(
         _PR_SWEEP_PROMPT,
         logger=logger,
-        gather_enabled=True,
         is_tty=False,
     )
     report = result.primary_response_text

@@ -161,7 +161,6 @@ URIs
 URI
 hostnames
 hostname
-# Hermes / incident operations terms
 cron
 cooldown
 correlator
@@ -222,3 +221,6 @@ submenu
 substring
 unencrypted
 venv
+# New Relic integration docs terms
+NerdGraph
+NRQL

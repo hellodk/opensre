@@ -7,13 +7,14 @@ from typing import Any
 from rich.markup import escape
 
 from config.llm_auth.provider_catalog import PROVIDER_BY_VALUE
-from core.agent_harness.tools.tool_context import (
-    ActionToolContext,
+from core.agent_harness.tools import (
+    ActionToolScope,
     capability_available_from_sources,
     execute_with_action_context,
-    object_schema,
 )
-from core.tool_framework.registered_tool import RegisteredTool
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema
 from tools.interactive_shell.shared import allow_tool
 
 
@@ -37,13 +38,13 @@ def _target_property_schema() -> dict[str, Any]:
     }
 
 
-def _apply_model_set_target(target: str, ctx: ActionToolContext) -> bool:
+def _apply_model_set_target(target: str, ctx: ActionToolScope) -> bool:
     if ctx.llm_provider_ports is None:
         raise RuntimeError("LLM provider tool requires provider runtime ports")
     return bool(ctx.llm_provider_ports.apply_target(target, ctx.console))
 
 
-def execute_llm_provider_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool:
+def execute_llm_provider_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool:
     target = str(args.get("target", args.get("provider", ""))).strip()
     if not target:
         return False
@@ -78,7 +79,8 @@ llm_set_provider_tool = RegisteredTool(
         required=("target",),
     ),
     source="interactive_shell",
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
     parallel_safe=False,
     accepts_runtime_context=True,
     run=run_llm_provider,

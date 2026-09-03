@@ -13,15 +13,14 @@ import re
 import time
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
-from config.constants.vercel import VERCEL_API_BASE_URL
+from config.constants.vercel import VERCEL_API_BASE_URL, VERCEL_RUNTIME_LOGS_READ_TIMEOUT_ENV
+from infrastructure.observability.errors.service import capture_service_error
+from infrastructure.observability.streaming import StreamingParseStats
 from integrations.config_models import VercelIntegrationConfig
 from integrations.probes import ProbeResult
-from platform.observability.errors.service import capture_service_error
-from platform.observability.streaming import StreamingParseStats
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +48,14 @@ def _safe_vercel_path_segment(raw: str) -> str | None:
 def _runtime_logs_read_timeout_seconds() -> float:
     """Seconds to wait per read for runtime logs (env VERCEL_RUNTIME_LOGS_READ_TIMEOUT)."""
     read_s = _RUNTIME_LOGS_READ_TIMEOUT_DEFAULT
-    raw = os.getenv("VERCEL_RUNTIME_LOGS_READ_TIMEOUT", "").strip()
+    raw = os.getenv(VERCEL_RUNTIME_LOGS_READ_TIMEOUT_ENV, "").strip()
     if raw:
         try:
             read_s = max(30.0, float(raw))
         except ValueError:
             logger.warning(
-                "Invalid VERCEL_RUNTIME_LOGS_READ_TIMEOUT=%r; using default %s",
+                "Invalid %s=%r; using default %s",
+                VERCEL_RUNTIME_LOGS_READ_TIMEOUT_ENV,
                 raw,
                 read_s,
             )
@@ -245,55 +245,6 @@ class VercelClient:
             }
         except Exception as exc:
             capture_service_error(exc, logger=logger, integration="vercel", method="list_projects")
-            return {"success": False, "error": str(exc)}
-
-    def get_project(self, project_id_or_name: str) -> dict[str, Any]:
-        """Fetch project details including the current production deployment (no deployment list)."""
-        cleaned = (project_id_or_name or "").strip()
-        if not cleaned:
-            return {"success": False, "error": "project id or name is required"}
-        params: dict[str, Any] = {}
-        params.update(self.config.team_params)
-        try:
-            safe = quote(cleaned, safe="")
-            resp = self._get_client().get(f"/v9/projects/{safe}", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            if not isinstance(data, dict):
-                return {"success": False, "error": "unexpected project response"}
-            targets = data.get("targets")
-            prod: dict[str, Any] = {}
-            if isinstance(targets, dict):
-                raw_prod = targets.get("production")
-                if isinstance(raw_prod, dict):
-                    prod = raw_prod
-            prod_id = str(prod.get("id", "")).strip()
-            return {
-                "success": True,
-                "project": data,
-                "production_deployment_id": prod_id,
-                "production_target": prod,
-            }
-        except httpx.HTTPStatusError as exc:
-            capture_service_error(
-                exc,
-                logger=logger,
-                integration="vercel",
-                method="get_project",
-                extras={"project": cleaned},
-            )
-            return {
-                "success": False,
-                "error": f"HTTP {exc.response.status_code}: {exc.response.text[:200]}",
-            }
-        except Exception as exc:
-            capture_service_error(
-                exc,
-                logger=logger,
-                integration="vercel",
-                method="get_project",
-                extras={"project": cleaned},
-            )
             return {"success": False, "error": str(exc)}
 
     def list_deployments(
@@ -564,7 +515,7 @@ class VercelClient:
                 "success": False,
                 "error": (
                     f"{detail} (after {_RUNTIME_LOGS_READ_ATTEMPTS} attempts, "
-                    f"{read_s:g}s read timeout each; set VERCEL_RUNTIME_LOGS_READ_TIMEOUT to increase)"
+                    f"{read_s:g}s read timeout each; set {VERCEL_RUNTIME_LOGS_READ_TIMEOUT_ENV} to increase)"
                 ),
             }
 
@@ -585,5 +536,6 @@ def make_vercel_client(api_token: str | None, team_id: str | None = None) -> Ver
         return None
     try:
         return VercelClient(VercelConfig(api_token=token, team_id=team_id or ""))
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to create Vercel client: %s", exc, exc_info=True)
         return None

@@ -12,7 +12,7 @@ from core.llm.types import AgentLLMResponse
 from core.messages import UserRuntimeMessage
 from core.state import MAX_CONVERSATION_MESSAGES
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
-from core.types import AgentTool
+from core.tool.contracts import AgentTool
 
 
 class _NoToolLLM:
@@ -61,8 +61,6 @@ def _turn_snapshot(**overrides: Any) -> TurnSnapshot:
         "conversation_messages": (),
         "configured_integrations": (),
         "configured_integrations_known": True,
-        "last_state": None,
-        "last_synthetic_observation_path": None,
         "reasoning_effort": None,
     }
     values.update(overrides)
@@ -94,27 +92,6 @@ def test_turn_snapshot_can_drive_agent_runtime_request() -> None:
     assert result.messages[0].content == "investigate"
     assert llm.seen_system == "runtime system"
     assert llm.seen_messages == [{"role": "user", "content": "investigate"}]
-
-
-def test_agent_context_falls_back_to_process_wide_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When ``llm=`` is omitted at construction, ``run(runtime_request=...)`` resolves
-    the process-wide client via :func:`agent_llm_client.get_agent_llm`."""
-    tool = _tool()
-    built = _NoToolLLM()
-    monkeypatch.setattr("core.llm.factory.get_llm", lambda _role: built)
-
-    ctx = _turn_snapshot(
-        system_prompt=PromptEnvelope.from_text("runtime system"),
-        available_tools=(tool,),
-        active_tools=(tool,),
-        resolved_integrations={"github": {"configured": True}},
-        max_iterations=2,
-    )
-
-    result = Agent[Any](max_iterations=1).run(runtime_request=ctx)
-
-    assert result.final_text == "done"
-    assert built.seen_system == "runtime system"
 
 
 def test_turn_snapshot_runtime_validation_requires_runtime_fields() -> None:
@@ -169,8 +146,6 @@ class _Session:
         ]
         self.configured_integrations = ("github",)
         self.configured_integrations_known = True
-        self.last_state = {"root_cause": "db saturation"}
-        self.last_synthetic_observation_path = "/tmp/observation.json"
         self.reasoning_effort = None
         self.agent = _AgentState(tool)
 
@@ -180,8 +155,6 @@ def test_turn_snapshot_from_session_reads_last_command_observation_from_session(
         cli_agent_messages: list[tuple[str, str]] = []
         configured_integrations = ()
         configured_integrations_known = True
-        last_state = None
-        last_synthetic_observation_path = None
         reasoning_effort = None
         last_command_observation = "tool output from shell"
 
@@ -203,8 +176,6 @@ def test_turn_snapshot_from_session_snapshots_shell_and_runtime_request_fields()
     assert "0" in ctx.conversation_messages[0][1]
     assert ctx.conversation_messages[-1] == ("user", str(MAX_CONVERSATION_MESSAGES + 1))
     assert ctx.configured_integrations == ("github",)
-    assert ctx.last_state == {"root_cause": "db saturation"}
-    assert ctx.last_synthetic_observation_path == "/tmp/observation.json"
     assert ctx.render_system_prompt() == "selected system"
     assert ctx.available_tools == (tool,)
     assert ctx.active_tools == (tool,)

@@ -12,14 +12,11 @@ from dataclasses import dataclass
 
 # The neutral "facts only" turn-result models live in the decoupled agent
 # package; this module owns only the shell's accounting side effects over them.
-from core.agent_harness.turns.turn_results import (
-    ToolCallingAccountingStatus,
-    ToolCallingTurnResult,
-    TurnResult,
-)
-from platform.analytics.cli import capture_terminal_turn_summarized
+from core.agent_harness import ToolCallingTurnResult, TurnResult
+from core.agent_harness.spi.accounting import ToolCallingAccountingStatus
+from infrastructure.analytics.capture import capture_terminal_turn_summarized
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.utils.telemetry import PromptRecorder
+from surfaces.interactive_shell.telemetry import PromptRecorder
 
 
 @dataclass
@@ -44,13 +41,26 @@ class ShellTurnAccounting:
     def finalize(self, result: TurnResult) -> TurnResult:
         """Flush the recorder, persist the turn, and stamp the session intent."""
         self._flush_prompt_recorder(result)
-        if result.llm_run is not None:
+        if result.assistant_response_text and not self._cli_agent_already_recorded():
+            # ActionRenderObserver may already have recorded this turn on the
+            # first tool_start. Do not append a duplicate history row.
             self.session.record("cli_agent", self.text)
         self.session.last_assistant_intent = result.final_intent
         return result
 
+    def _cli_agent_already_recorded(self) -> bool:
+        history = getattr(self.session, "history", None) or ()
+        if not history:
+            return False
+        last = history[-1]
+        return (
+            isinstance(last, dict)
+            and last.get("type") == "cli_agent"
+            and last.get("text") == self.text
+        )
+
     def _record_action_analytics(self, action_result: ToolCallingTurnResult) -> None:
-        from platform.analytics.cli import (
+        from infrastructure.analytics.capture import (
             capture_repl_execution_policy_decision,
             capture_terminal_actions_executed,
             capture_terminal_actions_planned,
@@ -71,9 +81,9 @@ class ShellTurnAccounting:
         capture_repl_execution_policy_decision(
             {
                 "policy_stage": "shell_action_agent",
-                "policy_trace": (
-                    "agent_tool_calls" if action_result.planned_count else "assistant_handoff"
-                ),
+                "policy_trace": "agent_tool_calls"
+                if action_result.planned_count
+                else "agent_reply",
                 "planned_count": action_result.planned_count,
                 "has_unhandled_clause": action_result.has_unhandled_clause,
             }
@@ -113,7 +123,7 @@ class ShellTurnAccounting:
             self.recorder.set_error(pending_error[0], pending_error[1])
         self.recorder.set_response(
             result.assistant_response_text,
-            result.llm_run if result.llm_run is not None else pending_run,
+            pending_run,
         )
         self.recorder.flush()
 

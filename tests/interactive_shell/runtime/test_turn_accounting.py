@@ -26,7 +26,7 @@ class _FakeRecorder:
         self.flushed += 1
 
 
-def _result(*, llm_run: Any | None = None, text: str = "done") -> TurnResult:
+def _result(*, text: str = "done") -> TurnResult:
     return TurnResult(
         final_intent="slash",
         action_result=ToolCallingTurnResult(
@@ -37,7 +37,6 @@ def _result(*, llm_run: Any | None = None, text: str = "done") -> TurnResult:
             handled=True,
         ),
         assistant_response_text=text,
-        llm_run=llm_run,
     )
 
 
@@ -46,7 +45,7 @@ def test_finalize_applies_pending_turn_llm_when_no_conversational_run() -> None:
     pending = LlmRunInfo(model="claude-sonnet-4-5", provider="anthropic", input_tokens=100)
     session.terminal.set_pending_turn_llm(pending)
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text="/investigate", recorder=recorder)  # type: ignore[arg-type]
+    accounting = ShellTurnAccounting(session=session, text="/status", recorder=recorder)  # type: ignore[arg-type]
 
     accounting.finalize(_result())
 
@@ -55,25 +54,26 @@ def test_finalize_applies_pending_turn_llm_when_no_conversational_run() -> None:
     assert session.terminal.pop_pending_turn_llm() is None
 
 
-def test_finalize_prefers_conversational_run_over_pending() -> None:
+def test_finalize_does_not_duplicate_early_cli_agent_history() -> None:
+    """ActionRenderObserver records once; finalize must not append again."""
     session = Session()
-    session.terminal.set_pending_turn_llm(LlmRunInfo(model="stale"))
-    conversational = LlmRunInfo(model="fresh")
+    prompt = "Use the MySQL tool to query active connections."
+    session.record("cli_agent", prompt)
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text="hi", recorder=recorder)  # type: ignore[arg-type]
+    accounting = ShellTurnAccounting(session=session, text=prompt, recorder=recorder)  # type: ignore[arg-type]
 
-    accounting.finalize(_result(llm_run=conversational))
+    accounting.finalize(_result())
 
-    assert recorder.responses[0][1] is conversational
-    # The stale pending run was still consumed so it cannot leak later.
-    assert session.terminal.pop_pending_turn_llm() is None
+    cli_rows = [row for row in session.history if row.get("type") == "cli_agent"]
+    assert len(cli_rows) == 1
+    assert cli_rows[0]["text"] == prompt
 
 
 def test_finalize_sets_structured_error_from_pending_turn_error() -> None:
     session = Session()
     session.terminal.set_pending_turn_error("config", "ANTHROPIC_API_KEY not set")
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text="/investigate", recorder=recorder)  # type: ignore[arg-type]
+    accounting = ShellTurnAccounting(session=session, text="/status", recorder=recorder)  # type: ignore[arg-type]
 
     accounting.finalize(_result(text="investigation_failed"))
 
@@ -90,63 +90,4 @@ def test_finalize_consumes_pending_state_even_without_recorder() -> None:
     accounting.finalize(_result())
 
     assert session.terminal.pop_pending_turn_llm() is None
-    assert session.terminal.pop_pending_turn_error() is None
-
-
-def test_stage_investigation_turn_telemetry_populates_pending_state() -> None:
-    from surfaces.interactive_shell.command_registry.investigation import (
-        _stage_investigation_turn_telemetry,
-    )
-    from surfaces.interactive_shell.ui.investigation_outcome import InvestigationOutcome
-
-    session = Session()
-    outcome = InvestigationOutcome(
-        status="failed",
-        target="generic",
-        investigation_id="inv-1",
-        error_message="Anthropic authentication failed. Check ANTHROPIC_API_KEY.",
-        failure_category="llm",
-        llm_model="claude-sonnet-4-5",
-        llm_provider="anthropic",
-        llm_input_tokens=500,
-        llm_output_tokens=120,
-        duration_ms=4200,
-    )
-
-    _stage_investigation_turn_telemetry(session, outcome)
-
-    run = session.terminal.pop_pending_turn_llm()
-    assert run is not None
-    assert run.model == "claude-sonnet-4-5"
-    assert run.provider == "anthropic"
-    assert run.input_tokens == 500
-    assert run.output_tokens == 120
-    assert run.latency_ms == 4200
-    assert session.terminal.pop_pending_turn_error() == (
-        "llm",
-        "Anthropic authentication failed. Check ANTHROPIC_API_KEY.",
-    )
-    # Provider-measured tokens also count toward the session totals.
-    assert session.tokens.totals["input"] == 500
-    assert session.tokens.totals["output"] == 120
-
-
-def test_stage_investigation_turn_telemetry_completed_run_has_no_error() -> None:
-    from surfaces.interactive_shell.command_registry.investigation import (
-        _stage_investigation_turn_telemetry,
-    )
-    from surfaces.interactive_shell.ui.investigation_outcome import InvestigationOutcome
-
-    session = Session()
-    _stage_investigation_turn_telemetry(
-        session,
-        InvestigationOutcome(
-            status="completed",
-            target="generic",
-            investigation_id="inv-2",
-            llm_model="claude-sonnet-4-5",
-        ),
-    )
-
-    assert session.terminal.pop_pending_turn_llm() is not None
     assert session.terminal.pop_pending_turn_error() is None

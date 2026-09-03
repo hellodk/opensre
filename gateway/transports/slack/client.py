@@ -9,6 +9,12 @@ from typing import Any, Protocol
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web import WebClient
 
+# Slack rejects chat.postMessage text above this length with msg_too_long.
+SLACK_MAX_MESSAGE_CHARS = 40_000
+# Block Kit markdown blocks cap at 12k chars; longer answers fall back to
+# mrkdwn text, which Slack accepts up to SLACK_MAX_MESSAGE_CHARS.
+SLACK_MAX_MARKDOWN_BLOCK_CHARS = 12_000
+
 logger = logging.getLogger(__name__)
 
 _WORKING_REACTION = "eyes"
@@ -19,7 +25,7 @@ Blocks = Sequence[dict[str, Any]]
 
 
 class SlackMessagingClient(Protocol):
-    """The messaging surface the Slack output sink needs."""
+    """The messaging surface the Slack turn output needs."""
 
     def post_message(
         self,
@@ -179,7 +185,7 @@ class SlackWebApiClient:
         # Streaming is documented under Slack's AI-apps surface; whether it
         # works without the Agents feature toggle is workspace/app-dependent,
         # so the first failure with a permanent-looking error disables it for
-        # this process and the sink falls back to placeholder editing.
+        # this process and this class falls back to placeholder editing.
         if self._streaming_unsupported:
             return None
         try:

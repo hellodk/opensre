@@ -6,15 +6,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool import BaseTool
+from core.tool_framework.utils import tool_unavailable
 from integrations.argocd.client import make_argocd_client
+from integrations.argocd.tools._evidence import (
+    map_argocd_application_diff,
+    map_argocd_application_status,
+)
 
 
 class ArgoCDApplicationDiffTool(BaseTool):
     """Fetch Argo CD server-side diff data for an application."""
 
     name = "argocd_application_diff"
+    evidence_mapper = map_argocd_application_diff
     source = "argocd"
     description = (
         "Fetch Argo CD server-side diff output and report whether live cluster state "
@@ -140,13 +145,11 @@ argocd_application_diff = ArgoCDApplicationDiffTool()
 """Argo CD application status investigation tool."""
 
 
-from core.tool_framework.base import BaseTool
-
-
 class ArgoCDApplicationStatusTool(BaseTool):
     """Fetch Argo CD application sync and health status."""
 
     name = "argocd_application_status"
+    evidence_mapper = map_argocd_application_status
     source = "argocd"
     description = (
         "Fetch Argo CD application sync status, health status, current revision, "

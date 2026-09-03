@@ -1,4 +1,4 @@
-"""Slash commands: session settings (/trust, /effort, /verbose, /compact)."""
+"""Slash commands: session settings (/auto, /trust, /effort, /verbose)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,14 @@ from rich.console import Console
 from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
+from config.constants.llm import LLM_PROVIDER_ENV
+from config.constants.repl_autonomy import (
+    AUTO_LEVEL_CAPTIONS,
+    DEFAULT_AUTO_LEVEL,
+    AutoLevel,
+    format_auto_status_plain,
+    parse_auto_level,
+)
 from config.llm_reasoning_effort import (
     REASONING_EFFORT_OPTIONS,
     ReasoningEffort,
@@ -25,7 +33,7 @@ from surfaces.interactive_shell.ui import (
     WARNING,
     resolve_provider_models,
 )
-from surfaces.interactive_shell.ui.components.choice_menu import (
+from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_section_break,
     repl_tty_interactive,
@@ -36,10 +44,44 @@ _TRUST_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("off", "disable trust mode"),
 )
 
+_AUTO_FIRST_ARGS: tuple[tuple[str, str], ...] = tuple(
+    (level.value, AUTO_LEVEL_CAPTIONS[level]) for level in AutoLevel
+)
+
 _VERBOSE_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("on", "enable verbose logging"),
     ("off", "disable verbose logging"),
 )
+
+
+def _cmd_auto(session: Session, console: Console, args: list[str]) -> bool:
+    if not args:
+        console.print(f"[{HIGHLIGHT}]{format_auto_status_plain(session.terminal.auto_level)}[/]")
+        console.print(
+            f"[{DIM}]default:[/] {DEFAULT_AUTO_LEVEL.value} "
+            f"({AUTO_LEVEL_CAPTIONS[DEFAULT_AUTO_LEVEL]})"
+        )
+        for level in AutoLevel:
+            console.print(f"[{DIM}]  {level.value}[/] — {AUTO_LEVEL_CAPTIONS[level]}")
+        console.print(
+            f"[{DIM}]/trust on skips approval prompts even when /auto would ask. "
+            "Session-only; not restored by /resume.[/]"
+        )
+        choices = ", ".join(level.value for level in AutoLevel)
+        console.print(f"[{DIM}]usage:[/] /auto <{choices}>")
+        return True
+    parsed = parse_auto_level(args[0])
+    if parsed is None:
+        choices = ", ".join(level.value for level in AutoLevel)
+        console.print(
+            f"[{ERROR}]unknown auto level:[/] {escape(args[0])} [{DIM}](choices: {choices})[/]"
+        )
+        session.mark_latest(ok=False, kind="slash")
+        return True
+    session.terminal.auto_level = parsed
+    console.print(f"[{HIGHLIGHT}]{format_auto_status_plain(parsed)}[/]")
+    return True
+
 
 _EFFORT_HELP: dict[ReasoningEffort, str] = {
     ReasoningEffort.LOW: "favor speed and lower reasoning cost",
@@ -82,7 +124,7 @@ def _cmd_trust(session: Session, console: Console, args: list[str]) -> bool:
 
 def _cmd_effort(session: Session, console: Console, args: list[str]) -> bool:
     settings = repl_data.load_llm_settings()
-    provider = str(getattr(settings, "provider", os.getenv("LLM_PROVIDER", "anthropic")))
+    provider = str(getattr(settings, "provider", os.getenv(LLM_PROVIDER_ENV, "anthropic")))
     reasoning_model = ""
     if settings is not None:
         reasoning_model, _toolcall_model = resolve_provider_models(settings, provider)
@@ -156,6 +198,21 @@ def _cmd_verbose(_session: Session, console: Console, args: list[str]) -> bool:
 
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
+        "/auto",
+        "Set tool-approval autonomy: off, low, med, or high.",
+        _cmd_auto,
+        usage=("/auto", "/auto med", "/auto high"),
+        notes=(
+            "Default is high (alpha): actions run without approval.",
+            "off asks before every tool; "
+            "med asks before mutating agent tools (shell, code, slash/CLI, …); "
+            "high asks nothing.",
+            "/trust on skips approval prompts even when /auto would ask.",
+            "Session preference — not restored by /resume.",
+        ),
+        first_arg_completions=_AUTO_FIRST_ARGS,
+    ),
+    SlashCommand(
         "/trust",
         "Manage trust mode.",
         _cmd_trust,
@@ -180,4 +237,10 @@ COMMANDS: list[SlashCommand] = [
     ),
 ]
 
-__all__ = ["COMMANDS", "_TRUST_FIRST_ARGS", "_VERBOSE_FIRST_ARGS", "_EFFORT_FIRST_ARGS"]
+__all__ = [
+    "COMMANDS",
+    "_AUTO_FIRST_ARGS",
+    "_TRUST_FIRST_ARGS",
+    "_VERBOSE_FIRST_ARGS",
+    "_EFFORT_FIRST_ARGS",
+]

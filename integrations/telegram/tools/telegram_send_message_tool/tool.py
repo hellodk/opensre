@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
+from core.tool_framework import tool
 from integrations.telegram.tools.telegram_send_message_tool.constants import SOURCE
 from integrations.telegram.tools.telegram_send_message_tool.delivery import (
     dispatch_message,
@@ -38,9 +39,7 @@ class TelegramSendMessageTool(BaseTool):
         "Following up after an investigation with a short status update",
     ]
     requires = ["telegram"]
-    side_effect_level = "external"
-    requires_approval = True
-    approval_reason = "Sends a message via Telegram on your behalf."
+    side_effect_level = SideEffectLevel.EXTERNAL
     input_schema = {
         "type": "object",
         "properties": {
@@ -124,5 +123,5 @@ class TelegramSendMessageTool(BaseTool):
 
 telegram_send_message = tool(
     TelegramSendMessageTool(),
-    surfaces=("investigation", "action"),
+    surfaces=(ToolSurface.ACTION,),
 )

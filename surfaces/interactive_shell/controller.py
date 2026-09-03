@@ -9,17 +9,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.domain.alerts import inbox as _alert_inbox
-from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskManager
+from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
 from surfaces.interactive_shell.runtime.context import (
-    ReplRuntimeContext,
-    create_repl_runtime_context,
+    ReplRuntime,
+    create_repl_runtime,
 )
-from surfaces.interactive_shell.runtime.core.prompt_manager import PromptManager
+from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import (
     ReplState,
     SpinnerState,
@@ -40,13 +39,14 @@ from surfaces.interactive_shell.runtime.loop_scheduler import (
     start_loop_scheduler,
 )
 from surfaces.interactive_shell.runtime.turn_host import (
-    AgentTurnRuntime,
+    AgentTurnResources,
     run_agent_turn,
     run_agent_turn_queue,
     run_input_loop,
 )
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import DIM
+from surfaces.interactive_shell.ui.input_prompt.stdout import patch_prompt_stdout
 
 log = logging.getLogger(__name__)
 
@@ -83,15 +83,17 @@ def _alert_listener(
         yield None
         return
 
-    from gateway.web.web_server import WebAppServerHandle, serve_webapp_in_thread
+    from infrastructure.alert_intake import build_alert_intake_app
+    from infrastructure.asgi_server import AsgiServerHandle, serve_asgi_in_thread
 
     inbox: _alert_inbox.AlertInbox | None = None
-    handle: WebAppServerHandle | None = None
+    handle: AsgiServerHandle | None = None
     try:
         inbox = _alert_inbox.AlertInbox()
         _alert_inbox.set_current_inbox(inbox)
         with _alert_listener_token(cfg.alert_listener_token):
-            handle = serve_webapp_in_thread(
+            handle = serve_asgi_in_thread(
+                build_alert_intake_app(),
                 host=cfg.alert_listener_host,
                 port=cfg.alert_listener_port,
             )
@@ -109,24 +111,24 @@ def _alert_listener(
 
 
 def _resolve_runtime_context(
-    session: Session | ReplRuntimeContext | None,
+    session: Session | ReplRuntime | None,
     *,
     state: ReplState | None,
     spinner: SpinnerState | None,
     pt_session: PromptSession[str] | None,
     inbox: _alert_inbox.AlertInbox | None,
-) -> ReplRuntimeContext:
-    if isinstance(session, ReplRuntimeContext):
+) -> ReplRuntime:
+    if isinstance(session, ReplRuntime):
         if state is None and spinner is None and pt_session is None and inbox is None:
             return session
-        return ReplRuntimeContext(
+        return ReplRuntime(
             session=session.session,
             state=state if state is not None else session.state,
             spinner=spinner if spinner is not None else session.spinner,
             pt_session=pt_session if pt_session is not None else session.pt_session,
             inbox=inbox if inbox is not None else session.inbox,
         )
-    return create_repl_runtime_context(
+    return create_repl_runtime(
         session,
         state=state,
         spinner=spinner,
@@ -135,12 +137,26 @@ def _resolve_runtime_context(
     )
 
 
+def _should_wait_until_turn_finishes(
+    *,
+    exclusive_stdin: bool,
+    goal_condition_autosubmitted: bool,
+) -> bool:
+    """True when the next prompt must not open until this turn completes.
+
+    Exclusive-stdin slash commands already wait. ``/goal`` autosubmit is prose
+    (no exclusive stdin) but must still wait — otherwise ``[N] ❯`` appears under
+    the live crawl spinner and looks like a second / finished goal.
+    """
+    return exclusive_stdin or goal_condition_autosubmitted
+
+
 class InteractiveShellController:
     """Coordinate prompt input, queued dispatch, background workers, and shutdown."""
 
     def __init__(
         self,
-        session: Session | ReplRuntimeContext | None = None,
+        session: Session | ReplRuntime | None = None,
         *,
         config: ReplConfig | None = None,
         state: ReplState | None = None,
@@ -167,25 +183,30 @@ class InteractiveShellController:
             color_system="truecolor",
             legacy_windows=False,
         )
-        self.prompt = PromptManager(
+        self.prompt = PromptBuilder(
             self.session,
             self.state,
             self.spinner,
             self.runtime_context.pt_session,
         )
-        from surfaces.interactive_shell.runtime.action_turn import ShellActionRunner
+        # Lazy: TurnRunner pulls the agent/action stack — must not load at
+        # ``import surfaces.interactive_shell.main``.
+        from infrastructure.turn_host.turn_runner import TurnRunner
+        from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 
-        self.turn_runtime = AgentTurnRuntime(
+        self.turn_runtime = AgentTurnResources(
             session=self.session,
             state=self.state,
             spinner=self.spinner,
             invalidate_prompt=lambda: self.prompt.invalidate_prompt(),
             request_exit=self.prompt.request_exit,
             console=self.service_console,
-            action_runner=ShellActionRunner(
-                session=self.session,
+            turn_handler=TurnRunner(
                 console=self.service_console,
-                request_exit=self.prompt.request_exit,
+                agent_build=shell_agent_build_config(request_exit=self.prompt.request_exit),
+                # One handler for the REPL lifetime; /new and /resume rotate
+                # session_id on the live handle — keep only that id's agent.
+                retain_only_current_session=True,
             ),
         )
         # Prompt echoes belong in the same stream as everything else this turn
@@ -199,7 +220,7 @@ class InteractiveShellController:
             self.session,
             self.echo_console,
         )
-        self.background: BackgroundTaskManager | None = None
+        self.background: BackgroundTaskPool | None = None
         self.tasks: list[tuple[str, asyncio.Task[None]]] = []
 
     async def start_interactive_shell(self) -> None:
@@ -208,7 +229,9 @@ class InteractiveShellController:
             self.runtime_context.inbox = inbox
             self._start_runtime_services()
             try:
-                with patch_stdout(raw=True):
+                if self.prompt.pt_app is None:
+                    raise RuntimeError("prompt application was not initialized")
+                with patch_prompt_stdout(self.prompt.pt_app, raw=True):
                     # Main input loop: reads prompts and enqueues submitted turns
                     # onto state.queue. The agent turns themselves run in
                     # run_agent_turn_queue, started above in _start_runtime_services.
@@ -225,7 +248,7 @@ class InteractiveShellController:
 
     def _start_runtime_services(self) -> None:
         self.prompt.setup()
-        self.background = BackgroundTaskManager(
+        self.background = BackgroundTaskPool(
             self.session,
             self.state,
             self.spinner,
@@ -260,11 +283,37 @@ class InteractiveShellController:
                 self.state.deliver_confirmation(text)
                 return True
             case SubmitTurn(text=text, wait_until_idle=wait, warning=warning):
+                # Read before render_submitted_prompt — that clears the autosubmit
+                # and handoff-answer flags.
+                autosubmitted = bool(self.session.terminal.last_input_autosubmitted)
+                ask_user_answers = bool(self.session.terminal.awaiting_handoff_answer)
+                if not autosubmitted and not ask_user_answers:
+                    # A genuine typed turn starts a new workload: reset the ask-user
+                    # round counter so the two-round cap is per-request, not per-session.
+                    self.session.ask_user_rounds = 0
+                    self.session.terminal.pending_choice_response = None
+                    # Clear a finished plan left pinned after the previous turn so
+                    # it does not linger over this one. An unfinished plan stays:
+                    # the operator may continue it or type ``go`` while idle.
+                    # A still-running dispatch keeps its plan even when complete.
+                    plan = self.session.task_plan
+                    if (
+                        plan is not None
+                        and plan.all_completed
+                        and not self.state.is_dispatch_running()
+                    ):
+                        self.session.task_plan = None
+                wait_for_turn = _should_wait_until_turn_finishes(
+                    exclusive_stdin=wait,
+                    goal_condition_autosubmitted=autosubmitted and not ask_user_answers,
+                )
+                if wait_for_turn:
+                    await self.prompt.suspend()
                 if warning:
                     self.echo_console.print(warning)
                 self.prompt.render_submitted_prompt(self.echo_console, text)
                 await self.state.queue.put(text)
-                if wait:
+                if wait_for_turn:
                     await self.state.queue.join()
                 return True
         raise AssertionError(f"Unhandled input action: {action!r}")
@@ -272,6 +321,7 @@ class InteractiveShellController:
     async def _shutdown_runtime(self) -> None:
         self.state.request_exit()
         self.state.cancel_current_dispatch()
+        await self.prompt.close()
 
         for _label, task in self.tasks:
             task.cancel()

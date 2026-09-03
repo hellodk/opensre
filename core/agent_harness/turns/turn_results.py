@@ -9,7 +9,7 @@ session, or analytics coupling. The interactive shell's accounting layer
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 # Distinguishes the two zero-count outcomes that need different analytics:
 # a normal tool-calling run that completed without planning actions ("completed"),
@@ -30,33 +30,25 @@ class ToolCallingTurnResult:
     has_unhandled_clause: bool
     handled: bool
     response_text: str = ""
-    handoff_contents: tuple[str, ...] = ()
-    # False when every handoff this turn declared ``requires_gather=false``:
-    # the action work already produced what the reply needs, so the assistant
-    # answers from it without a live evidence-gather sweep.
-    handoff_requires_gather: bool = True
+    response_streamed: bool = False
     accounting_status: ToolCallingAccountingStatus = "completed"
-    investigation_dispatched: bool = False
+    hit_iteration_cap: bool = False
     #: Host soft-timeout / stop asked the action phase to halt (shell/gateway).
     cancelled: bool = False
 
 
 @dataclass(frozen=True)
 class TurnResult:
-    """Outcome of a full turn: the action phase plus the conversational answer."""
+    """Outcome of one tool-calling agent turn."""
 
     final_intent: str
     action_result: ToolCallingTurnResult
     assistant_response_text: str = ""
-    # Opaque conversational-LLM run record (the shell passes its ``LlmRunInfo``).
-    # Kept untyped here so ``agent/`` stays decoupled from the shell's telemetry
-    # types; consumers read ``.response_text`` off it.
-    llm_run: Any | None = None
 
     @property
     def answered(self) -> bool:
-        """A turn is "answered" exactly when the conversational LLM produced a run."""
-        return self.llm_run is not None
+        """Whether the agent produced user-facing text."""
+        return bool(self.primary_response_text)
 
     @property
     def cancelled(self) -> bool:

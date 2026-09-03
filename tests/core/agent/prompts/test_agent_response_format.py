@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness.prompts.rules import (
-    AGENT_RESPONSE_THREE_TIER_RULE,
     format_agent_response,
     normalize_three_tier_spacing,
 )
@@ -31,27 +30,9 @@ def test_format_agent_response_compact_single_line() -> None:
     assert "**I found:**" not in text
 
 
-def test_agent_response_rule_is_in_assistant_system_prompt() -> None:
-    from core.agent_harness.prompts.assistant import _build_system_prompt
-
-    prompt = _build_system_prompt("ref", "history")
-
-    assert AGENT_RESPONSE_THREE_TIER_RULE.split("\n", maxsplit=1)[0] in prompt
-    assert "connecting another integration" in prompt
-
-
 def test_format_agent_response_rejects_empty_found_with_detail() -> None:
     with pytest.raises(ValueError, match="found is required"):
         format_agent_response("", "Host: prod-api-3  CPU: 94%", "restart the pod?")
-
-
-def test_observation_block_on_screen_requires_want_me_to() -> None:
-    from core.agent_harness.prompts.assistant import _build_observation_block
-
-    block = _build_observation_block("grafana: passed", on_screen=True)
-
-    assert "**Want me to:**" in block
-    assert "connect another integration" in block
 
 
 def test_normalize_three_tier_spacing_splits_want_me_to() -> None:
@@ -64,6 +45,18 @@ def test_normalize_three_tier_spacing_splits_want_me_to() -> None:
     normalized = normalize_three_tier_spacing(text)
 
     assert " • Export formatter bugs: 3\n\n**Want me to:**" in normalized
+
+
+def test_normalize_three_tier_spacing_tightens_padded_headers() -> None:
+    text = (
+        "** I found: ** LLM errors are the top priority.\n"
+        "** Want me to: ** summarize the top issue titles?"
+    )
+    normalized = normalize_three_tier_spacing(text)
+
+    assert "**I found:**" in normalized
+    assert "**Want me to:**" in normalized
+    assert "\n\n**Want me to:**" in normalized
 
 
 def test_normalize_three_tier_spacing_idempotent() -> None:

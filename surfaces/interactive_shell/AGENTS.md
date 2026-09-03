@@ -67,24 +67,22 @@ owning area rather than adding more logic to the caller.
   trigger confirmations or side effects.
 - Send command execution through the central dispatch and execution-policy
   helpers. Do not bypass `execution_policy.py` for new commands.
-- **Alpha allow-all execution policy (current behavior):** the REPL runs with
-  **no command guardrails**. `execution_policy.py` resolves every action to
-  `allow` with **no confirmation prompt** — all slash/`opensre` commands,
-  investigations, synthetic tests, code-agent launches, LLM runtime switches, and
-  **all** shell commands run immediately, in any context (TTY or not, trust mode
-  or not). There is **no shell-command safety policy**: the
+- **Alpha allow-all execution policy (current behavior):** the REPL defaults to
+  **`/auto high`** — no tool confirmation. `execution_policy.py` resolves every
+  action to `allow`; `apply_auto_level` promotes to `ask` only when `/auto` is
+  below High. There is **no shell-command safety policy**: the
   read-only/mutating/restricted classification and the `deny` floor were removed
   (`shell_policy.py` deleted; parsing/policy/execution live under
   `tools/shell/`). Mutating commands (`rm`/`mv`/`docker`), `restricted` commands
   (`sudo`, `systemctl`, `kill`, `dd`, …), shell operators (`| && ; > <`), and
-  command substitution all run; the `!` prefix is honored but optional. The only
-  shell input still rejected is genuinely empty input (a bare `!` or whitespace).
-  Do **not** re-add a shell allowlist or deny floor while in alpha — see
-  `docs/interactive-shell-action-policy.md`. The former `ExecutionTier`
-  classification was removed because it gated nothing under default-allow; if an
-  opt-in stricter policy is reintroduced after alpha, gate it in
-  `execution_policy.py` (the `ask` verdict, confirmation UX, and `trust_mode` are
-  retained as the hook), not via a planner-stage denial.
+  command substitution all run once approved (or immediately at High). The `!`
+  prefix is honored but optional. The only shell input still rejected is
+  genuinely empty input (a bare `!` or whitespace). Document levels and
+  `/trust` interaction in `docs/interactive-shell-commands.mdx` (`/auto`) and
+  `docs/interactive-shell-action-policy.md`. Do **not** re-add a shell allowlist
+  or deny floor while in alpha — gate stricter policy in `execution_policy.py`
+  (the `ask` verdict, confirmation UX, `trust_mode`, and `/auto` are the hooks),
+  not via a planner-stage denial.
 - Non-TTY behavior under default-allow: actions no longer fail closed on
   non-interactive stdin (there is nothing to confirm). The fail-closed path only
   applies if a verdict is explicitly `ask`, which the default policy does not
@@ -97,7 +95,7 @@ owning area rather than adding more logic to the caller.
   prompt buffer, causing garbage like `^[[60;1R` to appear.
   **Any command that calls `print_repl_table` (directly or via `render_table` /
   `render_integrations_table` / `render_models_table` / etc.) must be added to
-  `_EXCLUSIVE_STDIN_MENU_COMMANDS` in `runtime/utils/input_policy.py`.** That makes the main
+  `_EXCLUSIVE_STDIN_MENU_COMMANDS` in `runtime/input_policy.py`.** That makes the main
   loop call `await state.queue.join()`, blocking the next prompt until dispatch
   completes and both drain cycles clean up stale CPR bytes before the next
   `prompt_async()` starts.
@@ -132,10 +130,8 @@ owning area rather than adding more logic to the caller.
        `docs/interactive-shell-action-policy.md` ("Deterministic literal-`/slash`
        dispatch").
     2. Structured Want-me-to *accept* after a pending offer armed this session —
-       schedule yes expands to `/cron …`; investigation yes expands to
-       `/investigate alert:…`. Both are literal slash text and use path 1 only
-       (no separate static `investigation_start` bypass). Surfaces that disable
-       the investigation capability (gateway) must not arm the pending offer.
+       schedule yes expands to `/cron …`. That is literal slash text and uses
+       path 1 only.
 - **No planning-stage fail-closed safeguard (v0.1 decision).** The second-phase
   action agent never denies a turn. Because every terminal action is read-only,
   an unmatched/ambiguous/chatty clause is not a safety risk — the agent executes
@@ -176,9 +172,9 @@ owning area rather than adding more logic to the caller.
   (`rich.markup.escape`): alerts, command output, file paths, integration names,
   model/provider labels, errors, docs snippets, and model text that is not
   already intentionally rendered as Markdown.
-- Use semantic tokens from `platform/terminal/theme.py`. Do not introduce raw
+- Use semantic tokens from `infrastructure/terminal/theme.py`. Do not introduce raw
   hex colors, Rich named colors, or raw ANSI escapes outside
-  `platform/terminal/theme.py` unless a narrow prompt-toolkit compatibility
+  `infrastructure/terminal/theme.py` unless a narrow prompt-toolkit compatibility
   path requires it.
 - Any raw terminal-mode code must check TTY support and restore terminal state
   in `finally`.

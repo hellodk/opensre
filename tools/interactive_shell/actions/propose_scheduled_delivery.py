@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.session.pending_offer import (
+from core.agent_harness.spi.session_state import (
     PendingScheduleOffer,
     clear_competing_pending_offers,
 )
-from core.agent_harness.tools.tool_context import (
-    ActionToolContext,
-    execute_with_action_context,
-    object_schema,
-    string_property,
-)
-from core.tool_framework.registered_tool import RegisteredTool
-from platform.scheduler.credentials import requires_explicit_chat_id
-from platform.scheduler.types import Provider, TaskKind
+from core.agent_harness.tools import ActionToolScope, execute_with_action_context
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_property
+from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 
 # Match surfaces.cli.commands.cron: Sentry kinds use `opensre sentry`, not cron add.
 _KIND_VALUES = frozenset(
@@ -71,7 +68,7 @@ def _briefing_looks_real(text: str) -> bool:
 
 
 def execute_propose_scheduled_delivery_tool(
-    args: dict[str, Any], ctx: ActionToolContext
+    args: dict[str, Any], ctx: ActionToolScope
 ) -> dict[str, Any]:
     kind = str(args.get("kind", "")).strip().lower()
     cron = " ".join(str(args.get("cron", "")).split())
@@ -116,12 +113,12 @@ def execute_propose_scheduled_delivery_tool(
 
     # Refuse the failure mode where "give me a morning report" becomes ONLY a
     # Want-me-to closer: no weather, no headlines, nothing delivered.
-    if kind == TaskKind.DAILY_SUMMARY.value:
+    if kind == TaskKind.MANUAL_LOOP.value:
         if not _has_fetch_evidence(ctx.session, getattr(ctx, "history_start", 0)):
             return {
                 "ok": False,
                 "error": (
-                    "No weather/news fetch ran yet this session. For daily_summary, "
+                    "No weather/news fetch ran yet this session. For manual_loop, "
                     "run the morning-report shell_run fetches (wttr.in + headlines) "
                     "first, compose the briefing, optionally deliver it, THEN call "
                     "propose_scheduled_delivery with briefing_text set to that "
@@ -132,7 +129,7 @@ def execute_propose_scheduled_delivery_tool(
             return {
                 "ok": False,
                 "error": (
-                    "briefing_text is required for daily_summary and must contain the "
+                    "briefing_text is required for manual_loop and must contain the "
                     "composed weather + headlines briefing (not empty, not the closer "
                     "alone). Pass the same text you showed or delivered to the user."
                 ),
@@ -146,7 +143,6 @@ def execute_propose_scheduled_delivery_tool(
         chat_id=chat_id,
     )
     ctx.session.pending_schedule_offer = offer
-    # One pending affirmative at a time — schedule wins over investigate.
     clear_competing_pending_offers(ctx.session, keep_attr="pending_schedule_offer")
     body = offer.want_me_to_body()
     closer = f"**Want me to:** {body}?"
@@ -197,7 +193,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
     description=(
         "Record a schedule offer the user has NOT yet accepted, and return the "
         "canonical Want me to: closer plus response_text (briefing + closer). "
-        "PRECONDITION for daily_summary: weather/news shell_run fetches must "
+        "PRECONDITION for manual_loop: weather/news shell_run fetches must "
         "already have succeeded in this session, and briefing_text must be the "
         "composed briefing. This tool schedules nothing and produces no weather "
         "— calling it alone leaves the user with an empty offer. Do NOT call "
@@ -222,7 +218,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
         properties={
             "kind": string_property(
                 description=(
-                    "Scheduled task kind, e.g. 'daily_summary'. Must be a "
+                    "Scheduled task kind, e.g. 'manual_loop'. Must be a "
                     f"cron-add kind: {', '.join(sorted(_KIND_VALUES))}."
                 ),
                 min_length=1,
@@ -246,7 +242,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
             ),
             "briefing_text": string_property(
                 description=(
-                    "Required for daily_summary: the composed weather + headlines "
+                    "Required for manual_loop: the composed weather + headlines "
                     "briefing already produced for the user. Returned in "
                     "response_text ahead of the Want me to: closer so the user "
                     "never sees an offer without the report."
@@ -256,12 +252,12 @@ propose_scheduled_delivery_tool = RegisteredTool(
         required=("kind", "cron", "provider"),
     ),
     source="interactive_shell",
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
     parallel_safe=False,
     accepts_runtime_context=True,
     run=run_propose_scheduled_delivery,
     tags=("safe", "fast", "no-credentials"),
-    side_effect_level="mutating",
+    side_effect_level=SideEffectLevel.MUTATING,
 )
 
 __all__ = [

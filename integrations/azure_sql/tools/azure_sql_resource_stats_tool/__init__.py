@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
 from integrations.azure_sql import (
     azure_sql_extract_params,
     azure_sql_is_available,
@@ -15,7 +16,7 @@ from integrations.azure_sql import (
     name="get_azure_sql_resource_stats",
     description="Retrieve Azure SQL Database resource utilization history (CPU, IO, log throughput, memory) with throttling risk assessment.",
     source="azure_sql",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Diagnosing DTU/vCore throttling on Azure SQL Database",
         "Identifying resource saturation causing query timeouts",

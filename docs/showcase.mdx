@@ -1,72 +1,36 @@
 ---
 title: "Showcase"
-description: "Real-world OpenSRE workflows, sample outputs, and community examples"
+description: "See what OpenSRE looks like in practice — install, chat, and share."
 ---
 
-Concrete examples of what OpenSRE looks like in practice — from install through root-cause analysis.
+Want to know what OpenSRE actually looks like when you run it? Here's a walkthrough of a first install, a first chat with the agent, and a way to put your own demos on the page.
 
-## Quickstart walkthrough
+## Watch a first run
 
-Install, onboard, and run your first investigation in under ten minutes.
-
-<CardGroup cols={2}>
-  <Card title="Follow the quickstart" icon="rocket" href="/quickstart">
-    Step-by-step install, onboarding, and sample alert investigation.
-  </Card>
-  <Card title="Watch install + onboard" icon="play" href="/quickstart#install-opensre">
-    GIF walkthroughs for macOS, Linux, and Windows.
-  </Card>
-</CardGroup>
-
-<Frame>
-  ![Running an OpenSRE investigation on a sample alert through to a structured root-cause report](/images/quickstart-investigate.gif)
-</Frame>
-
-Typical first-run commands:
+Install, set things up, and ask your first question. Most people are done in under ten minutes.
 
 ```bash
 curl -fsSL https://install.opensre.com | bash
 opensre onboard
-opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+opensre
 ```
 
-## Sample investigation output
+Ask: *Why is the payments-api pod in production crash-looping?* The agent calls your connected tools and answers in the shell.
 
-A completed local run writes structured RCA artifacts you can open in any editor:
+Prefer step-by-step with platform-specific GIFs? Start at the [Quickstart](/quickstart).
 
-| File | What it contains |
-| --- | --- |
-| `problem.md` | Incident framing, impacted components, initial hypothesis |
-| `theory/hypothesis_*.md` | Each hypothesis tested during the run, with supporting evidence |
-| `report.md` | Final root-cause summary, confidence, and recommended next steps |
+<CardGroup cols={2}>
+  <Card title="Full quickstart" icon="rocket" href="/quickstart">
+    Install, onboard, and ask your first question — with screenshots for macOS, Linux, and Windows.
+  </Card>
+  <Card title="Jump to the GIFs" icon="play" href="/quickstart#install-opensre">
+    Skip straight to the install and onboard recordings.
+  </Card>
+</CardGroup>
 
-Export a single JSON file for automation:
+## Show us what you built
 
-```bash
-opensre investigate -i <alert-file> --output ./rca.json
-```
+Got a demo, a runbook, or a post-mortem that used OpenSRE?
 
-See [Investigations overview](/investigation-overview) for the full workflow, slash commands, and Slack delivery.
-
-<Frame>
-  ![Slack incident summary after an OpenSRE investigation](/images/slack_alert.png)
-</Frame>
-
-## Benchmark: CloudOpsBench
-
-Run OpenSRE against the 452-scenario CloudOpsBench Kubernetes RCA corpus and compare to published LLM-alone baselines.
-
-```bash
-uv run python -m tests.benchmarks._framework.cli run \
-  --config tests/benchmarks/cloudopsbench/config.yaml \
-  --models claude-sonnet-4-20250514
-```
-
-See [CloudOpsBench benchmark](/cloudopsbench) for configuration, integrity guards, and cost tracking.
-
-## Share your work
-
-Have a demo, runbook, or incident post-mortem powered by OpenSRE?
-
-1. Open a [GitHub Discussion](https://github.com/Tracer-Cloud/opensre/discussions) with the tag **Showcase** — include commands, integrations used, and (if possible) redacted output.
-2. Join the [bi-weekly giveaway](/bi-weekly-giveaway) for a chance to win OpenSRE swag when you share what you built.
+1. Post in [GitHub Discussions](https://github.com/Tracer-Cloud/opensre/discussions) with the **Showcase** tag — include the commands you ran, which tools were connected, and redacted output if you can.
+2. Join the [bi-weekly giveaway](/bi-weekly-giveaway) when you share something — there's OpenSRE swag in the mix.

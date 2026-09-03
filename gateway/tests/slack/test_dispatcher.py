@@ -11,22 +11,24 @@ from unittest.mock import patch
 import pytest
 
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
+from config.constants.gateway import TURN_ERROR_MESSAGE
 from config.principal import Principal, StorageScope
+from gateway.core.billing import turn_metering
 from gateway.core.billing.credits_client import CreditsOutcome
-from gateway.transports.slack.dispatcher import _SlackTurnDispatcher
-from gateway.transports.slack.events import SlackInboundMessage
-from gateway.transports.slack.principal import slack_scope
+from gateway.tests.billing.turn_metering_harness import metered_callback
+from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
+from gateway.transports.slack.processing.events import SlackInboundMessage
+from gateway.transports.slack.processing.principal import slack_scope
 from gateway.transports.slack.settings import SlackGatewaySettings
-
-_SECURITY = "gateway.transports.slack.security"
+from infrastructure.turn_host.status_messages import user_facing_error_message
 
 
 @pytest.fixture(autouse=True)
 def _isolate_slack_integration_store():
     """Worker tests must not depend on the developer's ~/.opensre integrations."""
     with (
-        patch(f"{_SECURITY}.get_integration", return_value=None),
-        patch(f"{_SECURITY}.upsert_instance"),
+        patch("gateway.core.middleware.identity_policy.get_integration", return_value=None),
+        patch("gateway.core.middleware.identity_policy.upsert_instance"),
     ):
         yield
 
@@ -41,12 +43,11 @@ def _test_scope() -> StorageScope:
 
 @pytest.fixture(autouse=True)
 def _metering_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Resolve an owning org, but leave metering unable to make real HTTP calls.
+    """Resolve an owning org, but deliberately disable remote metering.
 
-    ``consume_credits`` needs a URL and a token as well as an org, so setting
-    only the org keeps every outcome UNCONFIGURED while giving principal
-    resolution a silo organization to land on. Install lookup is stubbed so
-    tests do not touch the developer's gateway SQLite catalog.
+    With no webapp URL, setting only the org keeps every outcome ``DISABLED``
+    while giving principal resolution a silo organization to land on. Install
+    lookup is stubbed so tests do not touch the gateway SQLite catalog.
     """
     for name in (WEBAPP_URL_ENV, USAGE_SECRET_ENV):
         monkeypatch.delenv(name, raising=False)
@@ -165,8 +166,8 @@ def _dispatcher(
     resolver: _FakeSessionResolver,
     handler: Any,
     bot_user_id: str = "",
-) -> _SlackTurnDispatcher:
-    return _SlackTurnDispatcher(
+) -> SlackTurnDispatcher:
+    return SlackTurnDispatcher(
         settings=settings,
         messaging=messaging,
         session_resolver=resolver,  # type: ignore[arg-type]
@@ -238,34 +239,37 @@ def test_out_of_credits_blocks_turn_with_short_reply(monkeypatch: pytest.MonkeyP
         reasons.append(kwargs["reason"])
         return CreditsOutcome.DENIED
 
-    monkeypatch.setattr("gateway.transports.slack.dispatcher.consume_credits", deny)
+    monkeypatch.setattr(turn_metering, "consume_credits", deny)
 
     _dispatcher(
         settings=_settings(["U1"]),
         messaging=messaging,
         resolver=resolver,
-        handler=lambda text, *_args: turns.append(text),
+        handler=metered_callback(lambda text, *_args: turns.append(text)),
     ).dispatch(_inbound())
 
     assert turns == []
     assert reasons == ["slack_turn"]
     # Short thread reply; no balances or env details leak to the channel.
-    assert messaging.posts[0]["text"] == "Out of credits — top up in the OpenSRE console."
+    assert messaging.updates[-1]["text"] == "Out of credits — top up in the OpenSRE console."
     assert messaging.posts[0]["thread_ts"] == "100.1"
+    emoji_ops = [(reaction["op"], reaction["emoji"]) for reaction in messaging.reactions]
+    assert ("remove", "eyes") in emoji_ops
+    assert ("add", "x") in emoji_ops
+    assert ("add", "white_check_mark") not in emoji_ops
 
 
-@pytest.mark.parametrize(
-    "outcome", [CreditsOutcome.ALLOWED, CreditsOutcome.UNCONFIGURED, CreditsOutcome.UNAVAILABLE]
-)
-def test_non_denied_credit_outcomes_run_the_turn(
+@pytest.mark.parametrize("outcome", [CreditsOutcome.ALLOWED, CreditsOutcome.DISABLED])
+def test_allowed_or_deliberately_disabled_metering_runs_the_turn(
     monkeypatch: pytest.MonkeyPatch, outcome: CreditsOutcome
 ) -> None:
-    """Fail-open: metering off or a webapp outage must never block a turn."""
     messaging = _FakeMessagingClient()
     resolver = _FakeSessionResolver()
     turns: list[str] = []
     monkeypatch.setattr(
-        "gateway.transports.slack.dispatcher.consume_credits", lambda *_args, **_kw: outcome
+        turn_metering,
+        "consume_credits",
+        lambda *_args, **_kw: outcome,
     )
 
     def handler(text: str, _session: Any, sink: Any, _logger: logging.Logger) -> None:
@@ -273,48 +277,36 @@ def test_non_denied_credit_outcomes_run_the_turn(
         sink.finalize("done")
 
     _dispatcher(
-        settings=_settings(["U1"]), messaging=messaging, resolver=resolver, handler=handler
+        settings=_settings(["U1"]),
+        messaging=messaging,
+        resolver=resolver,
+        handler=metered_callback(handler),
     ).dispatch(_inbound())
 
     assert len(turns) == 1
 
 
-def test_conversation_locks_are_pruned_at_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    from gateway.transports.slack import dispatcher
-
-    monkeypatch.setattr(dispatcher, "_MAX_CONVERSATION_LOCKS", 4)
-    dispatcher = _dispatcher(
-        settings=_settings(["U1"]),
-        messaging=_FakeMessagingClient(),
-        resolver=_FakeSessionResolver(),
-        handler=lambda *_args: None,
+@pytest.mark.parametrize("outcome", [CreditsOutcome.UNCONFIGURED, CreditsOutcome.UNAVAILABLE])
+def test_untrustworthy_credit_outcomes_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, outcome: CreditsOutcome
+) -> None:
+    messaging = _FakeMessagingClient()
+    turns: list[str] = []
+    monkeypatch.setattr(
+        turn_metering,
+        "consume_credits",
+        lambda *_args, **_kw: outcome,
     )
 
-    for index in range(10):
-        with dispatcher._conversation_turn(f"T1:C1:{index}"):
-            pass
-
-    assert len(dispatcher._conversation_locks) <= 4 + 1
-
-
-def test_in_use_conversation_lock_survives_pruning(monkeypatch: pytest.MonkeyPatch) -> None:
-    from gateway.transports.slack import dispatcher
-
-    monkeypatch.setattr(dispatcher, "_MAX_CONVERSATION_LOCKS", 1)
-    dispatcher = _dispatcher(
+    _dispatcher(
         settings=_settings(["U1"]),
-        messaging=_FakeMessagingClient(),
+        messaging=messaging,
         resolver=_FakeSessionResolver(),
-        handler=lambda *_args: None,
-    )
+        handler=metered_callback(lambda text, *_args: turns.append(text)),
+    ).dispatch(_inbound())
 
-    with dispatcher._conversation_turn("T1:C1:busy"):
-        busy_entry = dispatcher._conversation_locks["T1:C1:busy"]
-        # Another conversation triggers pruning while the first turn is running.
-        with dispatcher._conversation_turn("T1:C1:other"):
-            pass
-        # The in-use entry was never discarded or replaced.
-        assert dispatcher._conversation_locks["T1:C1:busy"] is busy_entry
+    assert turns == []
+    assert messaging.updates[-1]["text"] == user_facing_error_message(TURN_ERROR_MESSAGE)
 
 
 def test_handler_exception_is_contained() -> None:
@@ -355,7 +347,7 @@ def test_errored_turn_replaces_placeholder_with_error() -> None:
 
 def test_agent_context_omits_thread_ts_to_avoid_thread_reads() -> None:
     # Arrange / Act
-    from gateway.transports.slack.dispatcher import _agent_text_with_slack_context
+    from gateway.transports.slack.processing.dispatcher import _agent_text_with_slack_context
 
     text = _agent_text_with_slack_context(_inbound())
 
@@ -368,7 +360,7 @@ def test_agent_context_omits_thread_ts_to_avoid_thread_reads() -> None:
 
 def test_agent_context_attributes_the_speaker() -> None:
     """The turn prefix names who is speaking (multi-user thread attribution)."""
-    from gateway.transports.slack.dispatcher import _agent_text_with_slack_context
+    from gateway.transports.slack.processing.dispatcher import _agent_text_with_slack_context
 
     text = _agent_text_with_slack_context(_inbound())
 
@@ -492,7 +484,7 @@ def _gated_dispatcher(
     handler: Any,
     has_session: bool = True,
     allowed_user_ids: list[str] | None = None,
-) -> _SlackTurnDispatcher:
+) -> SlackTurnDispatcher:
     return _dispatcher(
         settings=_settings(allowed_user_ids or ["U1"]),
         messaging=messaging,

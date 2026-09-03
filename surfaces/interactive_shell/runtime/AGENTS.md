@@ -15,43 +15,38 @@ owner module instead of broadening module responsibilities.
 - `../main.py` — process/bootstrap boundary only: startup sweep, TTY/non-TTY
   gate, banner display, the async boundary (`asyncio.run`). Do not move
   per-turn dispatch/runtime logic back into startup bootstrap.
-- `startup/first_launch_github.py` — first-launch GitHub sign-in gate only.
 - `startup/initial_input.py` — scripted non-interactive initial-input replay
   only.
 - `../controller.py` — `InteractiveShellController`: prompt lifecycle,
   submitted-input handling, queued-turn consumption, per-turn task scheduling,
   alert listener setup/teardown (the inbox is part of the running shell
-  lifecycle), `AgentTurnRuntime` construction and shutdown, prompt-mediated
+  lifecycle), `AgentTurnResources` construction and shutdown, prompt-mediated
   confirmation waiting, turn telemetry, coordination between prompt/background/
   shutdown helpers. Nothing else should own shell lifecycle orchestration.
-- `core/prompt_manager.py` — prompt-toolkit setup, prompt rendering callbacks,
+- `core/prompt_builder.py` — prompt-toolkit setup, prompt rendering callbacks,
   pending prompt defaults, autosubmit handling only.
 - `input/` — prompt input event conversion only: EOF, Ctrl-C, CPR cleanup,
   session resume hints.
-- `utils/input_policy.py` — prompt stdin/spinner gating decisions for turns
+- `input_policy.py` — prompt stdin/spinner gating decisions for turns
   only.
 - `background/workers.py` — alert watcher lifecycle, spinner ticker lifecycle,
   sampler startup, turn-start background-output drains only.
-- `background/runner.py`, `background/notifications.py` — session-local
-  background investigation launchers and RCA completion notification delivery
-  only (record/preferences ownership itself lives in
-  `core.agent_harness.session.background`).
 - `core/state.py` — `ReplState`, `SpinnerState`: runtime state and transition
   helpers only (see State ownership rules below).
-- `core/turn_detection.py` — pure text classifiers for cancel/confirm/
-  correction detection only.
+- `core/turn_detection.py` — pure text classifiers for cancel/confirm
+  detection only.
 - `core/confirmation.py` — prompt-mediated confirmation waiting only.
 - `turn_host.py` — `run_input_loop` (read/handle input until exit),
   `run_agent_turn_queue` (consume queued prompts via an injected `run_turn`),
   and `run_agent_turn(runtime, text)` (presentation, dispatch state,
   prompt-mediated confirmation, turn-entry invocation) over an
-  `AgentTurnRuntime` — the immutable dependency bundle (`session`, `state`,
+  `AgentTurnResources` — the immutable dependency bundle (`session`, `state`,
   `spinner`, `invalidate_prompt`, `request_exit`) the controller constructs.
 - `agent_presentation.py` — `ConsoleAgentEventSink`: terminal presentation for
   agent lifecycle events (spinner, prompt suppression, `console.print`, CPR
   drain) only — not in the turn-entry adapter or the core harness.
 - `shell_turn_execution.py` — `execute_shell_turn`: binds shell adapters
-  (`action_turn.py`, `integration_tool_gathering.py`, `answer_turn.py`) plus
+  (`action_turn.py`, `answer_turn.py`) plus
   accounting around `core.agent_harness.turns.orchestrator.run_turn`. Each
   adapter owns its own binding; tests import them from their owning module,
   not `shell_turn_execution`.
@@ -61,7 +56,7 @@ owner module instead of broadening module responsibilities.
   accounting and run metadata only.
 - Reusable per-agent session state (`Session`) lives in
   `core.agent_harness.session`. Terminal runtime context assembly
-  (`ReplRuntimeContext`, `create_repl_runtime_context`) lives in
+  (`ReplRuntime`, `create_repl_runtime`) lives in
   `interactive_shell.runtime.context`.
 
 ## Data flow contract (locked)
@@ -95,7 +90,7 @@ flowchart TD
   controller --> turnHost["runtime.turn_host.run_agent_turn(turn_runtime, text)"]
   turnHost --> turnEntry["interactive_shell.runtime.shell_turn_execution.execute_shell_turn"]
   turnEntry --> coreHarness["core.agent_harness.turns.orchestrator.run_turn"]
-  coreHarness --> sideEffects["slash/help/agent/follow-up/investigation side effects"]
+  coreHarness --> sideEffects["slash/help/agent/follow-up side effects"]
   controller --> replState["core.state.ReplState"]
   controller --> spinnerState["core.state.SpinnerState"]
   controller --> inputReader["input.PromptInputReader"]

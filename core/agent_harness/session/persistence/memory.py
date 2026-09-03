@@ -6,17 +6,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from core.agent_harness.session.persistence.ports import SessionPersistenceSource
-
-_TRIGGER_MAX_CHARS = 200
+from core.agent_harness.session.persistence.contracts import SessionPersistenceSource
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class InMemorySessionStorage:
-    """SessionStorage backend that stores v2 records in process memory."""
+class InMemorySessionStore:
+    """SessionStore backend that stores v2 records in process memory."""
 
     def __init__(self) -> None:
         self._files: dict[str, list[dict[str, Any]]] = {}
@@ -190,41 +188,19 @@ class InMemorySessionStorage:
             },
         )
 
-    def append_investigation_result(
-        self,
-        session_id: str,
-        state: dict[str, Any],
-        *,
-        trigger: str = "",
-    ) -> str:
-        investigation_id = uuid.uuid4().hex[:8]
-        report = state.get("problem_md") or state.get("slack_message") or state.get("report") or ""
-        self._append(
-            session_id,
-            "investigation_result",
-            {
-                "investigation_id": investigation_id,
-                "completed_at": _now(),
-                "trigger": trigger.strip()[:_TRIGGER_MAX_CHARS],
-                "root_cause": str(state.get("root_cause") or ""),
-                "report": str(report),
-                "root_cause_category": str(state.get("root_cause_category") or ""),
-                "alert_name": str(state.get("alert_name") or ""),
-                "run_id": str(state.get("run_id") or ""),
-            },
-        )
-        return investigation_id
-
     def flush(self, session: SessionPersistenceSource) -> None:
         records = self._files.get(session.session_id)
         if not records:
             return
-        if records[-1].get("type") == "leaf":
-            return
-        if not any(rec.get("type") != "session" for rec in records):
+        trailing_leaf = records[-1].get("type") == "leaf"
+        if not trailing_leaf and not any(rec.get("type") != "session" for rec in records):
             del self._files[session.session_id]
             return
-        if session.accumulated_context:
+        # A trailing ``leaf`` means a prior flush already closed the tip. Still
+        # allow live state (session goals) to append past that marker so
+        # mid-session ``/goal pause`` survives the next gateway ``resolve``;
+        # never write a second leaf (flush stays idempotent for end-of-session).
+        if session.accumulated_context and not trailing_leaf:
             self._append(
                 session.session_id,
                 "custom_message",
@@ -235,6 +211,46 @@ class InMemorySessionStorage:
                 },
             )
             records = self._files.get(session.session_id, records)
+        if hasattr(session, "session_goal"):
+            from core.agent_harness.session_goal.persist import (
+                SESSION_GOAL_STATE_CUSTOM_TYPE,
+                session_goal_state_snapshot,
+                should_persist_session_goal_state,
+            )
+
+            goal_state = session_goal_state_snapshot(session)
+            if should_persist_session_goal_state(goal_state, prior_records=records):
+                self._append(
+                    session.session_id,
+                    "custom_message",
+                    {
+                        "custom_type": SESSION_GOAL_STATE_CUSTOM_TYPE,
+                        "content": goal_state,
+                        "display": False,
+                    },
+                )
+                records = self._files.get(session.session_id, records)
+        if hasattr(session, "task_plan"):
+            from core.agent_harness.task_plan.persist import (
+                TASK_PLAN_STATE_CUSTOM_TYPE,
+                should_persist_task_plan_state,
+                task_plan_state_snapshot,
+            )
+
+            plan_state = task_plan_state_snapshot(session)
+            if should_persist_task_plan_state(plan_state, prior_records=records):
+                self._append(
+                    session.session_id,
+                    "custom_message",
+                    {
+                        "custom_type": TASK_PLAN_STATE_CUSTOM_TYPE,
+                        "content": plan_state or {},
+                        "display": False,
+                    },
+                )
+                records = self._files.get(session.session_id, records)
+        if trailing_leaf:
+            return
         if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
             for role, content in session.agent.messages:
                 self._append(

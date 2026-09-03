@@ -15,8 +15,7 @@ import pytest
 from config.constants import paths
 from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.principal import Principal
-from core.agent_harness.session import InMemorySessionStorage, SessionCore, SessionManager
-from gateway.core.billing.credits_client import CreditsOutcome
+from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
 from gateway.core.storage import FileBindingStore, SessionResolver
 from gateway.transports.discord.dispatcher import DiscordTurnDispatcher
 from gateway.transports.discord.events import DiscordInboundMessage
@@ -47,7 +46,7 @@ def resolver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionResolver
     monkeypatch.setattr(SessionCore, "hydrate_configured_integrations", lambda _self: None)
     store = FileBindingStore(tmp_path / "bindings.json")
     repo = SimpleNamespace(load_session=lambda _session_id: None)
-    manager = SessionManager(storage=InMemorySessionStorage(), repo=repo)
+    manager = SessionManager(store=InMemorySessionStore(), repo=repo)
     return SessionResolver(store, manager=manager, platform="discord")
 
 
@@ -107,19 +106,15 @@ def test_alice_and_bob_parallel_turns_get_distinct_sessions(
             "gateway.transports.discord.dispatcher.enforce_inbound_discord_message_security",
             return_value=allow,
         ),
-        patch(
-            "gateway.transports.discord.dispatcher.consume_credits",
-            return_value=CreditsOutcome.ALLOWED,
-        ),
         patch("gateway.transports.discord.dispatcher.add_reaction", return_value=True),
         patch("gateway.transports.discord.dispatcher.remove_reaction", return_value=True),
-        patch("gateway.transports.discord.output_sink.send_message", return_value="msg-status"),
-        patch("gateway.transports.discord.output_sink.edit_message", return_value=True),
+        patch("gateway.transports.discord.turn_output.send_message", return_value="msg-status"),
+        patch("gateway.transports.discord.turn_output.edit_message", return_value=True),
         patch(
-            "gateway.transports.discord.output_sink.edit_message_with_components", return_value=True
+            "gateway.transports.discord.turn_output.edit_message_with_components", return_value=True
         ),
         patch(
-            "gateway.transports.discord.output_sink.send_message_with_components",
+            "gateway.transports.discord.turn_output.send_message_with_components",
             return_value="msg-final",
         ),
     ):

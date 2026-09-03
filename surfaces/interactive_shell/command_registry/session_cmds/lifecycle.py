@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from core.agent_harness.session import SessionManager
+from core.agent_harness import SessionManager
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, HIGHLIGHT
 
 
 def _cmd_clear(session: Session, console: Console, _args: list[str]) -> bool:
-    from surfaces.interactive_shell.ui import render_ready_box
+    from surfaces.interactive_shell.ui import render_launch_banner
 
     console.clear()
-    render_ready_box(console, session=session)
+    render_launch_banner(console, session=session)
     return True
 
 
@@ -44,7 +44,7 @@ def _cmd_new(session: Session, console: Console, _args: list[str]) -> bool:
 
 def _cmd_compact(session: Session, console: Console, _args: list[str]) -> bool:
     """Compact the live session branch and persist a compaction entry."""
-    from core.agent_harness.turns.transcript_compaction import compact_session_branch
+    from core.agent_harness.spi.session_state import compact_session_branch
 
     result = compact_session_branch(session)
     if result is None:

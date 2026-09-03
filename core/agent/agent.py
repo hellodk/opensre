@@ -1,4 +1,4 @@
-"""The reusable tool-calling agent every surface runs (shell, gateway, investigation).
+"""The reusable tool-calling agent every surface runs (shell, gateway).
 
 You create an ``Agent`` with its config (LLM, system prompt, tools, iteration
 cap); ``run()`` gathers that config for one run and hands it to
@@ -7,8 +7,6 @@ think -> call-tools -> observe loop. ``Agent`` stays thin: it holds the config
 and provides the callback methods (from the mixins) the loop calls back into —
 it does not contain the loop itself.
 
-The other agent shape — a direct answer with no tools — is not an ``Agent``;
-see ``core/agent_harness/AGENTS.md``.
 """
 
 from __future__ import annotations
@@ -22,11 +20,11 @@ from core.agent.provider_hooks import ProviderHookDelegate
 from core.agent.react_loop import run_react_loop
 from core.agent.run_io import AgentRunInput, AgentRunResult
 from core.events import RuntimeEventCallback, TupleEventCallback
-from core.execution import ToolExecutionHooks
-from core.llm.factory import LLMRole
+from core.llm.types import AgentLLMClient
 from core.messages import ProviderMessage, RuntimeMessage, RuntimeMessageLike
 from core.provider import ProviderHooks, ProviderRequest
-from core.types import RuntimeTool
+from core.tool.contracts import RuntimeTool
+from core.tool.execution import ToolExecutionHooks
 
 if TYPE_CHECKING:
     from core.agent.goals import Goal
@@ -34,22 +32,21 @@ if TYPE_CHECKING:
 
 
 class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, SteeringMixin):
-    """Stateful, configurable ReAct agent — the tool-calling agent shape.
+    """Stateful, configurable ReAct agent.
 
     Wires per-run context into ``run_react_loop`` and exposes hook methods so
-    subclasses can customise stopping logic and tool filtering without
-    re-implementing the loop. For the direct-answer shape (no tools), see
-    ``core/agent_harness/AGENTS.md``.
+    subclasses can customise tool filtering without re-implementing the loop.
     """
 
     def __init__(
         self,
         *,
-        llm: Any | None = None,
+        llm: AgentLLMClient,
         system: str | None = None,
         tools: Sequence[RuntimeToolT] | None = None,
         resolved_integrations: dict[str, Any] | None = None,
         max_iterations: int | None = None,
+        max_stagnant_iterations: int | None = None,
         on_event: TupleEventCallback | None = None,
         on_runtime_event: RuntimeEventCallback | None = None,
         tool_hooks: ToolExecutionHooks | None = None,
@@ -57,11 +54,16 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
         provider_hooks: ProviderHooks | None = None,
         goal: Goal | None = None,
     ) -> None:
+        if llm is None:
+            raise ValueError("Agent: llm= must be set at construction.")
         self._llm = llm
         self._system = system
         self._tools: list[RuntimeToolT] | None = list(tools) if tools is not None else None
         self._resolved = resolved_integrations
         self._max_iterations = max_iterations
+        if max_stagnant_iterations is not None and max_stagnant_iterations < 1:
+            raise ValueError("Agent: max_stagnant_iterations must be positive when set.")
+        self._max_stagnant_iterations = max_stagnant_iterations
         # Set per run from the run input; falls back to the constructed value.
         self._effective_max_iterations = max_iterations
         self._on_tuple_event = on_event
@@ -118,9 +120,7 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
         """
         if runtime_request is not None:
             runtime_request.validate_runtime_request()
-            return AgentRunInput[RuntimeToolT].from_runtime_request(
-                runtime_request, llm=self._get_llm()
-            )
+            return AgentRunInput[RuntimeToolT].from_runtime_request(runtime_request, llm=self._llm)
         if initial_messages is not None:
             if self._system is None:
                 raise ValueError("Agent.run: system= must be set at construction.")
@@ -128,24 +128,15 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
                 raise ValueError("Agent.run: max_iterations= must be set at construction.")
             return AgentRunInput[RuntimeToolT].from_messages(
                 initial_messages,
-                llm=self._get_llm(),
+                llm=self._llm,
                 system=self._system,
                 tools=self._tools,
                 resolved=self._resolved,
                 tool_resources=self._tool_resources,
                 max_iterations=self._max_iterations,
+                max_stagnant_iterations=self._max_stagnant_iterations,
             )
         raise ValueError("Agent.run requires initial_messages or runtime_request.")
-
-    def _get_llm(self) -> Any:
-        """Return the run's LLM: the instance given at construction, or the process-wide singleton."""
-        if self._llm is None:
-            from core.llm import factory
-
-            self._llm = factory.get_llm(LLMRole.AGENT)
-        if self._llm is None:
-            raise RuntimeError("Agent.run: llm must be set before the loop")
-        return self._llm
 
     def _should_accept_conclusion(
         self,
@@ -158,11 +149,13 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
 
         Return ``(True, None)`` to accept the conclusion and end the loop.
         Return ``(False, nudge_text)`` to inject a user message and continue.
-        When a :class:`~core.agent.goals.Goal` is set, defer to
-        :func:`core.agent.goals.should_accept_with_goal` (budget ceiling
-        still forces accept on the last iteration).
+
+        A bare :class:`~core.agent.goals.Goal` without ``verify`` is descriptive
+        only — it does not gate stop (capability answers / skill demos must end
+        on the first no-tool reply). Reviewed goals from
+        ``build_goal_reviewer`` carry ``verify`` and do gate.
         """
-        if self._goal is None:
+        if self._goal is None or self._goal.verify is None:
             return True, None
         from core.agent.goals import should_accept_with_goal
 

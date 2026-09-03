@@ -9,12 +9,12 @@ from typing import Any
 
 import click
 
-from core.agent_harness.grounding.diagnostics import (
+from core.agent_harness.spi.defaults import DefaultPromptContextProvider
+from core.agent_harness.spi.grounding import (
+    CacheStats,
     GroundingSource,
     log_grounding_cache_diagnostics,
 )
-from core.agent_harness.grounding.models import CacheStats
-from core.agent_harness.prompts.grounding import DefaultPromptContextProvider
 
 _logger = logging.getLogger(__name__)
 
@@ -169,8 +169,8 @@ def _build_cli_reference_text_uncached(
 
 def _interactive_shell_slash_hints(provider: SlashCommandProvider | None = None) -> str:
     lines = [
-        "In the interactive shell, describe an incident or paste alert JSON to run "
-        + "a investigation pipeline, or chat with the terminal assistant for CLI help.",
+        "In the interactive shell, chat with the terminal assistant to run tools "
+        + "or get CLI help.",
         "Alpha mode runs every shell command with no guardrails: plain commands are parsed to "
         + "argv and run without a shell, while pipes, redirects, command substitution, and a "
         + "leading ! all run through a full shell. There is no read-only allowlist or blocked "
@@ -189,7 +189,6 @@ def _interactive_shell_slash_hints(provider: SlashCommandProvider | None = None)
     lines.extend(
         [
             "",
-            "Non-interactive investigation: `opensre investigate` with stdin, file, or flags.",
             "Launch the interactive shell: `opensre` (requires a TTY).",
         ]
     )
@@ -292,13 +291,14 @@ def _slash_commands() -> Mapping[str, object]:
     return SLASH_COMMANDS
 
 
-def _cli_command_group() -> click.Command | None:
-    from surfaces.cli.app import cli
-
-    return cli
-
-
 _SESSION_CLI_REFERENCE_ATTR = "_shell_cli_reference"
+
+
+def _session_cli_command_group(session: Any) -> click.Command | None:
+    """The Click group the entrypoint handed the shell, if any."""
+    terminal = getattr(session, "terminal", None)
+    group = getattr(terminal, "cli_command_group", None)
+    return group if isinstance(group, click.Command) else None
 
 
 def session_cli_reference(session: Any) -> CliReference:
@@ -307,7 +307,7 @@ def session_cli_reference(session: Any) -> CliReference:
     if isinstance(cached, CliReference):
         return cached
     cli = CliReference()
-    cli.set_command_group_provider(_cli_command_group)
+    cli.set_command_group_provider(lambda: _session_cli_command_group(session))
     cli.set_slash_commands_provider(_slash_commands)
     setattr(session, _SESSION_CLI_REFERENCE_ATTR, cli)
     return cli
@@ -318,50 +318,28 @@ def shell_prompt_context_provider(session: Any) -> ShellPromptContextProvider:
     return ShellPromptContextProvider(session)
 
 
-class ShellPromptContextProvider:
-    """:class:`core.agent_harness.ports.PromptContextProvider` for the interactive shell.
+class ShellPromptContextProvider(DefaultPromptContextProvider):
+    """The shell's prompt provider: the default grounding plus the CLI catalog.
 
-    Owns CLI catalog assembly (``surfaces.cli`` + slash commands) and delegates
-    repo-level grounding (AGENTS.md, environment block) to
-    :class:`~core.agent_harness.prompts.grounding.DefaultPromptContextProvider`.
+    Overrides only what differs from
+    :class:`~core.agent_harness.prompts.grounding.DefaultPromptContextProvider`:
+    the surface, the CLI reference (the entrypoint's Click group + slash commands, cached per
+    session), and cache diagnostics that include that catalog.
     """
 
     def __init__(self, session: Any) -> None:
-        self._base = DefaultPromptContextProvider(session)
+        super().__init__(session, surface="interactive_shell")
         self._cli = session_cli_reference(session)
 
-    def surface(self) -> str:
-        return "interactive_shell"
+    def bind_session(self, session: Any) -> None:
+        super().bind_session(session)
+        self._cli = session_cli_reference(session)
 
     def cli_reference(self) -> str:
         return self._cli.build_text()
 
-    def agents_md(self) -> str:
-        return self._base.agents_md()
-
-    def docs(self, query: str) -> str:
-        return self._base.docs(query)
-
-    def investigation_flow(self) -> str:
-        return self._base.investigation_flow()
-
-    def runtime_facts(self) -> Mapping[str, Any]:
-        return self._base.runtime_facts()
-
-    def environment_block(self, runtime: Mapping[str, Any] | None = None) -> str:
-        return self._base.environment_block(runtime)
-
-    def long_term_memory(self) -> str:
-        return self._base.long_term_memory()
-
-    def setup_state(self) -> str:
-        return self._base.setup_state()
-
-    def suggested_synthetic_prompt(self) -> str:
-        return self._base.suggested_synthetic_prompt()
-
     def log_diagnostics(self, reason: str) -> None:
-        self._base.log_diagnostics(reason)
+        super().log_diagnostics(reason)
         log_grounding_cache_diagnostics([self._cli.as_grounding_source()], reason)
 
 

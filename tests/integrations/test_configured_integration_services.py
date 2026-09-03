@@ -41,6 +41,38 @@ def test_includes_active_store_integrations_and_dedupes_with_env(monkeypatch: An
     assert catalog.configured_integration_services() == ["sentry", "gitlab", "github"]
 
 
+def test_unsupported_active_store_integration_is_not_advertised(monkeypatch: Any) -> None:
+    """A record left by an uninstalled integration must not reach startup surfaces."""
+    monkeypatch.setattr(catalog, "load_env_integration_services", list)
+    monkeypatch.setattr(
+        catalog,
+        "load_integrations",
+        lambda: [
+            {
+                "service": "retired_integration",
+                "status": "active",
+                "credentials": {"token": "stale"},
+            }
+        ],
+    )
+
+    assert catalog.configured_integration_services() == []
+    assert catalog.configured_integration_health() == []
+
+
+def test_active_store_family_member_is_advertised(monkeypatch: Any) -> None:
+    """Persisted family members remain visible after registry-based filtering."""
+    monkeypatch.setattr(catalog, "load_env_integration_services", list)
+    monkeypatch.setattr(
+        catalog,
+        "load_integrations",
+        lambda: [{"service": "grafana_local", "status": "active"}],
+    )
+
+    assert catalog.configured_integration_services() == ["grafana_local"]
+    assert catalog.configured_integration_health() == [("grafana_local", "ok")]
+
+
 def test_returns_empty_list_when_env_loader_raises(monkeypatch: Any) -> None:
     def _boom() -> list[str]:
         raise RuntimeError("env unreadable")
@@ -80,14 +112,14 @@ def test_configured_services_do_not_call_full_env_loader(monkeypatch: Any) -> No
     assert catalog.configured_integration_services() == ["gitlab"]
 
 
-def test_env_service_list_uses_plain_env_without_keyring(monkeypatch: Any) -> None:
+def test_env_service_list_uses_plain_env_without_credentials_file(monkeypatch: Any) -> None:
     monkeypatch.setenv("GITLAB_ACCESS_TOKEN", "from-env")
     monkeypatch.delenv("POSTHOG_MCP_AUTH_TOKEN", raising=False)
 
-    def _keyring_should_not_run(*_args: Any, **_kwargs: Any) -> str:
-        raise AssertionError("startup metadata path must not read keyring")
+    def _file_should_not_run(*_args: Any, **_kwargs: Any) -> str:
+        raise AssertionError("startup metadata path must not read the credentials file")
 
-    monkeypatch.setattr("keyring.get_password", _keyring_should_not_run)
+    monkeypatch.setattr("config.secrets.local_file.get", _file_should_not_run)
 
     assert "gitlab" in catalog.load_env_integration_services()
 
@@ -103,6 +135,18 @@ def test_slack_absent_without_slack_env(monkeypatch: Any) -> None:
     monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     monkeypatch.delenv("SLACK_ACCESS_TOKEN", raising=False)
     assert "slack" not in catalog.load_env_integration_services()
+
+
+def test_google_docs_env_marks_google_docs_configured(monkeypatch: Any) -> None:
+    monkeypatch.setenv("GOOGLE_CREDENTIALS_FILE", "/path/to/sa.json")
+    monkeypatch.setenv("GOOGLE_DRIVE_FOLDER_ID", "folder-1")
+    assert "google_docs" in catalog.load_env_integration_services()
+
+
+def test_google_docs_absent_without_both_env_vars(monkeypatch: Any) -> None:
+    monkeypatch.setenv("GOOGLE_CREDENTIALS_FILE", "/path/to/sa.json")
+    monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
+    assert "google_docs" not in catalog.load_env_integration_services()
 
 
 class TestConfiguredIntegrationHealth:

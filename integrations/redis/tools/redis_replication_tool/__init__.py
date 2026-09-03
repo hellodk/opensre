@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
     get_replication,
@@ -18,7 +19,7 @@ from integrations.redis import (
         "connected replicas, and per-replica offset lag."
     ),
     source="redis",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Check replication health when investigating stale reads or a failover event.",
         "Measure replica offset lag and master link status across connected replicas.",

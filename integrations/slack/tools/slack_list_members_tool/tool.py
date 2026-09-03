@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
-from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.domain.types.evidence import record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
+from core.tool_framework import SUMMARIZE_OBSERVATION_TAG, tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.web_client import (
     bot_token_configured,
@@ -16,11 +17,28 @@ from integrations.slack.web_client import (
 )
 
 
+def _map_slack_list_team_members(
+    evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
+) -> None:
+    """Record the workspace roster as citeable evidence when members were read."""
+    members = output.get("members")
+    if not isinstance(members, list) or not members:
+        return
+    truncated = " (truncated)" if output.get("truncated") else ""
+    record_evidence_entry(
+        evidence,
+        source="slack_list_team_members",
+        label="Slack Workspace Roster",
+        summary=f"{len(members)} members{truncated}",
+    )
+
+
 class SlackListTeamMembersTool(BaseTool):
     """List the members of the Slack workspace the bot is installed in."""
 
     name = "slack_list_team_members"
     source = SOURCE
+    evidence_mapper = _map_slack_list_team_members
     description = (
         "List members of the Slack *workspace* the bot is installed in "
         "(id, username, real name, title, bot flag) via users.list. "
@@ -40,7 +58,7 @@ class SlackListTeamMembersTool(BaseTool):
     ]
     tags = (SUMMARIZE_OBSERVATION_TAG,)
     requires = ["slack"]
-    side_effect_level = "read_only"
+    side_effect_level = SideEffectLevel.READ_ONLY
     requires_approval = False
     input_schema = {
         "type": "object",
@@ -103,5 +121,5 @@ class SlackListTeamMembersTool(BaseTool):
 
 slack_list_team_members = tool(
     SlackListTeamMembersTool(),
-    surfaces=("investigation", "chat", "action"),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
 )

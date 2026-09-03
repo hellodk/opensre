@@ -7,8 +7,15 @@ from typing import Protocol
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.filters import has_completions
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
+from prompt_toolkit.keys import Keys
+
+from infrastructure.terminal.prompt_support import (
+    CTRL_C_DOUBLE_PRESS_WINDOW_S,
+    repl_prompt_ctrl_c_should_exit,
+)
 
 
 class _DispatchCancelState(Protocol):
@@ -18,9 +25,34 @@ class _DispatchCancelState(Protocol):
     def cancel_current_dispatch(self) -> None:
         raise NotImplementedError
 
+    def request_exit(self) -> None:
+        """Request an orderly exit from the interactive shell."""
 
-# Keystroke escape (xterm modifyOtherKeys for Shift+Enter), not a colour code.
+    def arm_ctrl_c_exit_hint(self, duration_seconds: float) -> None:
+        """Show the transient double-press exit hint."""
+
+    def clear_ctrl_c_exit_hint(self) -> None:
+        """Clear the transient double-press exit hint."""
+
+
+# Keystroke escapes, not colour codes. Terminals use either xterm's
+# modifyOtherKeys encoding or the CSI-u keyboard protocol for modified Enter.
 _SHIFT_ENTER_SEQUENCE = "\x1b[27;2;13~"
+_MODIFIED_ENTER_SEQUENCES = frozenset(
+    {
+        _SHIFT_ENTER_SEQUENCE,
+        *(f"\x1b[27;{modifier};13~" for modifier in range(3, 9)),
+        *(f"\x1b[13;{modifier}u" for modifier in range(2, 9)),
+        "\x1b\r",
+        "\x1b\n",
+    }
+)
+
+
+def _install_modified_enter_sequences() -> None:
+    """Teach prompt-toolkit's VT parser the modified Enter encodings it lacks."""
+    for sequence in _MODIFIED_ENTER_SEQUENCES:
+        ANSI_SEQUENCES.setdefault(sequence, Keys.ControlM)
 
 
 def _tab_expand_or_menu(buffer: Buffer) -> None:
@@ -48,14 +80,21 @@ def _tab_expand_or_menu(buffer: Buffer) -> None:
 
 
 def _build_prompt_key_bindings() -> KeyBindings:
+    _install_modified_enter_sequences()
     bindings = KeyBindings()
 
     @bindings.add("c-m")
-    def _accept_turn(event: object) -> None:
-        if event.data == _SHIFT_ENTER_SEQUENCE:  # type: ignore[attr-defined]
-            event.current_buffer.newline(copy_margin=False)  # type: ignore[attr-defined]
+    def _accept_turn(event: KeyPressEvent) -> None:
+        if event.data in _MODIFIED_ENTER_SEQUENCES:
+            event.current_buffer.newline(copy_margin=False)
             return
-        event.current_buffer.validate_and_handle()  # type: ignore[attr-defined]
+        event.current_buffer.validate_and_handle()
+
+    @bindings.add("c-j")
+    def _insert_newline(event: KeyPressEvent) -> None:
+        # Several terminals encode Shift+Enter as LF while plain Enter is CR.
+        # Ctrl+J therefore remains a portable explicit-newline fallback too.
+        event.current_buffer.newline(copy_margin=False)
 
     @bindings.add("tab")
     def _tab_complete(event: object) -> None:
@@ -82,6 +121,26 @@ def _build_prompt_key_bindings() -> KeyBindings:
 
 def build_cancel_key_bindings(state: _DispatchCancelState) -> KeyBindings:
     kb = KeyBindings()
+
+    @kb.add("c-c", eager=True)
+    def _on_ctrl_c(event: KeyPressEvent) -> None:
+        event.current_buffer.reset()
+        if state.is_dispatch_running():
+            state.clear_ctrl_c_exit_hint()
+            state.cancel_current_dispatch()
+            event.app.invalidate()
+            return
+        if repl_prompt_ctrl_c_should_exit():
+            state.clear_ctrl_c_exit_hint()
+            state.request_exit()
+            event.app.exit(result="")
+            return
+        state.arm_ctrl_c_exit_hint(CTRL_C_DOUBLE_PRESS_WINDOW_S)
+        # Full repaint, not a diff: the transient hint replaces the idle
+        # "Ready…" line in place, and the renderer's line diff can skip an
+        # in-place text→text swap on that row, leaving the hint unshown.
+        event.app.renderer.reset()
+        event.app.invalidate()
 
     @kb.add("escape", eager=True)
     def _on_escape(event: KeyPressEvent) -> None:

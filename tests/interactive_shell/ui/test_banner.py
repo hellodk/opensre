@@ -6,44 +6,254 @@ import io
 
 from rich.console import Console
 
-from surfaces.interactive_shell.ui.banner import banner as banner_module
-from surfaces.interactive_shell.ui.banner import banner_state as banner_state_module
-from surfaces.interactive_shell.ui.components import rendering as rendering_module
+from config.constants import PRODUCT_DISPLAY_NAME
+from surfaces.interactive_shell.ui import poster as poster_module
+from surfaces.shared.terminal.banner import banner as banner_module
+from surfaces.shared.terminal.banner import banner_state as banner_state_module
+from surfaces.shared.terminal.banner.banner_state import LaunchStatus
 
 
-def test_integration_display_name_preserves_brand_casing() -> None:
-    assert banner_state_module.integration_display_name("servicenow") == "ServiceNow"
-    assert banner_state_module.integration_display_name("jira") == "Jira"
+def _rgb(hex_color: str) -> str:
+    """``"#RRGGBB"`` → the ``"r;g;b"`` truecolor triple."""
+    h = hex_color.lstrip("#")
+    return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
 
 
-def test_banner_shows_ollama_model(monkeypatch: object) -> None:
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5:7b")
+def _fixed_status() -> LaunchStatus:
+    return LaunchStatus(
+        skill_count=21,
+        integration_count=2,
+    )
+
+
+def _line_centers(plain: str, *, width: int) -> list[tuple[str, int, int]]:
+    """Return (stripped, leading_spaces, trailing_pad) for non-empty lines."""
+    rows: list[tuple[str, int, int]] = []
+    for raw in plain.splitlines():
+        if not raw.strip():
+            continue
+        stripped = raw.rstrip("\n")
+        # Console may pad to width with trailing spaces.
+        content = stripped.rstrip()
+        lead = len(content) - len(content.lstrip())
+        body = content.strip()
+        trail = width - lead - len(body) if width >= lead + len(body) else 0
+        rows.append((body, lead, trail))
+    return rows
+
+
+def test_launch_banner_is_borderless_centered_hero(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    monkeypatch.setattr(banner_module, "get_opensre_version", lambda: "0.1.2026.9.2+main.abc1234")
     console_file = io.StringIO()
-    console = Console(file=console_file, force_terminal=False, highlight=False)
+    console = Console(file=console_file, force_terminal=False, highlight=False, width=120)
 
-    banner_module.render_splash(console)
-    banner_module.render_ready_box(console)
+    banner_module.render_launch_banner(console)
 
     output = console_file.getvalue()
-    assert "ollama" in output
-    assert "qwen2.5:7b" in output
-    assert "ollama · default" not in output
+    assert PRODUCT_DISPLAY_NAME == "OpenSRE"
+    assert "OpenSRE" in output or "██████" in output  # wordmark or compact title
+    assert "v0.1.2026.9.2+main.abc1234" in output  # full build version
+    assert "Skills (21) ✓" in output
+    assert "Integrations (2) ✓" in output
+    # Welcome title + product description (same copy as the sign-in screen),
+    # in place of the old TIP line.
+    assert "Welcome to OpenSRE CLI" in output
+    assert "AI-powered DevOps agent" in output
+    assert "/ commands" in output
+    # Only the two capability items — no MCPs or AGENTS.md line.
+    assert "MCPs" not in output
+    assert "AGENTS.md" not in output
+    assert not any(char in output for char in "╭╮╰╯│")
 
 
-def test_ready_box_uses_active_theme_palette() -> None:
-    from platform.terminal.theme import set_active_theme
+def test_launch_banner_centers_each_row_independently(monkeypatch: object) -> None:
+    """Short rows (version) must share the same center axis as the wordmark.
 
+    Bundling unequal lines into one ``Align.center`` left-aligns shorts inside
+    the widest line — the school-project look vs Droid.
+    """
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    monkeypatch.setattr(banner_module, "get_opensre_version", lambda: "0.1.2026.9.2+main.abc1234")
+    width = 120
+    console = Console(record=True, force_terminal=False, highlight=False, width=width)
+    console.print(banner_module.build_launch_banner(console))
+    plain = console.export_text(styles=False)
+    rows = _line_centers(plain, width=width)
+    assert rows, "banner must paint at least one row"
+
+    def _center_col(body: str, lead: int) -> float:
+        return lead + (len(body) / 2)
+
+    centers = [_center_col(body, lead) for body, lead, _trail in rows]
+    mid = width / 2
+    # Every content row's midpoint should sit near the terminal midline.
+    for body, center in zip([r[0] for r in rows], centers, strict=True):
+        assert abs(center - mid) <= 2.0, (body, center, mid)
+
+
+def test_launch_banner_draws_ring_logo_on_wide_terminals(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    console = Console(record=True, force_terminal=False, highlight=False, width=120)
+
+    console.print(banner_module.build_launch_banner(console))
+
+    output = console.export_text(styles=False)
+    # A ring-wall row of the braille "loops" mark.
+    assert "⣿⣿⠀⠀⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⠀⢸⣿⣿" in output
+
+
+def test_wordmark_spin_frames_complete_a_full_revolution() -> None:
+    frames = banner_module.build_wordmark_spin_frames()
+    blank = "\u2800"
+
+    assert len(frames) > 10
+    assert frames[0].rows == frames[-1].rows
+    assert any(frame.back_facing for frame in frames)
+    assert all(tuple(map(len, frame.rows)) == tuple(map(len, frames[0].rows)) for frame in frames)
+    edge = min(frames, key=lambda frame: frame.scale)
+    assert max(len(row.strip(blank)) for row in edge.rows) < max(
+        len(row.strip(blank)) for row in frames[0].rows
+    )
+
+
+def test_launch_banner_spins_once_in_place_on_tty(monkeypatch: object) -> None:
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+        def isatty(self) -> bool:
+            return True
+
+    fake_stdout = _FakeStdout()
+    monkeypatch.setattr("sys.stdout", fake_stdout)
+    monkeypatch.setattr(banner_module.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    console = Console(
+        file=fake_stdout,
+        force_terminal=True,
+        highlight=False,
+        color_system="truecolor",
+        width=120,
+    )
+
+    banner_module.render_launch_banner(console)
+
+    written = "".join(fake_stdout.writes)
+    animation_end = written.index("\x1b[?25h") + len("\x1b[?25h")
+    animation = written[:animation_end]
+    assert written.count("\x1b[10A") > 10
+    assert "\x1b[2;1H" not in animation
+    assert "\x1b[H" not in animation
+    assert "\n" not in animation.replace("\r\n", "")
+    assert written.index("\x1b[?25l") < written.index("\x1b[1G")
+    assert written.index("\x1b[?25h") < written.index("Welcome to OpenSRE CLI")
+
+
+def test_launch_banner_falls_back_to_title_on_narrow_terminals(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    console = Console(record=True, force_terminal=False, highlight=False, width=20)
+
+    console.print(banner_module.build_launch_banner(console))
+
+    output = console.export_text(styles=False)
+    assert "OpenSRE" in output
+    assert "⣿⣿" not in output  # braille ring omitted below its min width
+
+
+def test_launch_banner_uses_active_theme_palette(monkeypatch: object) -> None:
+    from infrastructure.terminal.theme import THEME_REGISTRY, set_active_theme
+
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
     set_active_theme("pink")
-    pink_rgb = "255;179;217"
-    green_rgb = "185;237;175"
+    pink_rgb = _rgb(THEME_REGISTRY["pink"].HIGHLIGHT)
+    green_rgb = _rgb(THEME_REGISTRY["green"].HIGHLIGHT)
 
     console = Console(record=True, width=120)
-    console.print(banner_module.build_ready_panel(console))
+    console.print(banner_module.build_launch_banner(console))
 
     styled = console.export_text(styles=True)
     assert pink_rgb in styled
     assert green_rgb not in styled
+
+
+def test_launch_banner_stacks_without_overflow_on_narrow_terminals(
+    monkeypatch: object,
+) -> None:
+    from rich.cells import cell_len
+
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    for width in (80, 50, 36):
+        console = Console(record=True, force_terminal=False, highlight=False, width=width)
+        banner_module.render_launch_banner(console)
+        plain = console.export_text(styles=False)
+        assert all(cell_len(line.rstrip()) <= width for line in plain.splitlines())
+
+
+def test_status_marks_empty_or_unavailable_capabilities(monkeypatch: object) -> None:
+    monkeypatch.setattr(
+        banner_module,
+        "load_launch_status",
+        lambda: LaunchStatus(
+            skill_count=0,
+            integration_count=0,
+        ),
+    )
+    console = Console(record=True, force_terminal=False, highlight=False, width=120)
+
+    console.print(banner_module.build_launch_banner(console))
+
+    output = console.export_text(styles=False)
+    assert "Skills (0) ✗" in output
+    assert "Integrations (0) ✗" in output
+
+
+def test_integration_count_includes_all_configured(monkeypatch: object) -> None:
+    # Every configured integration counts (not just MCP ones), any health state.
+    monkeypatch.setattr(
+        "integrations.catalog.configured_integration_health",
+        lambda: [("datadog", "ok"), ("github", "ok")],
+    )
+
+    assert banner_state_module._count_configured_integrations() == 2
+
+
+def test_status_probes_survive_loader_failures(monkeypatch: object) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fail_startup_probes(name: str, *args: object, **kwargs: object) -> object:
+        if name in {
+            "core.agent_harness.spi.grounding",
+            "integrations.catalog",
+        }:
+            raise ImportError("simulated startup probe failure")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fail_startup_probes)
+
+    assert banner_state_module._count_loaded_skills() == 0
+    assert banner_state_module._count_configured_integrations() == 0
+
+
+def test_banner_shows_the_full_build_version(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    monkeypatch.setattr(
+        banner_module,
+        "get_opensre_version",
+        lambda: "0.1.2026.9.2+main.abc1234",
+    )
+    # Full build version (identity for support / bug reports), not a trimmed one.
+    version = banner_module._build_version_line().plain
+    assert version == "v0.1.2026.9.2+main.abc1234"
 
 
 def test_refresh_welcome_poster_uses_repl_safe_render(monkeypatch: object) -> None:
@@ -51,7 +261,7 @@ def test_refresh_welcome_poster_uses_repl_safe_render(monkeypatch: object) -> No
     render_calls: list[dict[str, object | None]] = []
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.ui.components.rendering.repl_clear_screen",
+        "surfaces.shared.terminal.components.rendering.repl_clear_screen",
         lambda: None,
     )
 
@@ -64,141 +274,10 @@ def test_refresh_welcome_poster_uses_repl_safe_render(monkeypatch: object) -> No
         render_calls.append({"session": session, "theme_notice": theme_notice})
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.ui.components.rendering.repl_render_launch_poster",
+        "surfaces.interactive_shell.ui.poster.repl_render_launch_poster",
         _fake_render,
     )
 
-    rendering_module.refresh_welcome_poster(console, session="sess", theme_notice="pink")
+    poster_module.refresh_welcome_poster(console, session="sess", theme_notice="pink")
 
     assert render_calls == [{"session": "sess", "theme_notice": "pink"}]
-
-
-def test_get_username_prefers_github_handle(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_module, "_github_username", lambda: "octocat")
-    monkeypatch.setattr(banner_module.getpass, "getuser", lambda: "system-user")
-
-    assert banner_module._get_username() == "octocat"
-
-
-def test_get_username_falls_back_to_system_user(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_module, "_github_username", lambda: "")
-    monkeypatch.setattr(banner_module.getpass, "getuser", lambda: "system-user")
-
-    assert banner_module._get_username() == "system-user"
-
-
-def test_github_username_reads_saved_credential(monkeypatch: object) -> None:
-    monkeypatch.setattr(
-        "integrations.store.get_integration",
-        lambda service: {"credentials": {"username": "octocat"}} if service == "github" else None,
-    )
-
-    assert banner_module._github_username() == "octocat"
-
-
-def test_github_username_empty_when_not_configured(monkeypatch: object) -> None:
-    monkeypatch.setattr("integrations.store.get_integration", lambda _service: None)
-
-    assert banner_module._github_username() == ""
-
-
-def test_github_username_survives_identity_import_failure(monkeypatch: object) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _fail_github_identity(name: str, *args: object, **kwargs: object) -> object:
-        if name == "integrations.github.identity":
-            raise ImportError("simulated heavy import failure")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fail_github_identity)
-
-    assert banner_module._github_username() == ""
-
-
-def test_ambient_column_marks_incomplete_integration(monkeypatch: object) -> None:
-    # A hosted MCP record saved without an API token is "present" but cannot
-    # connect; the banner must mark it rather than imply it works.
-    monkeypatch.setattr(
-        banner_state_module,
-        "_load_integration_health",
-        lambda: [("Sentry", "ok"), ("Posthog_Mcp", "incomplete")],
-    )
-    monkeypatch.setattr(banner_state_module, "_is_alert_listener_active", lambda: False)
-
-    text = banner_state_module._build_ambient_right_column().plain
-
-    assert "Sentry" in text
-    assert "Posthog_Mcp ⚠" in text
-    assert "⚠ incomplete — run /integrations verify" in text
-
-
-def test_ambient_column_no_warning_when_all_healthy(monkeypatch: object) -> None:
-    monkeypatch.setattr(
-        banner_state_module,
-        "_load_integration_health",
-        lambda: [("Sentry", "ok"), ("GitHub", "ok")],
-    )
-    monkeypatch.setattr(banner_state_module, "_is_alert_listener_active", lambda: False)
-
-    text = banner_state_module._build_ambient_right_column().plain
-
-    assert "Sentry" in text
-    assert "GitHub" in text
-    assert "⚠" not in text
-
-
-def test_ambient_column_shows_skill_count(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_state_module, "_load_integration_health", lambda: [])
-    monkeypatch.setattr(banner_state_module, "_is_alert_listener_active", lambda: False)
-    monkeypatch.setattr(banner_state_module, "_count_loaded_skills", lambda: 7)
-    monkeypatch.setattr(banner_state_module, "_count_scheduled_tasks", lambda: 3)
-
-    text = banner_state_module._build_ambient_right_column().plain
-
-    assert "Skills (7) loaded into cyberdeck" in text
-    assert "Scheduled tasks (3)" in text
-
-
-def test_count_loaded_skills_survives_loader_failure(monkeypatch: object) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _fail_skills_loader(name: str, *args: object, **kwargs: object) -> object:
-        if name == "core.agent_harness.prompts.skills.loader":
-            raise ImportError("simulated heavy import failure")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fail_skills_loader)
-
-    assert banner_state_module._count_loaded_skills() == 0
-
-
-def test_count_scheduled_tasks_survives_store_failure(monkeypatch: object) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _fail_scheduler_store(name: str, *args: object, **kwargs: object) -> object:
-        if name == "platform.scheduler.store":
-            raise ImportError("simulated scheduler store failure")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fail_scheduler_store)
-
-    assert banner_state_module._count_scheduled_tasks() == 0
-
-
-def test_ready_box_expands_to_console_width() -> None:
-    console_file = io.StringIO()
-    console = Console(file=console_file, force_terminal=False, highlight=False, width=120)
-
-    banner_module.render_ready_box(console)
-
-    lines = [
-        line for line in console_file.getvalue().splitlines() if line.startswith(("╭", "╰", "│"))
-    ]
-    assert lines
-    assert max(len(line) for line in lines) == 120

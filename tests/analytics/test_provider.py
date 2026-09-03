@@ -12,8 +12,8 @@ from typing import NoReturn
 
 import pytest
 
-from platform.analytics import install, provider
-from platform.analytics.events import Event
+from infrastructure.analytics import install, provider
+from infrastructure.analytics.events import Event
 
 
 @pytest.fixture(autouse=True)
@@ -295,7 +295,7 @@ def test_analytics_events_from_same_instance_share_exact_distinct_id(
     analytics = provider.Analytics()
     analytics.capture(Event.CLI_INVOKED, {"interactive": False})
     analytics.capture(Event.ONBOARD_STARTED, {"entrypoint": "cli"})
-    analytics.capture(Event.INVESTIGATION_COMPLETED)
+    analytics.capture(Event.UPDATE_COMPLETED)
     analytics.shutdown(flush=True)
 
     assert len(posted_payloads) == 3
@@ -305,11 +305,11 @@ def test_analytics_events_from_same_instance_share_exact_distinct_id(
     for payload in posted_payloads:
         properties = payload["json"]["properties"]
         assert (
-            properties["execution_environment"] == provider._RUNTIME_CONTEXT.execution_environment
+            properties["execution_environment"] == provider._ANALYTICS_RUNTIME.execution_environment
         )
-        assert properties["is_ci"] is provider._RUNTIME_CONTEXT.is_ci
-        assert properties["is_container"] is provider._RUNTIME_CONTEXT.is_container
-        assert properties["container_runtime"] == provider._RUNTIME_CONTEXT.container_runtime
+        assert properties["is_ci"] is provider._ANALYTICS_RUNTIME.is_ci
+        assert properties["is_container"] is provider._ANALYTICS_RUNTIME.is_container
+        assert properties["container_runtime"] == provider._ANALYTICS_RUNTIME.container_runtime
     log_lines = (tmp_path / "posthog_events.txt").read_text(encoding="utf-8").splitlines()
     assert len(log_lines) == 3
     assert Event.CLI_INVOKED.value in log_lines[0]
@@ -469,7 +469,7 @@ import sys
 import time
 from pathlib import Path
 
-from platform.analytics import provider
+from infrastructure.analytics import provider
 
 config_dir = Path(sys.argv[1])
 start_file = Path(sys.argv[2])
@@ -977,6 +977,56 @@ def test_shutdown_flush_false_returns_without_waiting_on_slow_worker(
 
     assert analytics._shutdown is True
     assert elapsed < 0.2
+
+
+def test_shutdown_flush_spends_one_budget_not_two(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A drain that outlives its budget blocks ``/exit`` for ``timeout``, not twice it.
+
+    ``shutdown`` waits on the drained Event and then joins the worker. Passing
+    the full ``timeout`` to each made a documented 0.5s interactive exit block
+    for 1.0s whenever a send was still in flight — the two waits run back to
+    back, so the budget has to be shared.
+    """
+    # Arrange: a worker whose send outlives any budget we give the drain.
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider.atexit, "register", lambda *_a, **_k: None)
+
+    class _SlowResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class _SlowClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> _SlowClient:
+            return self
+
+        def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+            return None
+
+        def post(self, _url: str, **_kwargs: object) -> _SlowResponse:
+            time.sleep(2.0)
+            return _SlowResponse()
+
+    monkeypatch.setattr(provider.httpx, "Client", _SlowClient)
+
+    analytics = provider.Analytics()
+    analytics.capture(Event.CLI_INVOKED, {"interactive": True})
+    budget = 0.25
+
+    # Act
+    started = time.perf_counter()
+    analytics.shutdown(flush=True, timeout=budget)
+    elapsed = time.perf_counter() - started
+
+    # Assert: one budget, with room for scheduling — never two.
+    assert elapsed < budget * 1.6, f"drain took {elapsed:.2f}s against a {budget}s budget"
 
 
 def test_atexit_registers_non_blocking_shutdown(

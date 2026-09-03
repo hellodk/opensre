@@ -13,10 +13,6 @@ from config.constants import (
     OPENSRE_MEMORY_DIR_ENV,
 )
 from config.grafana_cloud import load_env
-from config.platform_bootstrap import ensure_project_platform_package
-from config.secrets.os_keyring import reset_keyring_state
-
-ensure_project_platform_package()
 
 _ENV_PATH = paths.PROJECT_ROOT / ".env"
 
@@ -49,14 +45,16 @@ _mark_tests_for_analytics()
 
 
 @pytest.fixture(autouse=True)
-def _harness_ports_per_test() -> Iterator[None]:
+def _harness_providers_per_test() -> Iterator[None]:
     """Wire harness ports before each test; reset after to avoid session leakage."""
-    from platform.harness_ports import reset_harness_ports
-    from surfaces.interactive_shell.ui.output.boundary import install_harness_ports
+    from bootstrap.adapters import install_cli_auth_checker
+    from infrastructure.harness_providers import reset_harness_providers
+    from surfaces.shared.terminal.output.boundary import install_harness_providers
 
-    install_harness_ports()
+    install_harness_providers()
+    install_cli_auth_checker()
     yield
-    reset_harness_ports()
+    reset_harness_providers()
 
 
 @pytest.fixture(autouse=True)
@@ -90,12 +88,10 @@ def _restore_os_environ():
 def _disable_system_keyring(request, monkeypatch) -> None:
     """Keep tests isolated from any real developer keychain entries.
 
-    The sticky "keyring unavailable" flag is process-global by design (one probe
-    decides for a whole run), so a test that deliberately provokes a backend
-    failure would otherwise leak that state into every later test on the same
-    xdist worker.
+    Local persistence still honours ``OPENSRE_DISABLE_KEYRING`` (env-only
+    mode). Setting it here keeps unit tests from writing
+    ``~/.opensre/credentials.json`` unless they opt back in.
     """
-    reset_keyring_state()
     if request.node.get_closest_marker("live_llm") is not None:
         return
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
@@ -134,10 +130,10 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
         return
     monkeypatch.setenv("OPENSRE_WIZARD_STORE_PATH", str(tmp_path / "opensre.json"))
     monkeypatch.setenv("OPENSRE_LLM_AUTH_METADATA_PATH", str(tmp_path / "llm-auth.json"))
-    # Same reasoning for the fallback credential store, which ``host_home()``
-    # resolves from this module global at call time: a test that provokes a
-    # keyring failure would otherwise write real secrets into the developer's
-    # ~/.opensre/credentials.json and leave them there.
+    # Same reasoning for the local credentials file, which ``host_home()``
+    # resolves from this module global at call time: a test that writes a
+    # secret would otherwise land it in the developer's
+    # ~/.opensre/credentials.json.
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
 
 
@@ -149,7 +145,7 @@ def _reset_setup_state_cache() -> None:
     stores, so a test whose stores happen to match an earlier one would read
     the earlier block and pass or fail for the wrong reason.
     """
-    from platform.setup_state import clear_setup_state_cache
+    from infrastructure.setup_state import clear_setup_state_cache
 
     clear_setup_state_cache()
 

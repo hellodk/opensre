@@ -1,8 +1,11 @@
-"""Argv classification, fast-path ``--version`` output, and stdio setup.
+"""Argv classification, fast-path CLI answers, and stdio setup.
 
 Pure helpers used by ``surfaces.cli.app`` before the full CLI is
 bootstrapped. They take the Click command / argv explicitly so they carry no
 dependency on the root group and stay trivially testable.
+
+Fast paths (``--version``) must stay cheap: they answer before
+:func:`surfaces.cli.startup.run` installs adapters.
 """
 
 from __future__ import annotations
@@ -82,7 +85,6 @@ def print_fast_version(argv: list[str]) -> None:
         return
 
     import json
-
     import platform
 
     json_output = argv[0] in {"--json", "-j"}

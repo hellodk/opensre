@@ -21,37 +21,46 @@ from typing import TYPE_CHECKING, Any
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from surfaces.interactive_shell.runtime.action_turn import ShellActionRunner
+    from infrastructure.turn_host.turn_runner import TurnRunner
 
-from platform.analytics.repl_context import bound_repl_turn_context
-from platform.analytics.usage_context import SURFACE_CLI, bound_usage_context
-from platform.observability.trace.spans import bind_session_trace, emit_thread_boundary
+from infrastructure.analytics.repl_context import bound_repl_turn_context
+from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.observability.trace.spans import (
+    bind_session_trace,
+    emit_thread_boundary,
+)
 from surfaces.interactive_shell.runtime.agent_presentation import (
     AgentEvent,
     AgentEventSink,
     ConsoleAgentEventSink,
 )
-from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskManager
+from surfaces.interactive_shell.runtime.background.workers import (
+    BackgroundTaskPool,
+)
 from surfaces.interactive_shell.runtime.core.confirmation import (
     DispatchCancelled,
     request_confirmation_via_prompt,
 )
-from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
+from surfaces.interactive_shell.runtime.core.state import (
+    DEFAULT_CONFIRM_OPTIONS,
+    ReplState,
+    SpinnerState,
+)
 from surfaces.interactive_shell.runtime.input import PromptInputReader
 from surfaces.interactive_shell.runtime.input.actions import (
     InputAction,
     ShellInputSnapshot,
     decide_input_action,
 )
-from surfaces.interactive_shell.runtime.utils.input_policy import (
+from surfaces.interactive_shell.runtime.input_policy import (
     turn_needs_exclusive_stdin,
 )
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.output.console_state import set_investigation_spinner
-from surfaces.interactive_shell.ui.output.repl_progress import repl_safe_progress_scope
+from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
-from surfaces.interactive_shell.utils.error_handling.exception_reporting import report_exception
-from surfaces.interactive_shell.utils.telemetry import PromptRecorder
+from surfaces.shared.error_handling.exception_reporting import report_exception
+from surfaces.shared.terminal.output.console_state import set_turn_spinner
+from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +68,7 @@ _AGENT_TURN_KIND = "agent"
 
 
 @dataclass(frozen=True)
-class AgentTurnRuntime:
+class AgentTurnResources:
     """Immutable dependencies for running one submitted shell turn."""
 
     session: Session
@@ -71,12 +80,91 @@ class AgentTurnRuntime:
     #: terminal; an embedding caller passes its console so agent responses and
     #: tool output land in the same stream as the startup renders.
     console: Console | None = None
-    #: Session-scoped action runner; rebound to each turn's streaming console.
-    action_runner: ShellActionRunner | None = None
+    #: Session-scoped turn host; each turn binds its own streaming console.
+    turn_handler: TurnRunner | None = None
+
+
+def _confirm_via_prompt(runtime: AgentTurnResources, prompt: str) -> str:
+    """Park for a y/n answer; hide the free-text box via ReplState confirmation phase.
+
+    ``begin_confirmation`` flips ``state.is_awaiting_confirmation()``, which
+    ``typing_box_hidden`` / ``render_prompt_region`` already honor. ``redraw``
+    invalidates the live prompt immediately so the box hides and restores
+    without waiting for the next refresh tick. ``prepare_ui`` clears any
+    typeahead that landed in the (hidden) composer before the gate opened.
+    """
+    # The execution gate stashes the rows it wants (e.g. an "always allow" row)
+    # on the terminal just before calling this; consume them for the choice.
+    terminal = runtime.session.terminal
+    options = terminal.pending_confirm_options
+    terminal.pending_confirm_options = None
+    app = terminal.prompt_app
+    prompt_running = app is not None and getattr(app, "is_running", False)
+    if terminal.exclusive_stdin_active or not prompt_running:
+        # Exclusive-stdin / subprocess turns own the TTY (and ``is_running`` can
+        # still be true). Parking on the prompt app hangs while the cooked
+        # terminal echoes the arrow keys, so read a plain line instead.
+        return _confirm_via_readline(prompt, options)
+    return request_confirmation_via_prompt(
+        runtime.state,
+        prompt,
+        options=options,
+        redraw=runtime.invalidate_prompt,
+        prepare_ui=lambda: _reset_prompt_buffer(runtime.session),
+    )
+
+
+def _confirm_via_readline(prompt: str, options: tuple[tuple[str, str], ...] | None) -> str:
+    """Cooked-stdin confirmation for when the arrow-nav prompt app is unavailable.
+
+    Prints the rows and reads one line; a row tag, digit, or answer key resolves
+    to that row's answer, which the execution gate interprets. An empty line
+    matches the arrow-nav default: the last row (cancel).
+    """
+    rows = options or DEFAULT_CONFIRM_OPTIONS
+    for index, (_answer, label) in enumerate(rows):
+        print(f"  [{chr(ord('a') + index)}] {label}")
+    tags = "/".join(chr(ord("a") + index) for index in range(len(rows)))
+    cancel = rows[-1][0]
+    try:
+        raw = input(f"{prompt} [{tags}] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return cancel
+    if not raw:
+        return cancel
+    for index, (answer, _label) in enumerate(rows):
+        if raw in {chr(ord("a") + index), str(index + 1), answer}:
+            return answer
+    return raw
+
+
+def _reset_prompt_buffer(session: Session) -> None:
+    """Empty the live prompt buffer so hidden typeahead cannot submit later.
+
+    Confirmation parks on a worker thread; prompt-toolkit buffer mutations must
+    run on the UI loop (same rule as ``invalidate_prompt`` / refresh prefill).
+    """
+    terminal = getattr(session, "terminal", None)
+    if terminal is None:
+        return
+    app = getattr(terminal, "prompt_app", None)
+    if app is None:
+        return
+
+    def _reset() -> None:
+        buffer = getattr(app, "current_buffer", None)
+        if buffer is not None:
+            buffer.reset()
+
+    loop = getattr(terminal, "main_loop", None)
+    if loop is not None:
+        loop.call_soon_threadsafe(_reset)
+        return
+    _reset()
 
 
 def _streaming_console(
-    runtime: AgentTurnRuntime, cancel_event: threading.Event
+    runtime: AgentTurnResources, cancel_event: threading.Event
 ) -> StreamingConsole:
     """Spinner-aware console for one turn, writing where the caller asked.
 
@@ -104,7 +192,7 @@ def _streaming_console(
     )
 
 
-async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
+async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     """Set up shell presentation for one turn and drive its lifecycle."""
     dispatch_cancel = threading.Event()
     console = _streaming_console(runtime, dispatch_cancel)
@@ -121,8 +209,10 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
     exclusive_stdin = turn_needs_exclusive_stdin(text, runtime.session)
     progress_scope = contextlib.nullcontext() if exclusive_stdin else repl_safe_progress_scope()
     runtime.session.terminal.exclusive_stdin_active = exclusive_stdin
-    # Expose this turn's spinner so investigation stages can animate phase labels.
-    set_investigation_spinner(runtime.spinner)
+    # Blocks nested validate_and_handle from set_auto_command (e.g. /goal set).
+    runtime.session.terminal.dispatch_active = True
+    # Expose this turn's spinner so rendering helpers can animate phase labels.
+    set_turn_spinner(runtime.spinner)
     emit_thread_boundary(
         runtime.session.session_id,
         name="turn_boundary",
@@ -138,13 +228,22 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
                 text=text,
                 output=console,
                 recorder=recorder,
-                confirm=lambda prompt: request_confirmation_via_prompt(runtime.state, prompt),
+                confirm=lambda prompt: _confirm_via_prompt(runtime, prompt),
                 emit=emit,
                 dispatch_cancel=dispatch_cancel,
             )
     finally:
-        set_investigation_spinner(None)
+        set_turn_spinner(None)
         runtime.session.terminal.exclusive_stdin_active = False
+        runtime.session.terminal.dispatch_active = False
+        # ``set_auto_command`` deliberately avoids submitting while a turn is
+        # active. If the input prompt was already open, wake it again now that
+        # the turn is idle so deferred commands such as ``/choose`` can run.
+        if (
+            runtime.session.terminal.pending_prompt_default
+            and runtime.session.terminal.pending_prompt_autosubmit
+        ):
+            runtime.session.terminal.notify_prompt_changed()
         emit_thread_boundary(
             runtime.session.session_id,
             name="turn_boundary",
@@ -154,7 +253,7 @@ async def run_agent_turn(runtime: AgentTurnRuntime, text: str) -> None:
 
 async def _run_agent_turn_loop(
     *,
-    runtime: AgentTurnRuntime,
+    runtime: AgentTurnResources,
     text: str,
     output: StreamingConsole,
     recorder: PromptRecorder | None,
@@ -169,6 +268,9 @@ async def _run_agent_turn_loop(
         runtime.state.attach_cancel_event(dispatch_cancel)
 
     await emit(AgentEvent(type="turn_start", text=text))
+    # Repaint the prompt now so the spinner shows the turn is in flight
+    # immediately, instead of waiting for the ticker's next 100 ms tick.
+    runtime.invalidate_prompt()
     try:
         # Imported lazily so constructing the controller (and importing this
         # module) does not pull the harness/turn-execution stack
@@ -177,7 +279,7 @@ async def _run_agent_turn_loop(
 
         with (
             bound_usage_context(
-                surface=SURFACE_CLI,
+                surface=UsageSurface.CLI,
                 session_id=runtime.session.session_id,
             ),
             bound_repl_turn_context(
@@ -195,7 +297,7 @@ async def _run_agent_turn_loop(
                 confirm_fn=confirm,
                 is_tty=None,
                 request_exit=runtime.request_exit,
-                action_runner=runtime.action_runner,
+                handler=runtime.turn_handler,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))
@@ -214,7 +316,7 @@ async def run_input_loop(
     *,
     state: ReplState,
     session: Session,
-    background: BackgroundTaskManager | None,
+    background: BackgroundTaskPool | None,
     input_reader: PromptInputReader,
     echo_console: Console,
     handle_input_action: Callable[[InputAction], Awaitable[bool]],
@@ -282,7 +384,7 @@ async def run_agent_turn_queue(
 
 
 __all__ = [
-    "AgentTurnRuntime",
+    "AgentTurnResources",
     "run_agent_turn",
     "run_agent_turn_queue",
     "run_input_loop",

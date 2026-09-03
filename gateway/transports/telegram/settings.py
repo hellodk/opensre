@@ -11,8 +11,8 @@ from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from config.strict_config import StrictConfigModel
-from gateway.core.runtime.concurrency import turn_limit_for_profile
-from gateway.core.runtime.errors import GatewayConfigurationError
+from gateway.core.lifecycle.errors import GatewayConfigurationError
+from infrastructure.turn_host.concurrency import turn_limit_for_profile
 from integrations.messaging_security import MessagingIdentityPolicy, MessagingPlatform
 from integrations.store import get_integration
 
@@ -27,6 +27,7 @@ class GatewaySettings(StrictConfigModel):
     max_concurrent_turns: int = Field(default_factory=turn_limit_for_profile, ge=1)
     stream_edit_interval_seconds: float = Field(default=1.5, gt=0)
     turn_timeout_seconds: float = Field(default=240.0, gt=0)
+    shutdown_drain_seconds: float = Field(default=5.0, gt=0)
     auto_start_enabled: bool = True
 
 

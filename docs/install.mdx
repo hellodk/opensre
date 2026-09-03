@@ -1,18 +1,25 @@
 ---
 title: "Install OpenSRE"
-description: "Choose the right OpenSRE installation path for local or enterprise environments"
+description: "Install the OpenSRE CLI on your machine and start chatting with the agent."
 ---
 
-Pick the path that matches where you run OpenSRE.
+This page gets the `opensre` command onto your laptop or server, then walks you through the short setup so you can start asking questions.
 
-## Which path?
+## What you get
 
-| Path | Best for | Get started |
-| --- | --- | --- |
-| **Local CLI** | Laptop or self-hosted server; full `opensre` binary | [Install locally](/install-local) |
-| **Enterprise (Tracer Cloud)** | Org-wide connectors in the hosted web app | [Enterprise setup](/install-enterprise) |
+After install, you have:
 
-## Install locally (most users)
+- The `opensre` CLI on your PATH
+- An interactive shell when you run `opensre` with no arguments
+- A short setup that signs you into GitHub and configures your LLM
+
+No sudo required on macOS/Linux in the usual case — the installer puts the binary somewhere writable (often `~/.local/bin`) and tells you if you need a PATH tweak.
+
+## Install
+
+Pick one method.
+
+**One-line installer (most people):**
 
 ```bash
 # macOS / Linux
@@ -22,14 +29,66 @@ curl -fsSL https://install.opensre.com | bash
 irm https://install.opensre.com | iex
 ```
 
-Then configure your LLM and integrations:
+In a normal interactive terminal, the installer often starts `opensre setup` for you when it finishes. In CI or scripts it skips that and prints what to do next.
+
+Don't want auto-setup?
+
+```bash
+curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
+```
+
+**Homebrew:**
+
+```bash
+brew tap tracer-cloud/tap
+brew install tracer-cloud/tap/opensre
+```
+
+More options (PATH notes, skipping GitHub CLI install, on-prem layout): [Install locally](/install-local).
+
+## Set things up
+
+If setup didn't start automatically, run it yourself:
+
+```bash
+opensre setup
+```
+
+The wizard asks for:
+
+1. **GitHub sign-in** — browser device authorization (required)
+2. **An LLM provider** — Claude Code, OpenAI, OpenRouter, or another supported provider
+3. **A model and credential** — an API key, CLI login, or local endpoint depending on the provider
+
+When that finishes, OpenSRE opens the interactive shell. Add tools later, when you need them:
+
+```bash
+opensre integrations setup <service>
+```
+
+To change only the LLM later (without GitHub again):
 
 ```bash
 opensre onboard
+```
+
+Then check that the tools you connected work:
+
+```bash
 opensre integrations verify
 ```
 
-See [Quickstart](/quickstart) for a full walkthrough including a sample investigation.
+## Ask your first question
+
+Open the shell and describe what's going on:
+
+```bash
+opensre
+```
+
+Ask: *why is checkout latency spiking?*
+
+Full walkthrough with GIFs: [Quickstart](/quickstart).
 
 ## Environment-specific guides
 
@@ -40,12 +99,10 @@ See [Quickstart](/quickstart) for a full walkthrough including a sample investig
 | Windows | [Windows (local)](/environments/windows-local) |
 | Docker | [Docker](/environments/docker) |
 
-## Enterprise hosted setup
+## Stuck?
 
-For teams using [app.tracer.cloud](https://app.tracer.cloud), see [Enterprise setup](/install-enterprise).
+- **Command not found** — open a new terminal, or add the bin directory the installer printed to your PATH
+- **Onboard can't reach your LLM** — check the key and network; you can save and retry later
+- **Docker / `make` missing** — see [Quickstart troubleshooting](/quickstart#troubleshooting)
 
-## Next steps
-
-- [Investigations overview](/investigation-overview)
-- [Integrations overview](/integrations-overview)
-- [Environment variables](/configuration/environment-variables)
+Need deploy options beyond a laptop binary? See [Deployment](/deployment).

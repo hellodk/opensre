@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from core.agent_harness.spi.prompt_chrome import strip_shell_prompt_chrome
 from surfaces.interactive_shell.runtime.core.turn_detection import (
     looks_like_cancel_request,
     looks_like_confirmation_answer,
@@ -74,7 +75,9 @@ def decide_input_action(
             if snapshot.exit_requested or not text:
                 return IgnoreInput()
 
-            stripped = text.strip()
+            # Drop pasted ``[n] ❯`` prompt chrome so it never becomes the user
+            # turn, SessionGoal condition, or a doubled ``[n] ❯ [n] ❯`` echo.
+            stripped = strip_shell_prompt_chrome(text)
             if not stripped:
                 return IgnoreInput()
 

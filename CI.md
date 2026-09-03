@@ -1,6 +1,18 @@
-# CI Readiness — Mandatory Push/PR Harness
+# Local CI Readiness — Mandatory Pre-Push Harness
 
-This file is the **single source of truth** for local CI readiness before any push or PR.
+This file is the **single source of truth** for required local validation before
+any push or pull request. Repository-wide validation runs in GitHub Actions.
+Feature- or package-specific validation required by an applicable contributor
+guide supplements this harness and is intentionally not duplicated here.
+
+<!--
+Keep this document focused on required local checks and post-PR follow-through.
+Do not add optional commands, CI implementation details, or tool-specific
+procedures unless they change what contributors must do locally.
+Automated contributors must not invent or run additional local CI steps beyond
+the scoped checks below unless another applicable instruction or the user
+explicitly requires them.
+-->
 
 ## 0) Docs / process-only shortcut
 
@@ -76,80 +88,74 @@ the full unit suite.
 Map changed paths to targets using the `PathRule` entries in
 [`.github/ci/test_scope_rules.py`](.github/ci/test_scope_rules.py):
 
-- Rules with `always_escalate=True` map to `make test-cov`
+- Rules with `always_escalate=True` identify high-blast-radius changes. Run the
+  focused package and contract tests affected by the change.
 - All other rules list a `test_targets` tuple — run those with
   `uv run python -m pytest <targets>`
 - Changed files under `tests/` with no app rule run as-is
 
 Use a focused `-k` filter when you only need a subset of a package.
 
-## 3) Escalation rules (must run full unit CI suite)
+## 3) Full suite runs in CI
 
-Run `make test-cov` (instead of only targeted tests) when any of these are true:
+The focused suite from section 2 is the required local test gate. Do not run
+`make test-cov` as part of the normal local pre-push workflow; pull-request CI
+runs the repository test suite in parallel shards.
 
-- Shared/core code changed (`core/state/`, `core/domain/types/`, `tools/investigation/`, `tools/investigation/stages/`)
-- 3+ app areas changed in one diff
-- New files with unclear blast radius
-- Cross-cutting refactor
-- You are unsure test scope is sufficient
+List the focused tests you ran in the PR description. CI is the authoritative
+repository-wide test result.
 
-```bash
-make test-cov
-```
+## 4) Pull-request latency and post-merge validation
 
-## 4) Conditional checks
+The required automated pull-request execution gate has a p90 target of 90
+seconds. Static checks, cached typechecking, duration-balanced pytest shards,
+and interactive-shell checks run concurrently. Automated and
+human review completion, including Greptile, remains a separate merge
+requirement and is not part of that execution-time SLO.
 
-CI runs the fast registry smoke gate on every code change:
+Pull requests run the complete test selection without coverage instrumentation;
+the same matrix produces and combines the full coverage report on `main`.
 
-```bash
-make verify-integrations-smoke
-```
+Full CodeQL `security-and-quality` analysis runs after every merge to `main` and
+on the weekly schedule, not on ordinary pull requests. A production-only,
+default-query profile is available through the CodeQL workflow's manual
+`pr-fast` input for benchmarking. Do not make that profile required unless at
+least ten representative runs demonstrate p90 at or below 75 seconds.
 
-If integration config, integration wiring, or related tools changed, also run the live check against your local store and environment:
+Post-merge validation is part of delivery. Monitor the `main` CI, CodeQL, and
+release workflows for the merge commit; a failure requires an immediate fix or
+revert and must not be reported as successful delivery.
 
-```bash
-make verify-integrations
-```
+## 8) Post-PR follow-through
 
-If Fargate CDK code, its deployment commands, or infrastructure tests changed,
-also run:
+Opening a pull request does not end the validation cycle. Follow it through until
+the repository's merge requirements are satisfied: required GitHub checks are
+green, actionable human or automated review feedback (including Greptile) is
+addressed, and resolved conversations are closed out.
 
-## 5) Optional extra confidence
+Agents: the always-on rule lives in [AGENTS.md — CI failures and tests](AGENTS.md).
+After every push, inspect `gh pr checks` / failing job logs and fix until required
+jobs are green. The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` will
+re-prompt when the open PR still has failing checks.
 
-You may run `make check` as a final pass, but it is heavier (`test-full`) than the required harness.
+A green check does not mean review feedback is clear. After checks complete,
+and again after every push, inspect all unresolved conversations and latest
+reviews. Validate each finding. For actionable feedback, push an appropriate
+fix, reply, and resolve the addressed thread. For an incorrect or non-actionable
+finding, reply with the rationale and resolve the thread without changing code.
 
-## 6) Interactive-shell turn tests
+After each completed PR update, once commits are pushed, the PR description is
+current, and addressed threads are resolved, trigger a Greptile re-review by
+following [CONTRIBUTING.md](CONTRIBUTING.md#greptile-code-review). Repeat until
+Greptile reports 5/5 with no unresolved comments. Do not re-trigger while a
+review is already running.
 
-Interactive-shell live turn tests always run with live coverage enabled. Do not use deselection filters like `-k "not live_llm"`. Fix failures by improving planner/tool correctness or updating fixtures only when behavior changes are explicitly approved.
-
-For fast **local** iteration only, you can narrow the live suite with `--turn-select` (or the `TURN_SELECT` env var) without disabling live coverage:
-
-- `--turn-select=complex:N` runs the N most complex scenarios (multi-step plans, `runs > 1`, gather contracts, and `@live` integrations score highest).
-- `--turn-select=sample:N` runs a random N; add `--turn-select-seed` (or `TURN_SELECT_SEED`) for reproducibility.
-- `N` may be a count (`5`), a fraction (`0.1`), or a percentage (`10%`); a bare `complex`/`sample` defaults to 5%.
-
-```bash
-# Most complex five scenarios
-uv run python -m pytest tests/core/agent/test_turn_scenarios.py --turn-select=complex:5
-# Random ~5% sample, reproducible
-TURN_SELECT=sample:5% TURN_SELECT_SEED=7 uv run python -m pytest tests/core/agent/test_turn_scenarios.py
-```
-
-This is an iteration aid, not a substitute for full coverage: leave it unset for the pre-push/PR validation run, and never set it in CI (the sharded `turn-live` job runs every scenario).
-
-In CI, [`.github/workflows/interactive-shell-live.yml`](.github/workflows/interactive-shell-live.yml) runs two jobs on same-repo PRs and post-merge `main` pushes: a no-LLM `turn-checks` gate (deterministic command detection + fixture integrity, `-m "not live_llm"`) and the sharded `turn-live` job (8 shards, live coverage). The no-LLM gate is a fast guardrail, not a substitute for live coverage.
-
-`@live` gather scenarios **fail** (not skip) in GitHub Actions when integration credentials are missing; locally they may still skip. Natural-language investigation dispatch is **enabled** by default (`INTERACTIVE_SHELL_INVESTIGATION_ENABLED = True`). Investigation dispatch scenarios run in `turn-live`; if the flag is set to `False` for emergency rollback, those scenarios **skip** in live shards and `turn-checks` stays green. Require all `turn-checks` and `turn-live shard *` checks on `main` branch protection.
-
-## 7) CI-only tests
-
-Some paths require live infrastructure and are excluded from `make test-cov`:
-
-- Kubernetes / EKS scenarios (`tests/e2e/`)
-- Chaos Mesh workflows (`tests/chaos_engineering/`)
-- Docker-dependent Grafana stack tests
-
-Mark CI-only tests with the appropriate pytest marker or place them in the correct folder so they do not run locally by default.
+Use relevant built-in capabilities or locally installed skills, when available,
+for PR monitoring, CI diagnosis, and review remediation rather than duplicating
+tool-specific procedures in this document. Keep monitoring after each update;
+do not treat creating or updating the PR as task completion. Validate review
+suggestions before applying them, and rerun the appropriately scoped local
+checks before pushing a fix.
 
 ## Precedence
 

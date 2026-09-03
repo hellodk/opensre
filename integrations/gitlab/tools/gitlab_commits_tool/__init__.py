@@ -4,14 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.code_host_unavailable import code_host_unavailable_payload
+from core.domain.types.evidence import record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
+from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.gitlab import (
     GitlabConfig,
     build_gitlab_config,
     get_gitlab_commits,
     gitlab_config_from_env,
 )
+
+
+#: Every GitLab list tool (commits/pipelines/MRs) sends ``per_page`` straight
+#: to the GitLab API as its own page-size param and returns the raw page with
+#: no separate total-count field -- a returned page cannot be distinguished
+#: from every matching record except by comparing it against the page size
+#: that was requested.
+def _gitlab_count_label(count: int, requested_per_page: int) -> str:
+    """Format a list count, appending "+" when the page may be truncated."""
+    effective_per_page = max(requested_per_page, 1)
+    return f"{count}+" if count >= effective_per_page else str(count)
 
 
 def _clean_optional(value: str | None) -> str:
@@ -73,6 +86,24 @@ def _list_gitlab_commits_available(sources: dict[str, dict]) -> bool:
     return bool(_gitlab_available(sources) and gl.get("project_id"))
 
 
+def _map_list_gitlab_commits(
+    evidence: dict[str, Any], output: dict[str, Any], tool_input: dict[str, Any]
+) -> None:
+    """Cite the number of commits retrieved."""
+    if not output.get("available"):
+        return
+    commits = output.get("commits") or []
+    if not commits:
+        return
+    label = _gitlab_count_label(len(commits), tool_input.get("per_page", 10))
+    record_evidence_entry(
+        evidence,
+        source="list_gitlab_commits",
+        label="GitLab Commits",
+        summary=f"{label} commit(s)",
+    )
+
+
 @tool(
     name="list_gitlab_commits",
     source="gitlab",
@@ -82,7 +113,7 @@ def _list_gitlab_commits_available(sources: dict[str, dict]) -> bool:
         "Correlating a deployment or incident window with code changes",
     ],
     requires=["project_id"],
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -95,6 +126,7 @@ def _list_gitlab_commits_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_list_gitlab_commits_available,
     extract_params=_list_gitlab_commits_extract_params,
+    evidence_mapper=_map_list_gitlab_commits,
 )
 def list_gitlab_commits(
     project_id: str,

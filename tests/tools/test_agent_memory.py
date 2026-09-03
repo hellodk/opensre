@@ -11,6 +11,7 @@ from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
 from core.tool_framework.tool_decorator import REGISTERED_TOOL_ATTR
 from tests.tools.conftest import BaseToolContract
 from tools.system.agent_memory import memory_forget, memory_recall, memory_remember
+from tools.system.agent_memory._evidence import map_memory_recall
 from tools.system.agent_memory.results import RECALL_BODY_CHAR_CAP
 from tools.system.agent_memory.validation import MAX_RECALL_LIMIT
 
@@ -51,13 +52,13 @@ class TestMemoryRecallContract(BaseToolContract):
 
 class TestMetadata:
     def test_surfaces_and_side_effects(self) -> None:
-        assert _registered(memory_remember).surfaces == ("action", "investigation")
+        assert _registered(memory_remember).surfaces == ("action",)
         assert _registered(memory_remember).side_effect_level == "mutating"
         assert _registered(memory_remember).parallel_safe is False
         assert _registered(memory_forget).surfaces == ("action",)
         assert _registered(memory_forget).side_effect_level == "mutating"
         assert _registered(memory_forget).parallel_safe is False
-        assert _registered(memory_recall).surfaces == ("action", "investigation")
+        assert _registered(memory_recall).surfaces == ("action",)
         assert _registered(memory_recall).side_effect_level == "read_only"
 
     def test_unavailable_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,6 +79,28 @@ class TestRemember:
     def test_same_name_updates(self) -> None:
         _remember()
         assert _remember(content="Now eks-prod-2.")["status"] == "updated"
+
+    def test_repository_type_keeps_distinct_repositories(self) -> None:
+        first = memory_remember(
+            name="repo-tracer-cloud-opensre",
+            type="repository",
+            description="OpenSRE repository",
+            content="Tracer-Cloud/opensre uses main.",
+        )
+        second = memory_remember(
+            name="repo-acme-payments",
+            type="repository",
+            description="Payments repository",
+            content="acme/payments uses release.",
+        )
+
+        assert first["status"] == "created"
+        assert second["status"] == "created"
+        recalled = memory_recall(query="repository")
+        assert {item["name"] for item in recalled["memories"]} == {
+            "repo-tracer-cloud-opensre",
+            "repo-acme-payments",
+        }
 
     def test_free_form_name_normalized(self) -> None:
         result = _remember(name="Prod Cluster Conventions!")
@@ -164,3 +187,49 @@ class TestRecall:
         result = memory_recall(query="needle", limit=999)
         assert len(result["memories"]) == MAX_RECALL_LIMIT
         assert memory_recall(query=123)["error"] == "invalid_query"
+
+
+class TestMapMemoryRecall:
+    def test_records_named_recall(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_memory_recall(
+            evidence,
+            {"memories": [{"name": "prod-cluster"}], "total_stored": 5},
+            {"name": "prod-cluster"},
+        )
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "memory_recall"
+        assert entries[0]["summary"] == "recalled memory 'prod-cluster'"
+
+    def test_records_query_search(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_memory_recall(
+            evidence,
+            {"memories": [{"name": "a"}, {"name": "b"}], "total_stored": 10},
+            {"query": "cluster"},
+        )
+        assert evidence["catalog_entries"][0]["summary"] == (
+            "2 memory match(es) for query 'cluster' (of 10 stored)"
+        )
+
+    def test_records_index_listing(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_memory_recall(evidence, {"memories": [{"name": "a"}], "total_stored": 1}, {})
+        assert evidence["catalog_entries"][0]["summary"] == "1 memory index entries (of 1 stored)"
+
+    def test_skips_empty_and_error_results(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_memory_recall(evidence, {"memories": []}, {})
+        assert "catalog_entries" not in evidence
+
+        evidence2: dict[str, Any] = {}
+        map_memory_recall(evidence2, {"error": "not_found", "name": "x"}, {"name": "x"})
+        assert "catalog_entries" not in evidence2
+
+    def test_disambiguates_repeat_calls(self) -> None:
+        evidence: dict[str, Any] = {}
+        map_memory_recall(evidence, {"memories": [{"name": "a"}]}, {"name": "a"})
+        map_memory_recall(evidence, {"memories": [{"name": "b"}]}, {"name": "b"})
+        sources = [e["source"] for e in evidence["catalog_entries"]]
+        assert sources == ["memory_recall", "memory_recall#2"]

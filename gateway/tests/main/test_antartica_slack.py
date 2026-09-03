@@ -5,13 +5,15 @@ We want to have a very specific tests that validates wether the agent is working
 The test goes like this:
 - We start the gateway and get the agent
 - We send a message to the agent: "send a message to slack with the temperature in antartica, compute the temperature first and then send the message"
-- We expect the agent to produce two or three turns (1: create temperature, 2: send message via slack that includes the temperature)
+- We expect the agent to produce three action turns (compute, Slack send, finalize)
+  plus one ReAct goal-review invoke on the same LLM client
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -19,12 +21,12 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import SessionCore
-from core.agent_harness.session.persistence.memory import InMemorySessionStorage
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.tools.action_tools import action_tool_names
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
-from core.agent_harness.turns.action_driver import ActionTurnRunner, ToolCallingDeps
-from core.llm.types import AgentLLMResponse, ToolCall
-from gateway.core.runtime.headless_subprocess_presenter import (
+from core.agent_harness.turns.action_driver import ActionTurnRunner
+from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from tools.interactive_shell.subprocess_presenter import (
     headless_subprocess_presenter_factory,
 )
 from tools.registry import clear_tool_registry_cache
@@ -49,19 +51,16 @@ class _ComputeThenSlackLLM:
     * Turn 2 (once the compute step has run) emits ``slack_send_message`` with the
       temperature embedded in the message body.
     * Turn 3 concludes with a plain reply and no tool call.
+    * Turn 4 is the ReAct goal-reviewer invoke on this same client (structured
+      ``GOAL_REACHED`` / ``NOT_REACHED``); it is not another action turn.
 
-    The action driver additionally asks the same LLM one goal-review question
-    at conclusion time (``build_goal_reviewer``); that call is answered with
-    ``GOAL_REACHED`` and tracked separately so the loop-turn counter keeps
-    asserting the "two or three turns" expectation.
     """
 
     def __init__(self) -> None:
         self.turns = 0
-        self.review_calls = 0
         self.sent_slack_message: str | None = None
 
-    def tool_schemas(self, _tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, _tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return []
 
     def invoke(
@@ -72,10 +71,11 @@ class _ComputeThenSlackLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
         _ = tools
-        if system is not None and "GOAL_REACHED" in system:
-            self.review_calls += 1
-            return AgentLLMResponse(content="GOAL_REACHED")
         self.turns += 1
+        # Goal review reuses this client with a "User goal:" prompt; answer it
+        # as reached so the action loop does not treat the review as a new plan.
+        if self._is_goal_review(messages, system):
+            return AgentLLMResponse(content='{"verdict": "GOAL_REACHED"}')
         shell_output = self._shell_output(messages)
         if not shell_output:
             return AgentLLMResponse(
@@ -104,6 +104,16 @@ class _ComputeThenSlackLLM:
                 ],
             )
         return AgentLLMResponse(content="Done — sent the Antarctica temperature to Slack.")
+
+    @staticmethod
+    def _is_goal_review(messages: list[dict[str, Any]], system: str | None) -> bool:
+        if system and "completed the user's goal" in system:
+            return True
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, str) and content.startswith("User goal:"):
+                return True
+        return False
 
     @staticmethod
     def _shell_output(messages: list[dict[str, Any]]) -> str:
@@ -180,7 +190,7 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
 
     # Build the gateway agent's action surface exactly as ``start_gateway`` does:
     # shared action tools wrapped in the core-owned default provider.
-    session = SessionCore(storage=InMemorySessionStorage())
+    session = SessionCore(store=InMemorySessionStore())
     integrations: dict[str, Any] = {"slack": {"webhook_url": _SLACK_WEBHOOK}}
     session.resolved_integrations_cache = integrations
     console = Console(force_terminal=False)
@@ -201,7 +211,7 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
     result = ActionTurnRunner(
         output=MagicMock(),
         tools=provider,
-        deps=ToolCallingDeps(llm_factory=lambda: llm),
+        llm_factory=lambda: llm,
     ).run(
         _USER_MESSAGE,
         session,
@@ -209,12 +219,9 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
         is_tty=True,
     )
 
-    # The agent ran the compound request as a sequence of turns: compute, send,
-    # finalize. "Two or three turns" — the final no-tool reply is the third.
-    assert llm.turns == 3
-    # The conclusion triggered exactly one bounded goal-review call.
-    assert llm.review_calls == 1
-
+    # Compute → Slack → finalize, then the ReAct goal-reviewer invoke on the
+    # same client (fourth call). The behavioral contract is the two tools.
+    assert llm.turns == 4
     # Turn 1 actually executed a shell command to compute the temperature.
     shell_entries = [entry for entry in session.history if entry.get("type") == "shell"]
     assert shell_entries, "expected the compute turn to run a shell command"

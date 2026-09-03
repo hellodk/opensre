@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Any
 
-from core.agent_harness.session import default_session_storage
+from core.agent_harness.session import default_session_store
 from core.events import (
     RuntimeEvent,
     RuntimeEventCallback,
@@ -25,10 +25,6 @@ from core.events import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Pure routing marker with no side effects: not worth an fsync, and a dangling
-# handoff intent after a crash would tell recovery nothing actionable.
-_UNLOGGED_TOOLS: frozenset[str] = frozenset({"assistant_handoff"})
 
 _COMMIT_RESULT_MAX_CHARS = 2_000
 
@@ -50,11 +46,11 @@ def wal_event_recorder(session: Any, *, user_text: str | None = None) -> Runtime
     """Return a runtime-event callback that records tool intents and commits.
 
     ``session`` only needs a ``session_id``; records go to the default session
-    storage. Recording failures are swallowed — durability bookkeeping must
+    store. Recording failures are swallowed — durability bookkeeping must
     never break a turn.
     """
     session_id = str(getattr(session, "session_id", "") or "")
-    storage = default_session_storage()
+    store = default_session_store()
     seq = itertools.count(1)
 
     def record(event: RuntimeEvent) -> None:
@@ -62,9 +58,7 @@ def wal_event_recorder(session: Any, *, user_text: str | None = None) -> Runtime
             return
         try:
             if isinstance(event, ToolExecutionStartEvent):
-                if event.tool_name in _UNLOGGED_TOOLS:
-                    return
-                storage.append_tool_intent(
+                store.append_tool_intent(
                     session_id,
                     tool=event.tool_name,
                     arguments=dict(event.args),
@@ -73,9 +67,7 @@ def wal_event_recorder(session: Any, *, user_text: str | None = None) -> Runtime
                     user_text=user_text,
                 )
             elif isinstance(event, ToolExecutionEndEvent):
-                if event.tool_name in _UNLOGGED_TOOLS:
-                    return
-                storage.append_tool_call(
+                store.append_tool_call(
                     session_id,
                     tool=event.tool_name,
                     arguments=dict(event.args),

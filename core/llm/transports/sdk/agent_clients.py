@@ -1,4 +1,4 @@
-"""SDK-backed tool-calling LLM clients for the investigation agent ReAct loop.
+"""SDK-backed tool-calling LLM clients for the agent ReAct loop.
 
 Supports Anthropic (native + Bedrock), OpenAI-compatible, and subprocess CLI providers.
 """
@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from core.context_budget import strip_internal_message_markers
@@ -50,7 +50,7 @@ from core.llm.transports.sdk.anthropic_cache import (
 from core.llm.transports.sdk.anthropic_cache import (
     tools_with_cache as _anthropic_tools_with_cache,
 )
-from core.llm.types import AgentLLMResponse, ToolCall
+from core.llm.types import AgentLLMResponse, ModelType, SchemaDescribedTool, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -83,17 +83,32 @@ class AnthropicAgentClient:
         model: str,
         max_tokens: int = 4096,
         *,
+        base_url: str | None = None,
+        api_key_env: str = "ANTHROPIC_API_KEY",
         client: Any | None = None,
         credential_resolver: Callable[[str], str] | None = None,
     ) -> None:
+        # base_url + api_key_env let a custom-anthropic gateway (Anthropic SDK
+        # with a base-URL override) reuse this client. They default to the
+        # first-party Anthropic endpoint/key, so existing behavior is unchanged.
+        # Only override the hint for a non-default key env so subclasses
+        # (e.g. BedrockAgentClient) keep their own class-level auth_error_hint.
+        if api_key_env != "ANTHROPIC_API_KEY":
+            self.auth_error_hint = f"Check {api_key_env}."
         if client is None:
             from anthropic import Anthropic
 
             from config.llm_credentials import resolve_env_credential
 
             resolver = credential_resolver or resolve_env_credential
-            api_key = resolver("ANTHROPIC_API_KEY")
-            self._client = Anthropic(api_key=api_key, timeout=AGENT_CLIENT_TIMEOUT_SEC)
+            api_key = resolver(api_key_env)
+            client_kwargs: dict[str, Any] = {
+                "api_key": api_key,
+                "timeout": AGENT_CLIENT_TIMEOUT_SEC,
+            }
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            self._client = Anthropic(**client_kwargs)
         else:
             self._client = client
         self._model = model
@@ -103,7 +118,7 @@ class AnthropicAgentClient:
     def model_id(self) -> str | None:
         return self._model
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return [_anthropic_tool_schema(t) for t in tools]
 
     def describe_image(
@@ -372,7 +387,7 @@ class BedrockAgentClient(AnthropicAgentClient):
 
 
 class BedrockConverseAgentClient:
-    """Bedrock investigation client using the boto3 Converse API (non-Anthropic models)."""
+    """Bedrock tool-calling client using the boto3 Converse API (non-Anthropic models)."""
 
     provider_name = "Bedrock"
 
@@ -390,7 +405,7 @@ class BedrockConverseAgentClient:
     def model_id(self) -> str | None:
         return self._model
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         from core.llm.transports.sdk.bedrock_converse import build_converse_tool_specs
 
         return build_converse_tool_specs(tools)
@@ -410,8 +425,8 @@ class BedrockConverseAgentClient:
             parse_converse_output,
             to_converse_messages,
         )
-        from platform.guardrails.apply import apply_guardrails_to_converse_payload
-        from platform.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.apply import apply_guardrails_to_converse_payload
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         converse_messages = to_converse_messages(strip_internal_message_markers(messages))
         converse_messages, system = apply_guardrails_to_converse_payload(
@@ -516,10 +531,11 @@ def _openai_max_token_kwarg(model: str) -> str:
 # .title() breaks brand names with an internal capital letter (e.g.
 # "OPENAI_API_KEY" -> "Openai" instead of "OpenAI"). Override just the
 # providers this class is actually constructed with (see
-# core/llm/openai_compat_providers.py) where that happens.
+# core/llm/providers/openai_compat_providers.py) where that happens.
 _PROVIDER_LABEL_OVERRIDES = {
     "OPENAI_API_KEY": "OpenAI",
     "OPENROUTER_API_KEY": "OpenRouter",
+    "TRUSTEDROUTER_API_KEY": "TrustedRouter",
     "MINIMAX_API_KEY": "MiniMax",
 }
 
@@ -559,7 +575,7 @@ class OpenAIAgentClient:
             return override
         return api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return build_openai_tool_specs(tools)
 
     def describe_image(
@@ -682,6 +698,7 @@ class OpenAIAgentClient:
             except PermissionDeniedError as err:
                 raise RuntimeError(f"{self._provider_label} request forbidden: {err}") from err
             except Exception as err:
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS - 1:
                     raise RuntimeError(f"{self._provider_label} API failed: {err}") from err
@@ -752,37 +769,47 @@ class CLIBackedAgentClient:
     """Tool-calling wrapper for subprocess CLI providers (codex, claude-code, etc.).
 
     CLI adapters don't expose a native tool-calling API. This client implements
-    the investigation agent's ReAct interface by embedding tool schemas in the
+    the agent's ReAct interface by embedding tool schemas in the
     prompt as JSON and parsing the model's text response for tool call JSON.
     Each invoke flattens the full conversation history into a single stdin prompt.
     """
 
     _TOOL_CALL_INSTRUCTION = (
-        "You are an SRE investigation agent. Use the available tools to investigate "
-        "the alert. On each turn respond with EITHER:\n"
+        "You are a tool-calling adapter for the current OpenSRE phase. Follow the "
+        "System instructions and choose the appropriate available tool. On each "
+        "turn respond with EITHER:\n"
         '  (a) A JSON object: {"tool_calls": [{"id": "<unique_id>", "name": "<tool>",'
         ' "input": {<args>}}]}\n'
-        "  (b) A plain-text final answer when investigation is complete.\n"
-        "Respond with JSON only when calling tools; respond with plain text only for the final answer."
+        "  (b) A concise plain-text final answer only after tool use is complete "
+        "or when no suitable tool exists.\n"
+        "Respond with JSON only when calling tools; respond with plain text only "
+        "for the final answer."
     )
 
     def __init__(self, adapter: Any, *, model: str | None = None) -> None:
-        from platform.harness_ports import build_cli_client
+        from infrastructure.harness_providers import build_cli_client
 
         self._adapter = adapter
         self._model = model
         # Reuse one client so any probe cache in the CLI backend applies across
         # ReAct iterations instead of re-probing every invoke.
-        self._cli_client = build_cli_client(adapter, model=self._model)
+        self._cli_client = build_cli_client(
+            adapter,
+            model=self._model,
+            model_type=ModelType.TOOLCALL,
+        )
 
     @property
     def model_id(self) -> str | None:
         return self._model
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
-        # Return the same dicts — used only to pass back into invoke() below.
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
+        # ``public_input_schema``, not ``input_schema``: injected parameters
+        # (credentials, endpoints) are pruned from what the model is shown. The
+        # other clients already did this; this one did not, so on a CLI-backed
+        # model a tool advertised its own ``github_token`` as fillable.
         return [
-            {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+            {"name": t.name, "description": t.description, "input_schema": t.public_input_schema}
             for t in tools
         ]
 
@@ -793,7 +820,7 @@ class CLIBackedAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
-        from platform.harness_ports import flatten_cli_messages_to_prompt
+        from infrastructure.harness_providers import flatten_cli_messages_to_prompt
 
         tool_block = ""
         if tools:
@@ -804,8 +831,7 @@ class CLIBackedAgentClient:
         instruction = self._TOOL_CALL_INSTRUCTION + tool_block
         prompt = f"{system_block}{instruction}\n\n{flatten_cli_messages_to_prompt(messages)}"
 
-        response = self._cli_client.invoke(prompt)
-        text = response.content.strip()
+        text = self._cli_client.invoke(prompt).content.strip()
 
         # Try to parse a JSON tool call response.
         tool_calls: list[ToolCall] = []

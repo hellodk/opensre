@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tool_framework.registered_tool import RegisteredTool
+from core.tool.contracts import RegisteredTool
 from integrations.github.tools.github_cli.credentials import resolve_github_token
 from integrations.github.tools.github_cli.runner import build_gh_argv, denied_gh_command, run_gh
 from integrations.github.tools.github_cli.summary import summarize_gh_result
@@ -337,6 +337,21 @@ def test_summarize_gh_result_auto_merge() -> None:
         stdout="",
     )
     assert summary == "Enabled auto-merge for PR #3996."
+
+
+def test_summarize_gh_api_json_is_prose_not_a_json_slice() -> None:
+    stdout = (
+        '{"login":"Tracer-Cloud","followers_url":'
+        '"https://api.github.com/users/Tracer-Cloud/followers",'
+        '"type":"Organization"}'
+    )
+    summary = summarize_gh_result(
+        args=["api", "repos/tracer-cloud/opensre"],
+        ok=True,
+        stdout=stdout,
+    )
+    assert summary == "GitHub API call succeeded."
+    assert "followers_url" not in summary
 
 
 def test_summarize_gh_result_auto_merge_flags_before_number() -> None:

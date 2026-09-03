@@ -29,13 +29,12 @@ import os
 from collections.abc import AsyncIterator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
-from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
-from mcp.client.sse import sse_client  # type: ignore[import-not-found]
-from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
+import mcp_types as types
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import TypedDict
 
@@ -48,6 +47,9 @@ from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.mcp_transport import McpTransportMode
+
+if TYPE_CHECKING:
+    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +282,13 @@ def posthog_mcp_runtime_unavailable_reason(config: PostHogMCPConfig) -> str | No
 @asynccontextmanager
 async def _open_posthog_mcp_session(config: PostHogMCPConfig) -> AsyncIterator[ClientSession]:
     """Open an MCP client session for PostHog using the configured transport."""
+    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
+    from mcp.client.sse import sse_client  # type: ignore[import-not-found]
+    from mcp.client.stdio import (  # type: ignore[import-not-found]
+        StdioServerParameters,
+        stdio_client,
+    )
+
     stack = AsyncExitStack()
     try:
         if config.mode == "stdio":
@@ -391,7 +400,10 @@ def describe_posthog_mcp_error(err: BaseException, config: PostHogMCPConfig) -> 
     detail = _root_cause_message(err)
     hints: list[str] = []
 
-    if isinstance(err, httpx.HTTPStatusError) and err.response.status_code in (401, 403):
+    if isinstance(err, httpx.HTTPStatusError) and err.response.status_code in (
+        HTTPStatus.UNAUTHORIZED,
+        HTTPStatus.FORBIDDEN,
+    ):
         hints.append(
             "Authentication failed. Check POSTHOG_MCP_AUTH_TOKEN is a valid personal API key "
             "created with the `MCP Server` preset."
@@ -434,16 +446,16 @@ def _tool_result_to_dict(result: types.CallToolResult) -> PostHogMCPToolCallResu
                     {
                         "type": "resource_blob",
                         "uri": str(resource.uri),
-                        "mime_type": resource.mimeType or "",
+                        "mime_type": resource.mime_type or "",
                     }
                 )
         else:
             content_items.append({"type": getattr(item, "type", "unknown")})
 
-    structured = getattr(result, "structuredContent", None)
+    structured = result.structured_content
     text_output = "\n".join(part.strip() for part in text_parts if part.strip()).strip()
     return {
-        "is_error": bool(result.isError),
+        "is_error": bool(result.is_error),
         "text": text_output,
         "content": content_items,
         "structured_content": structured,
@@ -467,7 +479,7 @@ def list_posthog_mcp_tools(config: PostHogMCPConfig) -> list[PostHogMCPToolDescr
         {
             "name": tool.name,
             "description": tool.description or "",
-            "input_schema": getattr(tool, "inputSchema", None),
+            "input_schema": tool.input_schema,
         }
         for tool in tools
     ]
@@ -569,3 +581,22 @@ def classify(
     if cfg.is_configured:
         return cfg, "posthog_mcp"
     return None, None
+
+
+__all__ = [
+    "DEFAULT_POSTHOG_MCP_URL",
+    "POSTHOG_MCP_EU_URL",
+    "PostHogMCPConfig",
+    "PostHogMCPContentItem",
+    "PostHogMCPToolCallResult",
+    "PostHogMCPToolDescriptor",
+    "PostHogMCPValidationResult",
+    "build_posthog_mcp_config",
+    "call_posthog_mcp_tool",
+    "classify",
+    "describe_posthog_mcp_error",
+    "list_posthog_mcp_tools",
+    "posthog_mcp_config_from_env",
+    "posthog_mcp_runtime_unavailable_reason",
+    "validate_posthog_mcp_config",
+]

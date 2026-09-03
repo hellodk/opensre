@@ -2,9 +2,9 @@
 
 Gateway and other headless surfaces use :class:`~core.agent_harness.session.SessionCore`,
 which has no REPL terminal facet. Slash dispatch and delegated CLI commands still
-need the small slice of terminal state those paths touch (outcome hints,
-background-mode flags). These helpers read the shell terminal when present and fall
-back to lightweight per-session state on headless sessions.
+need the small slice of terminal state those paths touch (outcome hints).
+These helpers read the shell terminal when present and fall back to
+lightweight per-session state on headless sessions.
 """
 
 from __future__ import annotations
@@ -20,13 +20,6 @@ def exclusive_stdin_active(session: Any) -> bool:
     terminal = session_terminal(session)
     if terminal is not None:
         return bool(terminal.exclusive_stdin_active)
-    return False
-
-
-def background_mode_enabled(session: Any) -> bool:
-    terminal = session_terminal(session)
-    if terminal is not None:
-        return bool(terminal.background_mode_enabled)
     return False
 
 
@@ -62,6 +55,9 @@ def set_turn_outcome_hint(session: Any, hint: str) -> None:
     hints.append(hint)
 
 
+_ONBOARD_SLASH = "/onboard"
+
+
 def set_auto_command(session: Any, command: str) -> None:
     terminal = session_terminal(session)
     if terminal is not None:
@@ -73,9 +69,46 @@ def set_auto_command(session: Any, command: str) -> None:
     )
 
 
+def execute_cli_onboard_on_missing_key(
+    session: Any | None,
+    message: str,
+    *,
+    provider: str | None = None,
+) -> str | None:
+    """Queue ``/onboard`` when *message* is a missing-key failure.
+
+    Returns the same guidance as :func:`remediate_missing_llm_credentials`,
+    or ``None`` when this is not a missing-key error.
+    """
+    from core.llm_invoke_errors import remediate_missing_llm_credentials
+
+    text = remediate_missing_llm_credentials(message, provider=provider)
+    if text is None or session is None or exclusive_stdin_active(session):
+        return text
+    set_auto_command(session, _ONBOARD_SLASH)
+    return text
+
+
+def clear_pending_autosubmit(session: Any) -> None:
+    """Drop queued REPL autosubmit when present (no-op on SessionCore).
+
+    Shell ``/goal pause`` and the outer session-goal loop must clear a queued
+    next turn without assuming ``session.terminal`` exists — gateway sessions
+    are bare :class:`~core.agent_harness.session.SessionCore`.
+    """
+    terminal = session_terminal(session)
+    if terminal is None:
+        return
+    if hasattr(terminal, "pending_prompt_default"):
+        terminal.pending_prompt_default = None
+    if hasattr(terminal, "pending_prompt_autosubmit"):
+        terminal.pending_prompt_autosubmit = False
+
+
 __all__ = [
-    "background_mode_enabled",
+    "clear_pending_autosubmit",
     "exclusive_stdin_active",
+    "execute_cli_onboard_on_missing_key",
     "pop_turn_outcome_hint",
     "session_terminal",
     "set_auto_command",

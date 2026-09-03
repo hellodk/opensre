@@ -8,8 +8,10 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from gateway.core.runtime.approvals import ApprovalBroker
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
+from config.constants.gateway import NO_ACTIVE_TURN_MESSAGE
+from gateway.core.middleware.active_turns import ActiveTurnRegistry, is_stop_command
+from gateway.core.middleware.approvals import ApprovalBroker
+from gateway.core.process.polling_thread import PollingBackground, start_polling_background
 from gateway.core.storage import SessionResolver
 from gateway.transports.buzz.inbound_handler import handle_polled_inbound_buzz_message
 from gateway.transports.buzz.inbound_security import is_pubkey_authorized
@@ -20,37 +22,15 @@ from gateway.transports.buzz.runtime import (
     InitializeBuzzPollingRuntime,
     ShutdownBuzzPollingRuntime,
 )
+from gateway.transports.buzz.session_rotation import conversation_key
 from gateway.transports.buzz.settings import BuzzInboundMessage, GatewaySettings
-from integrations.buzz.client import BuzzClient
+from infrastructure.turn_host.turn_callback import TurnCallback
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger(__name__)
 
 _APPROVE_WORDS = frozenset({"approve", "approved", "approves", "yes", "y", "ok", "okay", "lgtm"})
 _DENY_WORDS = frozenset({"deny", "denied", "denies", "no", "n", "reject", "rejected", "cancel"})
-
-
-class BuzzGatewayBackground:
-    """Control handle for the background Buzz gateway thread."""
-
-    def __init__(
-        self,
-        *,
-        thread: threading.Thread,
-        stop_event: threading.Event,
-    ) -> None:
-        self._thread = thread
-        self._stop_event = stop_event
-
-    def stop(self, *, timeout: float = 8.0) -> bool:
-        """Request shutdown and return whether the thread stopped."""
-        self._stop_event.set()
-        self._thread.join(timeout=timeout)
-        return not self._thread.is_alive()
-
-    def wait(self, *, timeout: float | None = None) -> bool:
-        """Wait for the thread and return whether it has stopped."""
-        self._thread.join(timeout=timeout)
-        return not self._thread.is_alive()
 
 
 def start_buzz_gateway_background(
@@ -59,56 +39,34 @@ def start_buzz_gateway_background(
     logger: logging.Logger,
     initialize_runtime: InitializeBuzzPollingRuntime,
     shutdown_runtime: ShutdownBuzzPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
-) -> BuzzGatewayBackground:
+    handle_callback_to_gateway_agent: TurnCallback,
+) -> PollingBackground:
     """Start Buzz mention polling in a background thread."""
-    stop_event = threading.Event()
 
-    thread = threading.Thread(
-        target=_run_buzz_gateway_thread,
-        kwargs={
-            "settings": settings,
-            "stop_event": stop_event,
-            "logger": logger,
-            "initialize_runtime": initialize_runtime,
-            "shutdown_runtime": shutdown_runtime,
-            "handle_callback_to_gateway_agent": handle_callback_to_gateway_agent,
-        },
-        name="BuzzGatewayThread",
-        daemon=True,
-    )
-    thread.start()
+    def _initialize_runtime() -> BuzzPollingRuntime:
+        return initialize_runtime(settings)
 
-    logger.info("[buzz-gateway] polling started")
-    return BuzzGatewayBackground(thread=thread, stop_event=stop_event)
-
-
-def _run_buzz_gateway_thread(
-    *,
-    settings: GatewaySettings,
-    stop_event: threading.Event,
-    logger: logging.Logger,
-    initialize_runtime: InitializeBuzzPollingRuntime,
-    shutdown_runtime: ShutdownBuzzPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
-) -> None:
-    """Own Buzz polling resources for the lifetime of the thread."""
-    resources = initialize_runtime(settings)
-
-    try:
-        asyncio.run(
-            _poll_buzz_until_stopped(
-                settings=settings,
-                stop_event=stop_event,
-                logger=logger,
-                resources=resources,
-                handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
-            )
+    async def _poll_until_stopped(
+        resources: BuzzPollingRuntime,
+        stop_event: threading.Event,
+    ) -> None:
+        await _poll_buzz_until_stopped(
+            settings=settings,
+            stop_event=stop_event,
+            logger=logger,
+            resources=resources,
+            handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
         )
-    except Exception:
-        logger.critical("Fatal error in Buzz gateway thread", exc_info=True)
-    finally:
-        shutdown_runtime(resources)
+
+    return start_polling_background(
+        thread_name="BuzzGatewayThread",
+        started_message="[buzz-gateway] polling started",
+        fatal_message="Fatal error in Buzz gateway thread",
+        logger=logger,
+        initialize_runtime=_initialize_runtime,
+        poll_until_stopped=_poll_until_stopped,
+        shutdown_runtime=shutdown_runtime,
+    )
 
 
 async def _poll_buzz_until_stopped(
@@ -117,7 +75,7 @@ async def _poll_buzz_until_stopped(
     stop_event: threading.Event,
     logger: logging.Logger,
     resources: BuzzPollingRuntime,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
+    handle_callback_to_gateway_agent: TurnCallback,
 ) -> None:
     """Poll the mention feed and dispatch (or resolve approvals) until shutdown.
 
@@ -149,6 +107,15 @@ async def _poll_buzz_until_stopped(
                 if _resolve_if_approval_reply(event, resources, settings):
                     poller.acknowledge(event)
                     continue
+                if maybe_handle_stop_command(
+                    event, active_cancels=resources.active_cancels, client=resources.client
+                ):
+                    poller.acknowledge(event)
+                    continue
+                # Registered before the task exists: a /stop later in this
+                # same batch must find the accepted turn, not "nothing".
+                turn_cancel = threading.Event()
+                resources.active_cancels.register(conversation_key(event), turn_cancel)
                 task = asyncio.create_task(
                     _dispatch_turn(
                         event,
@@ -160,6 +127,8 @@ async def _poll_buzz_until_stopped(
                         turn_semaphore=turn_semaphore,
                         approvals=resources.approvals,
                         pending_approvals=resources.pending_approvals,
+                        active_cancels=resources.active_cancels,
+                        turn_cancel=turn_cancel,
                         loop=loop,
                         handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
                         logger=logger,
@@ -224,6 +193,24 @@ async def _drain_active_turns(
         )
 
 
+def maybe_handle_stop_command(
+    event: BuzzInboundMessage,
+    *,
+    active_cancels: ActiveTurnRegistry,
+    client: BuzzClient,
+) -> bool:
+    """Handle a `/stop` without starting a turn. Returns whether it was one.
+
+    A stop for a conversation with no running turn still consumes the message
+    — starting a turn for it would answer a cancellation with an agent reply.
+    """
+    if not is_stop_command(event.content):
+        return False
+    if not active_cancels.request_stop(conversation_key(event)):
+        client.send_message(channel=event.channel_id, content=NO_ACTIVE_TURN_MESSAGE)
+    return True
+
+
 async def _dispatch_turn(
     event: BuzzInboundMessage,
     *,
@@ -235,14 +222,16 @@ async def _dispatch_turn(
     turn_semaphore: asyncio.Semaphore,
     approvals: ApprovalBroker,
     pending_approvals: PendingApprovals,
+    active_cancels: ActiveTurnRegistry,
+    turn_cancel: threading.Event | None = None,
     loop: asyncio.AbstractEventLoop,
-    handle_callback_to_gateway_agent: GatewayAgentCallback,
+    handle_callback_to_gateway_agent: TurnCallback,
     logger: logging.Logger,
     acknowledge: Callable[[BuzzInboundMessage], None],
 ) -> None:
     """Run one turn, then acknowledge it so the poller's cursor may advance.
 
-    Acknowledgement is wired two ways on purpose. ``on_handled`` fires on the
+    Acknowledgement is sent two ways on purpose. ``on_handled`` fires on the
     executor thread as soon as the turn body returns, which is what keeps a
     turn that finished during a cancelled shutdown from being replayed — the
     thread outlives the cancelled ``await``, so waiting for that ``await`` to
@@ -267,6 +256,8 @@ async def _dispatch_turn(
             turn_semaphore=turn_semaphore,
             approvals=approvals,
             pending_approvals=pending_approvals,
+            active_cancels=active_cancels,
+            turn_cancel=turn_cancel,
             loop=loop,
             handle_callback_to_gateway_agent=handle_callback_to_gateway_agent,
             on_handled=lambda: acknowledge(event),
@@ -278,6 +269,9 @@ async def _dispatch_turn(
             event.channel_id,
             exc_info=True,
         )
+    finally:
+        if turn_cancel is not None:
+            active_cancels.unregister(conversation_key(event), turn_cancel)
     acknowledge(event)
 
 
@@ -356,4 +350,4 @@ def _decision(text: str) -> bool | None:
     return None
 
 
-__all__ = ["BuzzGatewayBackground", "start_buzz_gateway_background"]
+__all__ = ["start_buzz_gateway_background"]

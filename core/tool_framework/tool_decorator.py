@@ -7,11 +7,16 @@ from typing import Any, cast, overload
 
 from pydantic import BaseModel
 
-from core.domain.types.evidence import EvidenceSource
+from core.domain.types.evidence import EvidenceMapper, EvidenceSource
 from core.domain.types.retrieval import RetrievalControls
-from core.tool_framework.base import BaseTool
-from core.tool_framework.metadata import EvidenceType, SideEffectLevel
-from core.tool_framework.registered_tool import REGISTERED_TOOL_ATTR, RegisteredTool
+from core.domain.types.tools import ToolSurface
+from core.tool.contracts import (
+    REGISTERED_TOOL_ATTR,
+    BaseTool,
+    EvidenceType,
+    RegisteredTool,
+    SideEffectLevel,
+)
 
 
 @overload
@@ -25,9 +30,9 @@ def tool(
     input_model: type[BaseModel] | None = None,
     source: EvidenceSource | None = None,
     source_id: str | None = None,
-    evidence_type: EvidenceType | str | None = None,
-    side_effect_level: SideEffectLevel | str | None = None,
-    surfaces: tuple[str, ...] | None = None,
+    evidence_type: EvidenceType | None = None,
+    side_effect_level: SideEffectLevel | None = None,
+    surfaces: tuple[ToolSurface, ...] | None = None,
     use_cases: list[str] | None = None,
     examples: list[str] | None = None,
     anti_examples: list[str] | None = None,
@@ -35,6 +40,7 @@ def tool(
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -60,9 +66,9 @@ def tool[F: Callable[..., Any]](
     input_model: type[BaseModel] | None = None,
     source: EvidenceSource | None = None,
     source_id: str | None = None,
-    evidence_type: EvidenceType | str | None = None,
-    side_effect_level: SideEffectLevel | str | None = None,
-    surfaces: tuple[str, ...] | None = None,
+    evidence_type: EvidenceType | None = None,
+    side_effect_level: SideEffectLevel | None = None,
+    surfaces: tuple[ToolSurface, ...] | None = None,
     use_cases: list[str] | None = None,
     examples: list[str] | None = None,
     anti_examples: list[str] | None = None,
@@ -70,6 +76,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -95,9 +102,9 @@ def tool[F: Callable[..., Any]](
     input_model: type[BaseModel] | None = None,
     source: EvidenceSource | None = None,
     source_id: str | None = None,
-    evidence_type: EvidenceType | str | None = None,
-    side_effect_level: SideEffectLevel | str | None = None,
-    surfaces: tuple[str, ...] | None = None,
+    evidence_type: EvidenceType | None = None,
+    side_effect_level: SideEffectLevel | None = None,
+    surfaces: tuple[ToolSurface, ...] | None = None,
     use_cases: list[str] | None = None,
     examples: list[str] | None = None,
     anti_examples: list[str] | None = None,
@@ -105,6 +112,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -129,9 +137,9 @@ def tool[F: Callable[..., Any]](
     input_model: type[BaseModel] | None = None,
     source: EvidenceSource | None = None,
     source_id: str | None = None,
-    evidence_type: EvidenceType | str | None = None,
-    side_effect_level: SideEffectLevel | str | None = None,
-    surfaces: tuple[str, ...] | None = None,
+    evidence_type: EvidenceType | None = None,
+    side_effect_level: SideEffectLevel | None = None,
+    surfaces: tuple[ToolSurface, ...] | None = None,
     use_cases: list[str] | None = None,
     examples: list[str] | None = None,
     anti_examples: list[str] | None = None,
@@ -139,6 +147,7 @@ def tool[F: Callable[..., Any]](
     outputs: dict[str, str] | None = None,
     output_schema: dict[str, Any] | None = None,
     output_model: type[BaseModel] | None = None,
+    evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
@@ -177,6 +186,7 @@ def tool[F: Callable[..., Any]](
                 bool(outputs),
                 output_schema is not None,
                 output_model is not None,
+                evidence_mapper is not None,
                 bool(injected_params),
                 retrieval_controls is not None,
                 is_available is not None,
@@ -201,6 +211,7 @@ def tool[F: Callable[..., Any]](
                 or approval_expiry_seconds is not None
                 or parallel_safe is not None
                 or accepts_runtime_context is not None
+                or evidence_mapper is not None
             ):
                 setattr(
                     target,
@@ -215,6 +226,7 @@ def tool[F: Callable[..., Any]](
                         approval_expiry_seconds=approval_expiry_seconds,
                         parallel_safe=parallel_safe,
                         accepts_runtime_context=accepts_runtime_context,
+                        evidence_mapper=evidence_mapper,
                     ),
                 )
             return target
@@ -242,6 +254,7 @@ def tool[F: Callable[..., Any]](
                     outputs=outputs,
                     output_schema=output_schema,
                     output_model=output_model,
+                    evidence_mapper=evidence_mapper,
                     injected_params=injected_params,
                     retrieval_controls=retrieval_controls,
                     is_available=is_available,

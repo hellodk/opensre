@@ -1,101 +1,187 @@
 ---
 title: "Deployment"
 slug: "deployment"
-description: "Deploy OpenSRE as a standard Python/FastAPI runtime"
+description: "Deploy OpenSRE as a hosted FastAPI app or run the local gateway."
 ---
 
-OpenSRE deploys as a standard Python/FastAPI runtime. Use the repo `Dockerfile`,
-Railway, EC2, ECS, Vercel, or another ASGI-capable host.
+OpenSRE deploys as a standard Python FastAPI application. Use the repository
+`Dockerfile` with Railway, EC2, ECS, Vercel, or another ASGI-capable host. For
+local containers, see [Docker](/environments/docker).
 
-## Runtime environment
+The image supports three values of `MODE`:
 
-<Steps>
-  <Step title="Deploy the app">
-    Deploy this repository using your hosting provider's normal app workflow.
-  </Step>
+| `MODE` | Runtime |
+| --- | --- |
+| `web` (default) | HTTP API — health checks and alert intake |
+| `gateway` | Messaging gateway (Slack / Telegram) and related services |
+| `scheduler` | Dedicated cron/loop scheduler service (no gateway or web) |
 
-<Step title="Configure your model provider">
-    Add `LLM_PROVIDER` as an environment variable (for example `anthropic`,
-    `openai`, `openrouter`, or `gemini`).
-</Step>
+## Environment setup
 
-  <Step title="Add the matching provider API key">
-    Use the API key that matches your provider:
+1. Deploy this repository using your host’s normal application workflow, or
+   build the `Dockerfile` and set `MODE` to `web` or `gateway`.
+2. Set `LLM_PROVIDER` to your model provider (`anthropic`, `openai`,
+   `openrouter`, `trustedrouter`, `deepseek`, or `gemini`).
+3. Set the corresponding API key:
 
-    - `ANTHROPIC_API_KEY` for `LLM_PROVIDER=anthropic`
-    - `OPENAI_API_KEY` for `LLM_PROVIDER=openai`
-    - `OPENROUTER_API_KEY` for `LLM_PROVIDER=openrouter`
-    - `DEEPSEEK_API_KEY` for `LLM_PROVIDER=deepseek`
-    - `GEMINI_API_KEY` for `LLM_PROVIDER=gemini`
+   - `ANTHROPIC_API_KEY` for `anthropic`
+   - `OPENAI_API_KEY` for `openai`
+   - `OPENROUTER_API_KEY` for `openrouter`
+   - `TRUSTEDROUTER_API_KEY` for `trustedrouter`
+   - `DEEPSEEK_API_KEY` for `deepseek`
+   - `GEMINI_API_KEY` for `gemini`
 
-  </Step>
+4. Add any integration or storage environment variables required by your
+   deployment, then verify health with `GET /health` or `GET /ok`.
 
-  <Step title="Add integration env vars and deploy">
-    Add any storage and integration environment variables required by your runtime, then deploy and verify health.
-  </Step>
-</Steps>
-
-Minimum LLM environment example:
+Minimum configuration:
 
 ```bash
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=...
 ```
 
-The complete list of provider keys and optional model overrides is documented in `.env.example`.
+Provider keys and optional model overrides are listed in `.env.example` and
+[Environment variables](/configuration/environment-variables).
 
-## Run local gateway
+For hosted deployments that need persistent storage, set `DATABASE_URI` and
+`REDIS_URI`. See [HTTP API](/api) for the route reference.
 
-Use the built-in gateway command when you want a local HTTP server for investigations.
+## Local gateway
 
-| Command | What it does |
-| --- | --- |
-| `uv run opensre gateway start` | Starts the gateway daemon in the background (web app, Telegram chat, task scheduler). |
-| `uv run opensre gateway start --foreground` | Runs the gateway attached to this terminal. |
-| `uv run opensre gateway stop` | Stops the background daemon. |
-| `uv run opensre gateway status` | Shows daemon and component status. |
+Start a local HTTP server for health checks and alert intake (and optional chat
+transports):
 
-The web app binds `0.0.0.0` on the port from the `PORT` environment variable
+```bash
+uv run opensre gateway start                 # background daemon
+uv run opensre gateway start --foreground    # attached to this terminal
+uv run opensre gateway stop
+uv run opensre gateway status
+```
+
+The web app listens on `0.0.0.0` using the `PORT` environment variable
 (default `8000`).
-
-Quick local checks:
 
 ```bash
 curl http://127.0.0.1:8000/ok
 ```
 
-Example investigation request:
+Example alert push:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/investigate \
+curl -X POST http://127.0.0.1:8000/alerts \
   -H "Content-Type: application/json" \
   -d '{
-    "raw_alert": {
-      "alert_name": "etl-daily-orders-failure",
-      "pipeline_name": "etl_daily_orders",
-      "severity": "critical",
-      "message": "Orders pipeline failed with timeout."
-    }
+    "text": "Orders pipeline failed with timeout.",
+    "alert_name": "etl-daily-orders-failure",
+    "severity": "critical",
+    "source": "dagster"
   }'
 ```
 
-By default, `/investigate` (like `/alerts`) accepts only loopback callers. Set
-`OPENSRE_ALERT_LISTENER_TOKEN` to allow remote callers with a bearer token:
+By default, `/alerts` accepts only loopback callers. To allow remote access, set
+`OPENSRE_ALERT_LISTENER_TOKEN` and send it as a bearer token:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/investigate \
+curl -X POST http://127.0.0.1:8000/alerts \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENSRE_ALERT_LISTENER_TOKEN" \
-  -d '{"raw_alert":{"alert_name":"test"}}'
+  -d '{"text":"test"}'
 ```
 
-## Railway deployment
+Complete route reference: [HTTP API](/api).
 
-Railway is still supported as a hosted runtime option.
+## Railway
 
-Before deploying on Railway, make sure your service has:
+1. Provision Postgres and Redis in the Railway project.
+2. Set `DATABASE_URI` and `REDIS_URI` on the OpenSRE service to those connection
+   strings.
+3. Optionally set `OPENSRE_DEPLOYMENT_METHOD=railway` for telemetry labeling.
+4. Deploy the service through your Railway project.
 
-- `DATABASE_URI` pointing to your Railway Postgres instance
-- `REDIS_URI` pointing to your Railway Redis instance
+## Horizontal scale-out
 
-Then deploy the service using your Railway project workflow.
+Run **one** gateway task and leave `OPENSRE_SESSION_FILE_LOCK` off. More than
+one gateway task sharing `OPENSRE_HOME` is not supported yet. Follow
+[#5474](https://github.com/Tracer-Cloud/opensre/issues/5474) and add a second
+task only after that lands.
+
+To serve more concurrent conversations today, raise concurrency on that single
+task (next section). After #5474, put every task on the same session store — a
+shared mount such as S3 Files or EFS — and set:
+
+```bash
+OPENSRE_SESSION_FILE_LOCK=1
+```
+
+Slack Events API tasks must also share `DATABASE_URL`. Without it, a Slack retry
+that lands on another replica runs the same turn twice. Socket Mode, Telegram,
+and Discord do not use that store. Do not set `SLACK_GATEWAY_ALLOW_LOCAL_DEDUP=1`
+on more than one replica.
+
+Do not turn the lock on to make a multi-task fleet safe until then. Even after
+the fix, `fcntl.flock` is weak on some shared mounts (NFS, and EFS depending on
+configuration) — stay on a single task there, or use a mount that honors POSIX
+locks.
+
+### Concurrency per task
+
+Each task has two caps, and the lower one wins. `OPENSRE_MAX_CONCURRENT_TURNS`
+limits every turn in the process (default 1 on SMALL). Slack, Telegram, and
+Discord each have their own pool (`SLACK_GATEWAY_MAX_CONCURRENT`,
+`TELEGRAM_GATEWAY_MAX_CONCURRENT`, `DISCORD_GATEWAY_MAX_CONCURRENT`), which also
+defaults to 1 on SMALL. Raising only the process cap leaves chat at one
+concurrent turn.
+
+Turns are I/O-bound — mostly waiting on the model — so a small task can run
+several; the ceiling is the task's memory, since each concurrent turn holds its
+context resident. Raise both without changing the task size, using the transport
+vars for the chats you run:
+
+```bash
+OPENSRE_MAX_CONCURRENT_TURNS=2
+SLACK_GATEWAY_MAX_CONCURRENT=2
+TELEGRAM_GATEWAY_MAX_CONCURRENT=2
+DISCORD_GATEWAY_MAX_CONCURRENT=2
+```
+
+Or set `OPENSRE_SIZE_PROFILE=MEDIUM` (2) or `LARGE` (4) to raise both defaults
+together.
+
+Read the `gateway_turn_memory` debug lines (`delta_mb`, `peak_mb`) from a real run
+to size this against the task's memory limit before raising it.
+
+### Dedicated scheduler service
+
+By default the gateway process also runs the cron/loop scheduler. With more than
+one gateway task that would fire every scheduled task once per task. Run the
+scheduler as its own single service instead:
+
+- Deploy one `MODE=scheduler` task. It runs `opensre cron start --service`,
+  idling until tasks exist rather than exiting.
+- Set `OPENSRE_GATEWAY_HOST_SCHEDULER=0` on the gateway tasks so they stop
+  hosting the scheduler in-process.
+
+Run exactly one scheduler service, never one per gateway task.
+
+The scheduler service and every process that mutates tasks — the gateway,
+`opensre cron`, and `/loops` — must share the **same** task store: the same
+`OPENSRE_HOME` on a shared mount (S3 Files / EFS). The scheduler reconciles from
+that file, so a separate filesystem would leave it running a stale task set.
+
+### Optional: conversation affinity
+
+Skip affinity until you run more than one gateway task (after #5474). Then it is
+a performance option: it keeps a conversation's warm agent in one task's memory
+instead of cold-rebuilding when a turn lands elsewhere.
+
+Affinity is a routing concern, not an app setting:
+
+- Behind an HTTP load balancer (Slack Events API), set the shared
+  `DATABASE_URL` above, then enable consistent hashing on the conversation
+  (Slack channel and thread) so a thread sticks to one task. Hashing does not
+  replace event dedup.
+- With the pull transports (Slack Socket Mode, Telegram, Discord), each task
+  connects independently and the provider spreads events across tasks, so there
+  is no built-in affinity. Affinity would need an external dispatcher and is
+  worth adding only when warm-agent reuse measurably helps.

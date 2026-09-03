@@ -17,7 +17,10 @@ from core.domain.memory import (
     save_memory,
     search_memories,
 )
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
+from tools.system.agent_memory._evidence import map_memory_recall
 from tools.system.agent_memory.results import (
     deleted_result,
     index_result,
@@ -45,7 +48,8 @@ def _memory_available(sources: dict[str, dict[str, Any]]) -> bool:
     description=(
         "Proactively save durable knowledge to local long-term memory whenever "
         "it would help future sessions — who the user is, infrastructure "
-        "conventions, preferences, and lessons from incidents. Do not wait for "
+        "conventions, separate facts for each repository, preferences, and lessons "
+        "from incidents. Do not wait for "
         "the user to say remember/save/note; if the fact is useful and stable, "
         "call this in the same turn. Check existing memories (or memory_recall) "
         "first; if an equivalent memory exists, pass its exact name to update it "
@@ -54,11 +58,12 @@ def _memory_available(sources: dict[str, dict[str, Any]]) -> bool:
     use_cases=[
         "The user mentions who they are or how they like to work (no special phrasing needed)",
         "A durable infrastructure fact surfaces (cluster names, naming conventions)",
+        "A repository's identity, purpose, branch, or conventions should remain available after switching repos",
         "An investigation uncovers a lesson worth keeping (known-flaky service)",
     ],
     tags=("safe", "fast", "no-credentials"),
-    surfaces=("action", "investigation"),
-    side_effect_level="mutating",
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
     parallel_safe=False,
     is_available=_memory_available,
     input_schema={
@@ -112,8 +117,8 @@ def memory_remember(name: str, type: str, description: str, content: str) -> dic
         "user asks to forget something or a stored fact is no longer true."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=("action",),
-    side_effect_level="mutating",
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
     parallel_safe=False,
     is_available=_memory_available,
     input_schema={
@@ -142,8 +147,8 @@ def memory_forget(name: str) -> dict[str, Any]:
         "search names, descriptions, and bodies, or no arguments to list the index."
     ),
     tags=("safe", "fast", "no-credentials"),
-    surfaces=("action", "investigation"),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     is_available=_memory_available,
     input_schema={
         "type": "object",
@@ -158,6 +163,7 @@ def memory_forget(name: str) -> dict[str, Any]:
         "required": [],
         "additionalProperties": False,
     },
+    evidence_mapper=map_memory_recall,
 )
 def memory_recall(
     name: str | None = None, query: str | None = None, limit: int = 5

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
+from http import HTTPStatus
 from math import ceil
 from typing import Any
 
-from core.tool_framework.telemetry import report_run_error
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.domain.types.evidence import record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -28,7 +31,11 @@ _STAR_ACCEPT_HEADER = "application/vnd.github.star+json"
 def _github_star_history_available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
     return bool(
-        (github_source_available(sources) or resolve_github_token(None))
+        (
+            github_source_available(sources)
+            or gh.get("public_repository")
+            or resolve_github_token(None)
+        )
         and gh.get("owner")
         and gh.get("repo")
     )
@@ -38,7 +45,12 @@ def _github_star_history_extract_params(sources: dict[str, dict]) -> dict[str, A
     gh = sources.get("github", {})
     if not gh:
         return {}
-    return {"owner": gh.get("owner"), "repo": gh.get("repo"), **github_creds(gh)}
+    return {
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
+        "public_repository": bool(gh.get("public_repository")),
+        **github_creds(gh),
+    }
 
 
 def _now_utc() -> datetime:
@@ -73,13 +85,37 @@ def _daily_rows(start_day: date, days: int, counts: Counter[date]) -> list[dict[
 
 def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
     message = str(exc)
-    if exc.status_code in {403, 404, 422}:
+    if exc.status_code == HTTPStatus.UNAUTHORIZED:
+        return (
+            "GitHub authentication is required to read timestamped stargazer history; "
+            "the current repository star count is still available from public metadata."
+        )
+    if exc.status_code in {
+        HTTPStatus.FORBIDDEN,
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.UNPROCESSABLE_ENTITY,
+    }:
         return (
             f"{message}. GitHub stargazer timestamp listings may require repository "
             "admin/collaborator access or token access for this endpoint; current "
             "repository star count can still be available from metadata."
         )
     return message
+
+
+def _map_get_github_star_history(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    daily = output.get("daily", [])
+    if daily:
+        count = len(daily)
+        word = "day" if count == 1 else "days"
+        record_evidence_entry(
+            evidence,
+            source="get_github_star_history",
+            label="GitHub Star History",
+            summary=f"{count} {word} recorded",
+        )
 
 
 @tool(
@@ -105,8 +141,8 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
         "stars_in_window": "Total stars gained during the returned window",
         "complete": "Whether the requested window was fully scanned before the page cap",
     },
-    surfaces=("investigation", "chat"),
-    side_effect_level="read_only",
+    surfaces=(ToolSurface.CHAT,),
+    side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
         "properties": {
@@ -119,18 +155,26 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
                 "description": "UTC days to include, default 30.",
             },
             "github_token": {"type": "string"},
+            "public_repository": {"type": "boolean"},
         },
         "required": ["owner", "repo"],
     },
     is_available=_github_star_history_available,
     extract_params=_github_star_history_extract_params,
-    injected_params=GITHUB_INJECTED_PARAMS,
+    injected_params=(
+        *GITHUB_INJECTED_PARAMS,
+        "owner",
+        "repo",
+        "public_repository",
+    ),
+    evidence_mapper=_map_get_github_star_history,
 )
 def get_github_star_history(
     owner: str,
     repo: str,
     days: int | None = None,
     github_token: str | None = None,
+    public_repository: bool = False,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Fetch a bounded, newest-first day-by-day GitHub star history window."""
@@ -139,7 +183,10 @@ def get_github_star_history(
     end_day = now.date()
     start_day = end_day - timedelta(days=window_days - 1)
     window_start = datetime.combine(start_day, time.min, tzinfo=UTC)
-    client = GitHubRestClient(github_token)
+    client = GitHubRestClient(
+        github_token,
+        allow_unauthenticated_read=public_repository,
+    )
     repository_path = f"/repos/{owner}/{repo}"
 
     try:

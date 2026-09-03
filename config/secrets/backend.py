@@ -1,30 +1,29 @@
 """Shared contracts for the secret storage tiers.
 
-Leaf module: both :mod:`config.secrets.os_keyring` and
-:mod:`config.secrets.local_file` import it, and :mod:`config.secrets.store`
-imports all three, so the shared error type lives here to keep the package
+Leaf module: :mod:`config.secrets.local_file` and :mod:`config.secrets.store`
+both import it, so the shared error type lives here to keep the package
 acyclic.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
 
-# Where a resolved secret came from. ``fallback`` is the owner-only local file
-# used when the OS keyring cannot be reached.
-SecretTier = Literal["env", "keyring", "fallback", "none"]
+
+class SecretTier(StrEnum):
+    """Which storage tier a resolved secret came from.
+
+    ``fallback`` is the owner-only local credentials file
+    (``~/.opensre/credentials.json``); ``none`` means no tier held the secret.
+    """
+
+    ENV = "env"
+    FALLBACK = "fallback"
+    NONE = "none"
 
 
 class KeyringUnavailableReason(StrEnum):
-    """Why the OS keyring could not serve a request.
-
-    The distinction drives policy: with ``NO_BACKEND`` there is no secure store
-    on this machine to downgrade *from*, so falling back to a local file is the
-    only way to reach a working state. With ``BACKEND_ERROR`` a real keychain
-    exists and is merely locked or unreachable, so the user is told what
-    happened rather than silently handed weaker storage.
-    """
+    """Why local credential storage could not serve a request."""
 
     DISABLED = "disabled"
     NO_BACKEND = "no_backend"
@@ -32,7 +31,7 @@ class KeyringUnavailableReason(StrEnum):
 
 
 class KeyringUnavailableError(RuntimeError):
-    """Raised when the OS keyring cannot store or return a secret.
+    """Raised when local credential storage cannot store or return a secret.
 
     Subclasses ``RuntimeError`` because callers predating the secret-store split
     (``_persist_env_secret``, ``persist_api_key_secret``) already treat a
