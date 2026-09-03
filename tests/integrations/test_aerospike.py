@@ -294,11 +294,7 @@ class TestAerospikeLatency:
         # one line per {namespace}-<op>, first token after the colon is the
         # time unit, the rest are histogram bucket values.
         mock_send.return_value = {
-            "latencies:": (
-                "batch-index:;"
-                "{test}-read:msec,0.4;"
-                "{test}-write:msec,1.20,0.50"
-            ),
+            "latencies:": ("batch-index:;{test}-read:msec,0.4;{test}-write:msec,1.20,0.50"),
         }
 
         result = get_latency(AerospikeConfig(host="node1"))
