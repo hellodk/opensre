@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.yugabytedb import (
@@ -20,7 +21,7 @@ from integrations.yugabytedb import (
         "connection landed on, not the full cluster."
     ),
     source="yugabytedb",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     use_cases=[
         "Identifying long-running queries that may be causing performance issues",
         "Investigating slow or stuck queries during incidents",

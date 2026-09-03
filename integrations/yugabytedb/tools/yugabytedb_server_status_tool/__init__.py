@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.yugabytedb import (
@@ -20,7 +21,7 @@ from integrations.yugabytedb import (
         "the connection landed on, not the full cluster."
     ),
     source="yugabytedb",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     use_cases=[
         "Checking YugabyteDB server health during an incident",
         "Identifying connection saturation or exhaustion issues",

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from core.domain.types.tools import ToolSurface
 from core.tool_framework.tool_decorator import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.yugabytedb import (
@@ -20,7 +21,7 @@ from integrations.yugabytedb import (
         "autovacuum, so maintenance timestamps are typically NULL."
     ),
     source="yugabytedb",
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
     use_cases=[
         "Identifying large tables or rapid table growth during storage incidents",
         "Analyzing table scan patterns and index usage efficiency",
