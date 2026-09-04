@@ -124,15 +124,15 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
         "operation/discovery cases that the system prompt explicitly maps to a "
         "slash command. Do not use this as a natural-language router for "
         "ordinary informational, how-to, capability, or status questions merely "
-        "because a slash command can display related information; hand those to "
-        "assistant_handoff unless a prompt rule names a read-only discovery "
-        "exception. Supply positional args in the args array. This tool covers "
+        "because a slash command can display related information; answer those "
+        "directly unless a prompt rule names a read-only discovery exception. "
+        "Supply positional args in the args array. This tool covers "
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "
         "order; for example "
-        '`run /remote and then investigate "hello world"` requires '
+        "`run /remote and then check disk usage` requires "
         'slash_invoke(command="/remote", args=[]) followed by '
-        'investigation_start(alert_text="hello world").'
+        'shell_run(command="df -h").'
     )
     # Keep planner payload intentionally tiny for live LLM runs with strict
     # prompt budgets. The full rich catalog remains available via

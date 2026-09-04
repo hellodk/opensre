@@ -10,8 +10,8 @@ Layout (either form is supported):
 - Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
 
 Optional YAML frontmatter (``name``, ``description``, optional ``recurring``)
-feeds the compact index. Without frontmatter, the name is derived from the
-path and the description from the first ``WHEN TO USE`` / subtitle lines.
+feeds the compact index. Without frontmatter, the name is derived from the path
+and the description from the first ``WHEN TO USE`` / subtitle lines.
 
 The harness prompt carries only :func:`load_skills_index` (~hundreds of
 chars). Full bodies load through the ``skill_view`` tool via
@@ -235,9 +235,11 @@ def load_skills_index() -> str:
         SKILLS_HEADER,
         "",
         "Compact catalog only — full skill bodies are NOT inlined here.",
-        "Skill matches outrank the generic docs/how-to assistant handoff.",
-        "Before assistant_handoff, check this catalog for an action-shaped match",
+        "Skill matches outrank a generic docs/how-to answer.",
+        "Before answering, check this catalog for an action-shaped match",
         '(including "set up", "install", "onboard me", "demo", "audit", or "fix").',
+        'Capability questions ("what can you do", "how can you help",',
+        '"what tools do you have") are NOT a skill_view match. Answer them directly.',
         "When the user request matches a skill below, call skill_view(name) in",
         "THIS turn BEFORE emitting that skill's tool sequence. Do not invent",
         "steps from the one-line description alone.",

@@ -3,9 +3,9 @@
 When the interactive shell starts and no scheduled tasks ("loops") are
 configured on this machine, offer three suggested recurring loops in an inline
 dropdown. Picking one auto-submits a canned prompt as the first turn; the
-action agent then drives the matching bundled skill (``github-ci-fix``,
-``github-cli``, ``morning-report``) through a first demo pass and the existing
-``propose_scheduled_delivery`` → ``/cron add`` confirmation flow. Escape skips
+action agent then drives the matching bundled skill or tool guidance
+(``github-ci-fix``, GitHub tools, ``morning-report``) through a first demo pass
+and the existing ``propose_scheduled_delivery`` → ``/cron add`` confirmation flow. Escape skips
 into the normal prompt for this launch — nothing is persisted, so the picker
 returns on the next launch while zero loops exist.
 
@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from infrastructure.analytics.cli import (
+from infrastructure.analytics.capture import (
     capture_loop_suggestion_prompted,
     capture_loop_suggestion_selected,
     capture_loop_suggestion_skipped,

@@ -2,7 +2,7 @@
 
 Exposes the configured X MCP server (https://github.com/xdevplatform/xmcp) —
 tweet creation, search, timelines, likes, retweets, bookmarks, and more — to
-the investigation and chat surfaces. The tool surface is intentionally
+the chat surface. The tool surface is intentionally
 generic — a discovery tool plus a named-call tool — so it keeps working when
 X adds or renames individual MCP-side tools.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from core.domain.types.tools import ToolSurface
 from core.tool import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import (
     build_mcp_tool_listing,
     first_list,
@@ -139,7 +139,7 @@ def _normalize_tool_result(result: XMCPToolCallResult) -> XMCPResponse:
         "Finding the right tool for a task by passing a name_filter (e.g. 'search tweet')",
         "Fetching the input schema of a specific tool with include_schema before calling it",
     ],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -241,7 +241,7 @@ def list_x_tools(
         "Inspecting a user's timeline or a specific tweet during an investigation",
     ],
     requires=["tool_name"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {

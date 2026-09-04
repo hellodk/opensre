@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -37,186 +38,47 @@ from core.agent_harness.prompts import (
     build_action_user_message,
 )
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
+from core.agent_harness.session.pending_choice import parse_ask_user_answers
+from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
 from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
-from core.agent_harness.turns.assistant_handoff import (
-    AssistantHandoff,
-    assistant_handoffs_from_tool_inputs,
+from core.agent_harness.turns.action_dedup import (
+    coerce_fingerprint_quiet,
+    with_duplicate_action_call_guard,
 )
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
-from core.agent_harness.turns.goal_review import build_goal_reviewer, tap_executed_tool_names
+from core.agent_harness.turns.display_text import (
+    cap_for_display,
+    format_generic_tool_payload,
+    looks_like_json,
+    preferred_tool_response_text,
+    split_output_truncation_markers,
+    strip_plan_snapshots,
+)
+from core.agent_harness.turns.goal_review import (
+    build_goal_reviewer,
+    tap_executed_tool_names,
+    task_plan_blocks_conclusion,
+)
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.agent_harness.turns.wal_recorder import with_wal_recording
 from core.events import runtime_event_callback_from_observer
-from core.llm.failure_classification import is_context_length_overflow
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
-from core.llm_invoke_errors import remediate_missing_llm_credentials
-from core.tool.execution import (
-    BeforeToolCallResult,
-    ToolExecutionHooks,
-    ToolExecutionPatch,
-    ToolExecutionRequest,
-    ToolExecutionResult,
-    public_tool_input,
-)
+from core.tool.execution import ToolExecutionHooks, public_tool_input
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
+from infrastructure.text import is_data_blob
 
 log = logging.getLogger(__name__)
 
-# Local REPL tools covered by consecutive identical-batch suppress (oracle 202 /
-# 203): slash_invoke, shell_run, cli_exec. One rule — no per-tool carve-outs.
-_DEDUPE_ACTION_TOOL_NAMES: frozenset[str] = frozenset({"slash_invoke", "shell_run", "cli_exec"})
-
-# Hashable identity for one guarded call (no hot-path json.dumps).
-_ActionCallFingerprint = tuple[Any, ...]
-
-
-def _coerce_fingerprint_quiet(value: Any) -> bool:
-    """Match ``shell_run`` quiet coercion so retries compare equal."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _action_call_fingerprint(name: str, args: Any) -> _ActionCallFingerprint:
-    """Stable identity for one guarded action call (schema fields only)."""
-    if not isinstance(args, dict):
-        args = {}
-
-    if name == "slash_invoke":
-        command = str(args.get("command", ""))
-        raw = args.get("args")
-        argv = tuple(str(item) for item in raw) if isinstance(raw, (list, tuple)) else ()
-        return (name, command, argv)
-
-    if name == "cli_exec":
-        return (name, str(args.get("payload", "")).strip())
-
-    # shell_run
-    return (
-        name,
-        str(args.get("command", "")),
-        _coerce_fingerprint_quiet(args.get("quiet", False)),
-    )
-
-
-def with_duplicate_action_call_guard(
-    base: ToolExecutionHooks | None = None,
-) -> ToolExecutionHooks:
-    """Block replaying guarded action calls already covered by the success snapshot.
-
-    Suppress ``slash_invoke`` / ``shell_run`` / ``cli_exec`` when the call's
-    fingerprint is in ``last_fully_succeeded_batch`` *or* already succeeded
-    earlier in the current provider batch (same-batch duplicates). Guarded
-    tools are sequential, so ``batch_succeeded`` is visible to the next
-    ``before()`` in the batch.
-
-    Snapshot updates at the next batch boundary:
-
-    - Fully successful batch → replace snapshot with that batch (so A → B → A
-      still allows the second A after B replaces the snapshot).
-    - Mixed batch (suppressed replay + new success) → replace snapshot with
-      *only* the newly succeeded fingerprints. That blocks an immediate re-emit
-      of the new action without retaining suppressed members (which would block
-      a later intentional standalone replay of A after {A suppressed, C ran}).
-    - Pure suppress or total failure → leave the snapshot alone (a third
-      identical replay stays blocked; failed calls may still retry).
-
-    Limitation (intentional): the same batch twice in one turn — lone or
-    multi — is also suppressed; accidental replay and “run that again” are
-    indistinguishable without parsing the user message. Ask again next turn.
-    """
-    last_fully_succeeded_batch: frozenset[_ActionCallFingerprint] = frozenset()
-    current_batch: frozenset[_ActionCallFingerprint] = frozenset()
-    batch_succeeded: set[_ActionCallFingerprint] = set()
-    has_open_batch = False
-    base_before = base.before_tool_call if base is not None else None
-    base_after = base.after_tool_call if base is not None else None
-    base_update = base.on_tool_update if base is not None else None
-    base_batch = base.before_tool_batch if base is not None else None
-
-    def before_batch(tool_calls: Sequence[ToolCall]) -> None:
-        nonlocal last_fully_succeeded_batch, current_batch, batch_succeeded, has_open_batch
-        if base_batch is not None:
-            base_batch(tool_calls)
-        if has_open_batch and current_batch:
-            succeeded = frozenset(batch_succeeded)
-            if succeeded == current_batch:
-                last_fully_succeeded_batch = current_batch
-            elif succeeded:
-                # Mixed suppress/success: snapshot is only what newly ran.
-                # Do not retain suppressed members — that would block a later
-                # intentional standalone A after {A suppressed, C succeeded}.
-                last_fully_succeeded_batch = succeeded
-            # else: pure suppress or all-error — leave snapshot intact.
-        keys: list[_ActionCallFingerprint] = []
-        for tool_call in tool_calls:
-            if tool_call.name not in _DEDUPE_ACTION_TOOL_NAMES:
-                continue
-            keys.append(
-                _action_call_fingerprint(tool_call.name, public_tool_input(tool_call.input))
-            )
-        current_batch = frozenset(keys)
-        batch_succeeded = set()
-        has_open_batch = True
-
-    def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
-        name = request.tool_call.name
-        # Membership across the prior success snapshot *and* earlier successes
-        # in this batch. Interleaved A -> B -> A still runs, because a fully
-        # successful {B} replaces the snapshot. Same-batch duplicates (two
-        # identical cli_exec in one provider response) hit batch_succeeded.
-        if name in _DEDUPE_ACTION_TOOL_NAMES:
-            key = _action_call_fingerprint(name, public_tool_input(request.arguments))
-            if key in last_fully_succeeded_batch or key in batch_succeeded:
-                return BeforeToolCallResult(
-                    blocked=True,
-                    reason=(
-                        f"Already ran {name} with identical arguments "
-                        "this turn. Do not repeat it; finish with no further tool calls."
-                    ),
-                    metadata={"suppressed_duplicate": True},
-                )
-        if base_before is not None:
-            return base_before(request)
-        return None
-
-    def after(
-        request: ToolExecutionRequest,
-        result: ToolExecutionResult,
-    ) -> ToolExecutionPatch | None:
-        if request.tool_call.name in _DEDUPE_ACTION_TOOL_NAMES and not result.is_error:
-            batch_succeeded.add(
-                _action_call_fingerprint(
-                    request.tool_call.name, public_tool_input(request.arguments)
-                )
-            )
-        if base_after is not None:
-            return base_after(request, result)
-        return None
-
-    return ToolExecutionHooks(
-        before_tool_call=before,
-        after_tool_call=after,
-        on_tool_update=base_update,
-        before_tool_batch=before_batch,
-    )
-
-
-# Some hosted tool-calling models emit one tool call per assistant turn even when
-# parallel tool calls are enabled. Keep the tool-calling loop bounded, but leave
-# enough headroom for a *data-dependent* compound request that must run
-# sequentially: each step waits for the previous tool's result before the next
-# call can be emitted (e.g. "look up the weather and then send it to Slack" =
-# Architecture audit needs headroom for clone + ≤3 agent-scan probes +
-# 4 heuristic shells + cleanup + save observations (then a no-tool report).
-_MAX_TOOL_CALLING_ITERATIONS = 13
+# This is an emergency ceiling, not the normal workflow budget. Productive
+# action turns may need many sequential calls; repeated observations are stopped
+# independently by the stagnation guard below.
+_MAX_TOOL_CALLING_ITERATIONS = 64
+_MAX_STAGNANT_TOOL_ITERATIONS = 3
 _EXECUTED_HISTORY_TYPES = {
     "slash",
     "shell",
@@ -225,16 +87,12 @@ _EXECUTED_HISTORY_TYPES = {
     "implementation",
     "cli_command",
 }
-INVESTIGATION_DISPATCH_TOOL_NAMES: frozenset[str] = frozenset(
-    {"investigation_start", "alert_sample"}
-)
-# Tools whose user-facing event is rendered live by the surface's tool-event
-# observer (``tool_start``/``tool_end``), so the end-of-turn generic formatter
-# must stay silent for them: repeating their summary would double-print, and
-# their payload (e.g. the full skill body) is for the model only.
-_OBSERVER_RENDERED_TOOL_NAMES: frozenset[str] = frozenset({"skill_view"})
 
 
+# Tools whose user-facing event is owned by the host UI, so the end-of-turn
+# generic formatter must stay silent: repeating their summary would double-print,
+# and their payload (e.g. the full skill body) is for the model only. update_plan
+# renders as the pinned plan overlay, so its summary must not also print as text.
 @dataclass(frozen=True)
 class ActionTurnPlan:
     agent: Agent[Any]
@@ -325,139 +183,73 @@ def _pop_turn_outcome_hint(session: SessionState) -> str:
     return hint.strip() if isinstance(hint, str) else ""
 
 
-def _content_to_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return json.dumps(content, default=str)
-    return str(content)
-
-
 def _generic_tool_results(result: Any) -> list[tuple[ToolCall, Any]]:
     return [
         (tool_call, tool_result)
         for tool_call, tool_result in getattr(result, "tool_results", [])
         if tool_call.name not in SELF_RECORDING_ACTION_TOOL_NAMES
-        and tool_call.name != "assistant_handoff"
     ]
 
 
-def _format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
-    """Build a user-visible summary for one non-self-recording tool result."""
-    if tool_call.name in _OBSERVER_RENDERED_TOOL_NAMES:
-        return ""
-    preferred_response = _preferred_tool_response_text(tool_result)
-    if preferred_response:
-        return preferred_response
-    details = getattr(tool_result, "details", None)
-    if isinstance(details, dict):
-        summary = details.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            return summary.strip()
-        stdout = details.get("stdout")
-        if details.get("ok") and isinstance(stdout, str) and stdout.strip():
-            return stdout.strip()
-        error = details.get("error")
-        if error:
-            return str(error).strip()
-    if getattr(tool_result, "is_error", False):
-        return ""
-    content = _content_to_text(getattr(tool_result, "content", "")).strip()
-    if not content:
-        return ""
-    # Prefer a nested summary when the tool returned a JSON object payload.
-    try:
-        parsed = json.loads(content)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        parsed = None
-    if isinstance(parsed, dict):
-        response_text = parsed.get("response_text")
-        if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
-        summary = parsed.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            return summary.strip()
-        if parsed.get("ok") and isinstance(parsed.get("stdout"), str) and parsed["stdout"].strip():
-            return str(parsed["stdout"]).strip()
-        if parsed.get("error"):
-            return str(parsed["error"]).strip()
-    args = public_tool_input(tool_call.input)
-    if args:
-        return (
-            f"{tool_call.name} input: {json.dumps(args, ensure_ascii=False, default=str)}"
-            f"\n{tool_call.name} result: {content}"
-        )
-    return f"{tool_call.name} result: {content}"
+def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> None:
+    """Remember a capped peek so Ctrl+O can expand it; no-op without a terminal.
 
-
-def _preferred_tool_response_text(tool_result: Any) -> str:
-    details = getattr(tool_result, "details", None)
-    if isinstance(details, dict):
-        response_text = details.get("response_text")
-        if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
-    content = _content_to_text(getattr(tool_result, "content", "")).strip()
-    if not content:
-        return ""
-    try:
-        parsed = json.loads(content)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return ""
-    if not isinstance(parsed, dict):
-        return ""
-    response_text = parsed.get("response_text")
-    return response_text.strip() if isinstance(response_text, str) else ""
+    ``None`` never clears earlier peeks (same semantics as
+    ``TerminalSession.stash_collapsed_tool_output``).
+    """
+    terminal = getattr(session, "terminal", None)
+    if terminal is None:
+        return
+    stash = getattr(terminal, "stash_collapsed_tool_output", None)
+    if callable(stash):
+        stash(text)
+        return
+    # Minimal test doubles without the ring API: only record a non-None peek.
+    if text is not None:
+        terminal.collapsed_tool_output = text
 
 
 def _has_preferred_tool_response_text(result: Any) -> bool:
     return any(
-        bool(_preferred_tool_response_text(tool_result))
+        bool(preferred_tool_response_text(tool_result))
         for _tool_call, tool_result in _generic_tool_results(result)
     )
 
 
 def _self_recording_tools_only(result: Any) -> bool:
-    """True when every executed tool (except handoff) already printed to the console.
+    """True when every executed tool already printed to the console.
 
     Those tools return a bare success flag to the model; any closing prose is
     invented without the command's on-screen output (e.g. claiming ``/health``
     was all-green after the report already showed failures).
     """
-    names = [
-        tool_call.name
-        for tool_call, _tool_result in getattr(result, "tool_results", [])
-        if tool_call.name != "assistant_handoff"
-    ]
+    names = [tool_call.name for tool_call, _tool_result in getattr(result, "tool_results", [])]
     return bool(names) and all(name in SELF_RECORDING_ACTION_TOOL_NAMES for name in names)
 
 
 # Self-recording tools whose result payload carries the real command output
 # back to the model (shell: stdout/stderr/exit_code; slash: the captured
-# console output read back from the history row). A closing summary after a
-# chain of these is grounded in observed output, unlike the bare success flags
-# most self-recording tools return.
-_GROUNDED_CHAIN_TOOL_NAMES: frozenset[str] = frozenset({"shell_run", "slash_invoke"})
+# console output read back from the history row). A closing summary after these
+# is grounded in observed output, unlike the bare success flags most
+# self-recording tools return.
+_GROUNDED_OUTPUT_TOOL_NAMES: frozenset[str] = frozenset({"shell_run", "slash_invoke"})
 
 
-def _multi_step_grounded_chain(result: Any) -> bool:
-    """True when the turn chained two or more output-carrying tool steps.
+def _grounded_output_tools_only(result: Any) -> bool:
+    """True when every tool this turn carried its real output back to the model.
 
     ``_self_recording_tools_only`` suppresses model closings because most
     self-recording tools hand the model a bare success flag, so closing prose
     would be invented. ``shell_run`` and ``slash_invoke`` are the exceptions —
-    their tool results carry the real output back to the model — so after a
-    multi-step chain the completion summary is grounded in output the model
-    actually observed, and dropping it left workflow turns ending on raw step
-    output with no wrap-up. Single commands keep the suppression: their one
-    output block is already on screen, and a paraphrase only adds
-    contradiction risk.
+    their tool results carry the real stdout/exit (or captured console output)
+    back to the model — so their closing summary is grounded in output the model
+    actually observed. That holds whether the turn ran one command or a chain:
+    keeping the closing lets the agent report what a command did (result, exit,
+    any skipped step) instead of ending on raw output, matching how a teammate
+    would confirm the outcome.
     """
-    names = [
-        tool_call.name
-        for tool_call, _tool_result in getattr(result, "tool_results", [])
-        if tool_call.name != "assistant_handoff"
-    ]
-    return len(names) >= 2 and all(name in _GROUNDED_CHAIN_TOOL_NAMES for name in names)
+    names = [tool_call.name for tool_call, _tool_result in getattr(result, "tool_results", [])]
+    return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
 
 
 def _asks_the_user(final_text: str) -> bool:
@@ -485,7 +277,7 @@ def _has_quiet_shell_run(result: Any) -> bool:
         raw = getattr(tool_call, "input", None)
         if not isinstance(raw, dict):
             continue
-        if _coerce_fingerprint_quiet(public_tool_input(raw).get("quiet", False)):
+        if coerce_fingerprint_quiet(public_tool_input(raw).get("quiet", False)):
             return True
     return False
 
@@ -493,20 +285,10 @@ def _has_quiet_shell_run(result: Any) -> bool:
 def _response_text_from_generic_results(result: Any) -> str:
     chunks: list[str] = []
     for tool_call, tool_result in _generic_tool_results(result):
-        formatted = _format_generic_tool_payload(tool_call, tool_result)
+        formatted = format_generic_tool_payload(tool_call, tool_result)
         if formatted:
             chunks.append(formatted)
     return "\n".join(chunks)
-
-
-def _is_user_facing_final_text(text: str) -> bool:
-    """True when post-tool model text should replace tool dumps and be streamed."""
-    stripped = text.strip()
-    if not stripped:
-        return False
-    if "\n" in stripped or stripped.startswith("#"):
-        return True
-    return len(stripped) > 60
 
 
 def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
@@ -626,16 +408,16 @@ def _literal_slash_tool_call(message: str, agent_tools: list[Any]) -> ToolCall |
     LLM is unavailable — e.g. a provider with no credit — so users can still run
     ``/login``, ``/onboard``, ``/model``, etc. to recover instead of deadlocking.
 
-    Also accepts schedule / investigation affirmatives that
-    ``expand_affirmative_follow_up`` rewrote into a leading ``/cron add …`` or
-    ``/investigate alert:…`` (after stripping a vendor context prefix). Those
-    expands are themselves literal slash text — not a separate static tool-call
-    bypass — so they stay inside the repository-mandated action-selection path.
+    Also accepts schedule affirmatives that ``expand_affirmative_follow_up``
+    rewrote into a leading ``/cron add …`` (after stripping a vendor context
+    prefix). Those expands are themselves literal slash text — not a separate
+    static tool-call bypass — so they stay inside the repository-mandated
+    action-selection path.
 
     Returns ``None`` (so the normal LLM path runs) when the input is not literal
     slash text or when ``slash_invoke`` is not an available tool this turn.
     """
-    from infrastructure.harness_ports import strip_message_context_prefix
+    from infrastructure.harness_providers import strip_message_context_prefix
 
     _, remainder = strip_message_context_prefix(message)
     stripped = remainder.strip()
@@ -669,7 +451,7 @@ def _build_action_agent(
     """Build the Agent for one action turn; return an ``ActionTurnPlan``.
 
     Detects the three branches — verbatim ``!shell``, literal ``/slash``
-    (including Want-me-to yes expanded to ``/cron`` / ``/investigate``), or
+    (including Want-me-to yes expanded to ``/cron``), or
     LLM-selected — and picks a matching LLM (deterministic tool-call or hosted
     factory), system prompt, and user-message envelope. The caller only has to
     invoke ``.run()`` and shape the result.
@@ -723,7 +505,15 @@ def _build_action_agent(
         # The reviewer reads executed tool names from the shared list the
         # event tap below fills, so it can stand down on handoff/dispatch
         # turns whose outcome is not reviewable at conclusion time.
-        goal = build_goal_reviewer(llm, message, executed_tool_names)
+        goal = build_goal_reviewer(
+            llm,
+            _goal_review_user_request(message, turn_snapshot),
+            executed_tool_names,
+            plan_incomplete=lambda: task_plan_blocks_conclusion(
+                task_plan=getattr(session, "task_plan", None),
+                plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
+            ),
+        )
 
     # WAL first, observer second: the tool intent must be on disk before
     # any surface side effect reacts to the same event.
@@ -741,6 +531,7 @@ def _build_action_agent(
         tools=tuple(agent_tools),
         resolved_integrations=resolved_integrations,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        max_stagnant_iterations=_MAX_STAGNANT_TOOL_ITERATIONS,
         tool_resources=tool_resources,
         tool_hooks=tool_hooks,
         on_runtime_event=on_runtime_event,
@@ -752,6 +543,19 @@ def _build_action_agent(
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
     )
+
+
+def _goal_review_user_request(message: str, turn_snapshot: TurnSnapshot | None) -> str:
+    """Recover the original user request when this turn contains Ask User answers."""
+    if turn_snapshot is None or not parse_ask_user_answers(message):
+        return message
+    for role, content in reversed(turn_snapshot.conversation_messages):
+        if role.casefold() != "user" or not content.strip():
+            continue
+        if parse_ask_user_answers(content):
+            continue
+        return content
+    return message
 
 
 @dataclass(frozen=True)
@@ -839,10 +643,6 @@ class _TurnCounts:
     generic_success_count: int
     planned_count: int
     handled: bool
-    investigation_dispatched: bool
-    handoff_contents: tuple[str, ...]
-    assistant_handoffs: tuple[AssistantHandoff, ...] = ()
-    handoff_requires_gather: bool = True
 
 
 def _compose_response(
@@ -861,40 +661,76 @@ def _compose_response(
     Consumes the session's pending outcome hint.
     """
     final_text = str(getattr(result, "final_text", "") or "").strip()
+    waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
     generic_text = _response_text_from_generic_results(result)
     hint = _pop_turn_outcome_hint(session)
     prefer_tool_response_text = _has_preferred_tool_response_text(result)
+    terminal = getattr(session, "terminal", None)
+    pending_choice_response = getattr(terminal, "pending_choice_response", None)
+    selected_choice = (
+        pending_choice_response.strip() if isinstance(pending_choice_response, str) else ""
+    )
+    if selected_choice and terminal is not None:
+        terminal.pending_choice_response = None
     # Self-recording tools (slash/shell/…) already rendered the real output.
     # Drop model closings so they cannot contradict what the user just saw
     # (classic failure: inventing "health check passed" after a failed /health).
-    # Exceptions: a multi-step shell/slash chain, whose closing summary is
-    # grounded in the output the model observed between steps; a closing
-    # question, which seeks direction instead of restating output; and any
-    # quiet ``shell_run``, which withheld live stdout so the closing *is*
-    # the turn's display.
-    # A handoff means the assistant answers this turn, so the action's closing
-    # prose would be a second reply to one message ("good morning" twice).
+    # Exceptions: a shell/slash command, whose closing summary is grounded in the
+    # output the model observed (so the agent can confirm the outcome, one command
+    # or a chain); a closing question, which seeks direction instead of restating
+    # output; and any quiet ``shell_run``, which withheld live stdout so the
+    # closing *is* the turn's display.
     suppress_final = (
-        prefer_tool_response_text
+        (waiting_for_choice and _is_redundant_choice_invitation(result, final_text))
+        or _is_choice_acknowledgement(final_text, selected_choice)
+        or prefer_tool_response_text
         or (
             _self_recording_tools_only(result)
-            and not _multi_step_grounded_chain(result)
+            and not _grounded_output_tools_only(result)
             and not _asks_the_user(final_text)
             and not _has_quiet_shell_run(result)
         )
-        or bool(counts.handoff_contents)
     )
     final_text_chunk = "" if suppress_final else final_text
-    # Unhandled turns fall through to ``gather_and_answer`` / ``stream_answer``.
-    # Painting the closing here produced two ``● assistant`` bubbles (e.g. a
-    # wrong weekday from the action agent, then the grounded day from live
-    # runtime facts). Keep ``response_text``; blank only the console chunk.
-    display_final = "" if (suppress_final or not counts.handled) else final_text
+    # The model sometimes restates the plan (or every historical snapshot) in its
+    # reply; the pinned overlay already shows it, so strip snapshots from display.
+    display_final = strip_plan_snapshots(final_text_chunk)
     # History entries are already rendered by self-recording tools (shell/slash/…).
     # Console display uses final_text + generic results + hints only so users see
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
-    display_chunks = [chunk for chunk in (display_final, generic_text, hint) if chunk]
+    display_generic = cap_for_display(generic_text)
+    # Defense: never fence a data blob into the transcript (summary/stdout leaks
+    # used to pretty-print truncated JSON behind a text fence).
+    if is_data_blob(generic_text):
+        display_generic = ""
+    # The shell observer already nested user-facing results under each ``⏺``
+    # call (Droid / Claude Code / Cursor). Repeating them in the closing
+    # would float a second copy after the reply. Leave the Ctrl+O stash the
+    # observer wrote; do not clear it with an empty preview.
+    already_inline = bool(getattr(terminal, "inline_tool_results", False))
+    if already_inline and terminal is not None:
+        terminal.inline_tool_results = False
+        display_generic = ""
+    is_json = looks_like_json(generic_text)
+    body, markers = split_output_truncation_markers(display_generic)
+    truncated = bool(markers)
+    if not already_inline:
+        _stash_collapsed_tool_output(session, generic_text if truncated else None)
+    bulky = display_generic.count("\n") >= 4 or truncated
+    if display_generic and (is_json or bulky):
+        # Truncated JSON is invalid — fencing it as ``json`` makes Rich/Pygments
+        # paint error tokens (red blocks) on the cut. Use a text fence instead
+        # and keep truncation markers outside the block.
+        if truncated:
+            if body:
+                display_generic = f"\n```text\n{body}\n```\n{markers}"
+            else:
+                display_generic = f"\n```text\n{display_generic}\n```"
+        else:
+            lang = "json" if is_json else "text"
+            display_generic = f"\n```{lang}\n{display_generic}\n```"
+    display_chunks = [chunk for chunk in (display_final, display_generic, hint) if chunk]
     response_chunks = [
         chunk
         for chunk in (
@@ -905,14 +741,53 @@ def _compose_response(
         )
         if chunk
     ]
-    # Prefer the agent's closing prose when it looks like a real reply (report /
-    # multi-line Markdown). Short one-liners like "done" are common after a
-    # single tool call and must not replace tool-derived response_text or get
-    # streamed on action-only turns (gateway finalize / cross-surface parity).
-    # A tool's explicit ``response_text`` also wins over chatty model closings.
-    use_final_text = _is_user_facing_final_text(final_text) and not suppress_final
-    response_text = final_text if use_final_text else "\n".join(response_chunks)
+    use_final_text = bool(final_text_chunk)
+    response_text = "\n".join(response_chunks)
     return response_text, display_chunks, use_final_text
+
+
+def _is_redundant_choice_invitation(result: Any, final_text: str) -> bool:
+    """True when a single-choice closing repeats the title or tool summary."""
+    final_tokens = _choice_invitation_tokens(final_text)
+    if not final_tokens:
+        return True
+    for tool_call, tool_result in getattr(result, "tool_results", []):
+        if tool_call.name != "ask_user_choice":
+            continue
+        args = public_tool_input(tool_call.input)
+        if args.get("questions"):
+            return False
+        picker_copy = {_choice_invitation_tokens(str(args.get("title", "")))}
+        details = getattr(tool_result, "details", None)
+        if isinstance(details, dict):
+            picker_copy.add(_choice_invitation_tokens(str(details.get("summary", ""))))
+        picker_copy.discard(())
+        return final_tokens in picker_copy
+    return False
+
+
+def _choice_invitation_tokens(text: str) -> tuple[str, ...]:
+    """Normalize picker copy while allowing an optional polite prefix."""
+    tokens = tuple(re.findall(r"[a-z0-9]+", text.casefold()))
+    if tokens[:1] == ("please",):
+        return tokens[1:]
+    return tokens
+
+
+def _is_choice_acknowledgement(text: str, selected_choice: str) -> bool:
+    """True only for a bare restatement of the selected picker label."""
+    if not text or not selected_choice:
+        return False
+    choice = " ".join(selected_choice.casefold().split())
+    response = " ".join(text.casefold().strip().rstrip(".!?").split())
+    return response in {
+        choice,
+        f"{choice} selected",
+        f"{choice} was selected",
+        f"selected {choice}",
+        f"selected: {choice}",
+        f"you selected {choice}",
+    }
 
 
 def _show_response(
@@ -928,7 +803,7 @@ def _show_response(
     reply; only then is it streamed as the assistant speaking. Progress tags
     are scrubbed for display only — ``response_text`` keeps them for evaluate.
     """
-    if handled and final_text:
+    if final_text:
         visible = strip_session_goal_progress_tags(final_text)
         if visible.strip():
             output.stream(label="OpenSRE", chunks=iter([visible]))
@@ -953,6 +828,17 @@ def _end_silent_tool_turn(output: OutputSink) -> None:
     output.print()
 
 
+def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) -> None:
+    """Print the one-shot per-step work breakdown when the plan is complete."""
+    from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
+
+    breakdown = take_completed_plan_breakdown(session)
+    if not breakdown:
+        return
+    output.print()
+    output.print(breakdown)
+
+
 def _count_turn(result: Any, session: SessionState, history_start: int) -> _TurnCounts:
     """Count what ran, from the history rows this turn added plus the results."""
     executed_entries = [
@@ -961,15 +847,7 @@ def _count_turn(result: Any, session: SessionState, history_start: int) -> _Turn
         if item.get("type") in _EXECUTED_HISTORY_TYPES
     ]
     generic_executed_count, generic_success_count = _generic_tool_result_counts(result)
-    # ``assistant_handoff`` runs like a tool but hands back to conversation, so
-    # it must not make the turn look like it did something for the user.
-    planned_count = sum(1 for tc, _output in result.executed if tc.name != "assistant_handoff")
-    handoff_inputs = [
-        public_tool_input(tc.input)
-        for tc, _output in result.executed
-        if tc.name == "assistant_handoff"
-    ]
-    assistant_handoffs = assistant_handoffs_from_tool_inputs(handoff_inputs)
+    planned_count = len(result.executed)
     return _TurnCounts(
         executed_entries=executed_entries,
         executed_count=len(executed_entries) + generic_executed_count,
@@ -979,18 +857,6 @@ def _count_turn(result: Any, session: SessionState, history_start: int) -> _Turn
         generic_success_count=generic_success_count,
         planned_count=planned_count,
         handled=planned_count > 0,
-        investigation_dispatched=any(
-            tc.name in INVESTIGATION_DISPATCH_TOOL_NAMES for tc, _output in result.executed
-        ),
-        handoff_contents=tuple(
-            tag for handoff in assistant_handoffs for tag in handoff.to_handoff_contents()
-        ),
-        assistant_handoffs=assistant_handoffs,
-        # Gather stays required unless every handoff this turn opted out; a
-        # single gather-needing handoff must not be starved by another's opt-out.
-        handoff_requires_gather=(
-            not assistant_handoffs or any(handoff.requires_gather for handoff in assistant_handoffs)
-        ),
     )
 
 
@@ -1051,10 +917,13 @@ def _run_action_turn(
             system_prompt=result.final_system_prompt,
         )
     except Exception as exc:
-        if is_context_length_overflow(str(exc)):
-            log.debug("shell action prompt overflow; falling through to assistant", exc_info=True)
-            return ToolCallingTurnResult(0, 0, 0, False, False, accounting_status="not_run")
+        from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
+        # Billing exhaustion is a terminal control-flow condition. Rendering it
+        # as an ordinary assistant response makes one-shot callers report a
+        # successful turn and exit zero even though no model work completed.
+        if isinstance(exc, LLMCreditExhaustedError):
+            raise
         error_text = str(exc)
         if args.error_reporter is not None:
             args.error_reporter.report(
@@ -1069,13 +938,13 @@ def _run_action_turn(
             client=llm_client,
             error_text=error_text,
         )
-        from config.config import get_configured_llm_provider
+        from config.llm_settings import get_configured_llm_provider
         from core.agent_harness.accounting.token_accounting import resolve_provider_name
 
         provider = resolve_provider_name(llm_client) if llm_client is not None else None
         display_text = (
-            remediate_missing_llm_credentials(
-                error_text, provider=provider or get_configured_llm_provider()
+            execute_cli_onboard_on_missing_key(
+                session, error_text, provider=provider or get_configured_llm_provider()
             )
             or error_text
         )
@@ -1091,10 +960,7 @@ def _run_action_turn(
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
     )
-    # Cancelled turns must not fall through to gather/answer: the host already
-    # owns the terminal UX (timeout message / stop). Drop handoffs; the
-    # orchestrator short-circuits on ``cancelled`` before routing.
-    handoff_contents = () if cancelled else counts.handoff_contents
+    # Cancelled turns stop before the host records or finalizes the response.
     # Discovery tools that opt into ``summarize_observation`` (via tool tags)
     # return structured JSON users should not see raw. Stash only those results.
     if (
@@ -1112,18 +978,19 @@ def _run_action_turn(
         _show_response(
             args.output,
             handled=counts.handled,
-            # use_final_text means the composed text *is* the closing message.
-            final_text=response_text if use_final_text else "",
+            # Stream only terminal-visible chunks. ``response_text`` may also
+            # contain self-recording history for persistence/headless surfaces.
+            final_text="\n".join(display_chunks) if use_final_text else "",
             display_chunks=display_chunks,
         )
+        _show_completed_plan_breakdown(args.output, session)
 
     log.debug(
-        "action_turn done planned=%s executed=%s handled=%s cancelled=%s investigation=%s",
+        "action_turn done planned=%s executed=%s handled=%s cancelled=%s",
         counts.planned_count,
         counts.executed_count,
         counts.handled,
         cancelled,
-        counts.investigation_dispatched,
     )
     return ToolCallingTurnResult(
         counts.planned_count,
@@ -1132,10 +999,8 @@ def _run_action_turn(
         False,
         False if cancelled else counts.handled,
         response_text="" if cancelled else response_text,
-        handoff_contents=() if cancelled else handoff_contents,
-        assistant_handoffs=() if cancelled else counts.assistant_handoffs,
-        handoff_requires_gather=(False if cancelled else counts.handoff_requires_gather),
-        investigation_dispatched=(False if cancelled else counts.investigation_dispatched),
+        response_streamed=bool(use_final_text and not cancelled),
+        hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
     )
 
@@ -1144,5 +1009,4 @@ __all__ = [
     "ActionTurnPlan",
     "ActionTurnRunner",
     "SELF_RECORDING_ACTION_TOOL_NAMES",
-    "with_duplicate_action_call_guard",
 ]

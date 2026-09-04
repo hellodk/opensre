@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import io
 import subprocess
-import sys
-import time
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
-from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
@@ -20,10 +17,7 @@ import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.subprocess_runner as subprocess_runner
 import tests.shared.harness_turn_driver as harness_turn_driver
 import tools.interactive_shell.shell.execution as shell_execution
-from core.agent_harness.accounting.token_accounting import LlmRunInfo
-from core.agent_harness.ports import AnswerRequest, OutputSink
 from core.llm.types import AgentLLMResponse, ToolCall
-from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from surfaces.interactive_shell.session import Session
 from tests.core.agent._planned_action import (
     PlannedAction,
@@ -64,17 +58,6 @@ def _capture() -> tuple[Console, io.StringIO]:
     return Console(file=buf, force_terminal=False, highlight=False), buf
 
 
-def _no_answer_agent(
-    message: str,
-    session: Session,
-    console: Console,
-    *,
-    request: AnswerRequest,
-    output: OutputSink | None = None,
-) -> LlmRunInfo | None:
-    return None
-
-
 def _action(
     kind: ToolKind,
     content: str,
@@ -107,13 +90,6 @@ def _tool_args_for_action(action: PlannedAction) -> dict[str, object]:
         return {"target": content}
     if action.kind == "shell":
         return {"command": content}
-    if action.kind == "sample_alert":
-        return {"template": content}
-    if action.kind == "investigation":
-        return {"alert_text": content}
-    if action.kind == "synthetic_test":
-        suite, _sep, scenario = content.partition(":")
-        return {"suite": suite, "scenario": scenario}
     if action.kind == "task_cancel":
         return {"target": content}
     if action.kind == "cli_command":
@@ -183,12 +159,6 @@ class _MessageMappedActionLLM(FakeActionLLM):
         return _response_from_actions(list(actions))
 
 
-_NITRO_PROMPT = (
-    "I want to deploy OpenSRE on a remote EC2 Nitro instance, and then I want to send\n"
-    'it an investigation. Can you please deploy the instance and send it "hello world"?'
-)
-
-
 # Deterministic phrase -> (planned actions, has_unhandled_clause) mapping used by the
 # fake LLM planner. Reconstructed from each execution test's own assertions and the
 # documented phrase mappings of the (now-removed) deterministic mapper.
@@ -226,10 +196,6 @@ _FAKE_PLANS: dict[str, tuple[list[PlannedAction], bool]] = {
         [_action("slash", "/integrations list"), _action("slash", "/remote")],
         True,
     ),
-    _NITRO_PROMPT: (
-        [_action("slash", "/remote"), _action("investigation", "hello world")],
-        False,
-    ),
     (
         "tell me which services are connected AND then tell me the current CLI version "
         "AND then deploy to EC2 within 90 seconds"
@@ -239,25 +205,6 @@ _FAKE_PLANS: dict[str, tuple[list[PlannedAction], bool]] = {
             _action("slash", "/version"),
             _action("slash", "/remote"),
         ],
-        False,
-    ),
-    "okay launch a simple alert": (
-        [_action("sample_alert", "generic")],
-        False,
-    ),
-    "show me which services are connected and after that run a synthetic test RDS database": (
-        [
-            _action("slash", "/integrations list"),
-            _action("synthetic_test", "rds_postgres:001-replication-lag"),
-        ],
-        False,
-    ),
-    "run synthetic test 005-failover": (
-        [_action("synthetic_test", "rds_postgres:005-failover")],
-        False,
-    ),
-    "kill the syntehtic_test because it is runnign way too long": (
-        [_action("task_cancel", "synthetic_test")],
         False,
     ),
     "show me connected services and sing a song": (
@@ -648,55 +595,6 @@ def test_compound_prompt_executes_all_supported_tasks(monkeypatch: object) -> No
     assert "couldn't safely decide actions" not in output.lower()
 
 
-def test_nitro_prompt_executes_remote_then_investigation(monkeypatch: object) -> None:
-    dispatched: list[str] = []
-    investigation_payloads: list[str] = []
-
-    def _fake_dispatch(
-        command: str,
-        session: Session,
-        console: Console,
-        **_kwargs: object,
-    ) -> bool:
-        dispatched.append(command)
-        session.record("slash", command, ok=True)
-        console.print(f"ran {command}")
-        return True
-
-    def _fake_run_investigation_for_session(
-        *,
-        alert_text: str,
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        _ = (context_overrides, cancel_requested, console)
-        investigation_payloads.append(alert_text)
-        return {"root_cause": "hello world handled"}
-
-    monkeypatch.setattr(slash_adapter, "dispatch_slash", _fake_dispatch)
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    monkeypatch.setattr(
-        investigation_adapter,
-        "run_investigation_for_session",
-        _fake_run_investigation_for_session,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(_NITRO_PROMPT, session, console)
-
-    assert handled.handled is True
-    assert dispatched == ["/remote"]
-    assert investigation_payloads == ["hello world"]
-    output = buf.getvalue()
-    assert "EC2 deployment creates AWS" not in output
-    assert "ran /remote" in output
-    assert "investigation: hello world" in output
-    assert output.index("ran /remote") < output.index("investigation: hello world")
-
-
 def test_services_version_deploy_prompt_executes_in_order(monkeypatch: object) -> None:
     dispatched: list[str] = []
 
@@ -729,227 +627,6 @@ def test_services_version_deploy_prompt_executes_in_order(monkeypatch: object) -
     output = buf.getvalue()
     assert output.index("ran /integrations list") < output.index("ran /version")
     assert "EC2 deployment creates AWS" not in output
-
-
-def test_execute_cli_actions_runs_sample_alert(monkeypatch: object) -> None:
-    calls: list[str] = []
-    session = Session()
-    console, buf = _capture()
-
-    def _fake_run_sample_alert_for_session(
-        *,
-        template_name: str = "generic",
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        calls.append(template_name)
-        assert context_overrides is None
-        assert console is turn_console
-        return {
-            "root_cause": "sample failure",
-            "problem_md": "sample",
-            "is_noise": False,
-        }
-
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    turn_console = console
-    monkeypatch.setattr(
-        investigation_adapter,
-        "run_sample_alert_for_session",
-        _fake_run_sample_alert_for_session,
-    )
-
-    assert (
-        action_turn.run_action_tool_turn("okay launch a simple alert", session, console).handled
-        is True
-    )
-    assert calls == ["generic"]
-    assert session.last_state == {
-        "root_cause": "sample failure",
-        "problem_md": "sample",
-        "is_noise": False,
-    }
-    assert session.history[-1] == {"type": "alert", "text": "sample:generic", "ok": True}
-    inv_tasks = [
-        t for t in session.task_registry.list_recent(10) if t.kind == TaskKind.INVESTIGATION
-    ]
-    assert len(inv_tasks) == 1
-    assert inv_tasks[0].status == TaskStatus.COMPLETED
-    assert inv_tasks[0].result == "sample failure"
-    output = buf.getvalue()
-    assert "sample alert" in output
-    assert "generic" in output
-
-
-def test_execute_cli_actions_sample_alert_opensre_error_marks_task_failed(
-    monkeypatch: object,
-) -> None:
-    from surfaces.shared.error_handling.errors import OpenSREError
-
-    def _raise(
-        *,
-        template_name: str = "generic",
-        context_overrides: dict[str, object] | None = None,
-        cancel_requested: object | None = None,
-        console: Console | None = None,
-    ) -> dict[str, object]:
-        _ = console
-        raise OpenSREError("sample pipeline blocked")
-
-    import surfaces.interactive_shell.runtime.investigation_adapter as investigation_adapter
-
-    monkeypatch.setattr(investigation_adapter, "run_sample_alert_for_session", _raise)
-
-    session = Session()
-    console, _ = _capture()
-    assert (
-        action_turn.run_action_tool_turn("okay launch a simple alert", session, console).handled
-        is True
-    )
-    inv_tasks = [
-        t for t in session.task_registry.list_recent(10) if t.kind == TaskKind.INVESTIGATION
-    ]
-    assert len(inv_tasks) == 1
-    assert inv_tasks[0].status == TaskStatus.FAILED
-    assert inv_tasks[0].error == "sample pipeline blocked"
-
-
-def test_execute_cli_actions_lists_all_actions_before_synthetic_rds(monkeypatch: object) -> None:
-    dispatched: list[str] = []
-    popen_calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_dispatch(
-        command: str,
-        session: Session,
-        console: Console,
-        **_kwargs: object,
-    ) -> bool:
-        dispatched.append(command)
-        session.record("slash", command, ok=True)
-        console.print(f"ran {command}")
-        return True
-
-    def _fake_popen(command: list[str], **kwargs: object) -> MagicMock:
-        popen_calls.append((command, kwargs))
-        proc = MagicMock()
-        proc.poll.return_value = 0
-        proc.returncode = 0
-        return proc
-
-    monkeypatch.setattr(slash_adapter, "dispatch_slash", _fake_dispatch)
-    monkeypatch.setattr(
-        "tools.interactive_shell.synthetic.runner.subprocess.Popen",
-        _fake_popen,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(
-        "show me which services are connected and after that run a synthetic test RDS database",
-        session,
-        console,
-    )
-
-    assert handled.handled is True
-    assert dispatched == ["/integrations list"]
-    assert len(popen_calls) == 1
-    assert popen_calls[0][0] == [
-        sys.executable,
-        "-u",
-        "-m",
-        "surfaces.cli",
-        "tests",
-        "synthetic",
-        "--scenario",
-        "001-replication-lag",
-    ]
-
-    assert session.history[0] == {
-        "type": "slash",
-        "text": "/integrations list",
-        "ok": True,
-    }
-
-    for _ in range(100):
-        recent = session.task_registry.list_recent(1)
-        if recent and recent[0].status != TaskStatus.RUNNING:
-            break
-        time.sleep(0.01)
-    finished = session.task_registry.list_recent(1)[0]
-    assert finished.status == TaskStatus.COMPLETED
-
-    synthetic_entry = session.history[-1]
-    assert synthetic_entry["type"] == "synthetic_test"
-    assert synthetic_entry["ok"] is True
-    assert "rds_postgres" in synthetic_entry["text"]
-    assert "task:" in synthetic_entry["text"]
-
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert "synthetic test started" in output
-    assert output.index("$ /integrations list") < output.index("$ opensre tests synthetic")
-    assert output.index("$ opensre tests synthetic") < output.index("synthetic test started")
-
-
-def test_execute_cli_actions_runs_requested_synthetic_scenario(monkeypatch: object) -> None:
-    popen_calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def _fake_popen(command: list[str], **kwargs: object) -> MagicMock:
-        popen_calls.append((command, kwargs))
-        proc = MagicMock()
-        proc.poll.return_value = 0
-        proc.returncode = 0
-        return proc
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.synthetic.runner.subprocess.Popen",
-        _fake_popen,
-    )
-
-    session = Session()
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn("run synthetic test 005-failover", session, console)
-
-    assert handled.handled is True
-    assert popen_calls[0][0][-2:] == ["--scenario", "005-failover"]
-    assert "$ opensre tests synthetic --scenario 005-failover" in buf.getvalue()
-
-
-def test_execute_cli_actions_cancels_single_running_synthetic_task() -> None:
-    session = Session()
-    session.terminal.trust_mode = True
-    task = session.task_registry.create(TaskKind.SYNTHETIC_TEST)
-    task.mark_running()
-    proc = MagicMock()
-    proc.poll.return_value = None
-    task.attach_process(proc)
-
-    console, buf = _capture()
-    handled = action_turn.run_action_tool_turn(
-        "kill the syntehtic_test because it is runnign way too long",
-        session,
-        console,
-    )
-
-    assert handled.handled is True
-    assert task.cancel_requested.is_set()
-    proc.terminate.assert_called_once()
-    slash_entry = session.history[0]
-    assert slash_entry == {
-        "type": "slash",
-        "text": f"/cancel {task.task_id}",
-        "ok": True,
-        "response_text": (
-            f"slash /cancel {task.task_id} (succeeded)\n"
-            f"stop requested for synthetic_test {task.task_id}. use /tasks to confirm status."
-        ),
-    }
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert f"$ /cancel {task.task_id}" in output
-    assert "stop requested" in output
 
 
 def test_partial_match_executes_matched_clause_and_drops_unhandled(monkeypatch: object) -> None:
@@ -1300,13 +977,13 @@ def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) ->
     captured_executed: list[tuple[int, int, int]] = []
 
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_planned",
+        "infrastructure.analytics.capture.capture_terminal_actions_planned",
         lambda *, planned_count, has_unhandled_clause: captured_planned.append(
             (planned_count, has_unhandled_clause)
         ),
     )
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_executed",
+        "infrastructure.analytics.capture.capture_terminal_actions_executed",
         lambda *, planned_count, executed_count, executed_success_count: captured_executed.append(
             (planned_count, executed_count, executed_success_count)
         ),
@@ -1322,7 +999,6 @@ def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) ->
         session,
         console,
         recorder=None,
-        answer_agent=_no_answer_agent,
     )
 
     action_result = result.action_result
@@ -1355,6 +1031,29 @@ def test_execute_cli_actions_persists_action_agent_llm_unavailable(
     assert "action agent unavailable" in output
 
 
+def test_execute_cli_actions_propagates_credit_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    exhausted = OpenSRECreditsExhaustedError(
+        "OpenSRE hosted credits are exhausted.",
+        upgrade_url="https://app.opensre.test/usage",
+    )
+
+    def _raise() -> object:
+        raise exhausted
+
+    _patch_action_llm_factory(monkeypatch, _raise)
+
+    session = Session()
+    console, _ = _capture()
+    with pytest.raises(OpenSRECreditsExhaustedError) as exc_info:
+        action_turn.run_action_tool_turn("check health", session, console)
+
+    assert exc_info.value is exhausted
+
+
 def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1378,13 +1077,13 @@ def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
     captured_planned: list[tuple[int, bool]] = []
     captured_executed: list[tuple[int, int, int]] = []
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_planned",
+        "infrastructure.analytics.capture.capture_terminal_actions_planned",
         lambda *, planned_count, has_unhandled_clause: captured_planned.append(
             (planned_count, has_unhandled_clause)
         ),
     )
     monkeypatch.setattr(
-        "infrastructure.analytics.cli.capture_terminal_actions_executed",
+        "infrastructure.analytics.capture.capture_terminal_actions_executed",
         lambda *, planned_count, executed_count, executed_success_count: captured_executed.append(
             (planned_count, executed_count, executed_success_count)
         ),
@@ -1398,7 +1097,6 @@ def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
         session,
         console,
         recorder=None,
-        answer_agent=_no_answer_agent,
     )
 
     # The unhandled flag no longer denies the turn: the matched /health runs.
@@ -1487,43 +1185,3 @@ def test_execute_cli_actions_bang_prefix_single_line_dispatches_to_shell(
     }
     assert calls[0][0] == _expected_shell_argv("echo hello world")
     assert calls[0][1]["shell"] is False
-
-
-def test_execute_cli_actions_handoff_only_plan_falls_through_silently(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A pure assistant_handoff LLM plan must not print a 'Requested actions' header.
-
-    Regression: when the planner returned only assistant_handoff, action execution
-    was called and printed '● assistant / Requested actions: 1. assistant handoff [reason]'
-    before the real LLM reply ran.  The user saw two assistant headers and internal
-    planner reasoning that should have been invisible.
-    """
-    _patch_action_llm_factory(
-        monkeypatch,
-        lambda: FakeActionLLM(
-            [
-                _llm_response(
-                    [
-                        PlannedAction(
-                            kind="assistant_handoff",
-                            content="informational question about current model",
-                            position=0,
-                        )
-                    ]
-                )
-            ]
-        ),
-    )
-
-    session = Session()
-    console, buf = _capture()
-    result = action_turn.run_action_tool_turn("what is our current model?", session, console)
-
-    # Must fall through (not handled) so the caller invokes the LLM for the real reply.
-    assert result.handled is False
-    assert result.executed_count == 0
-    # No "Requested actions" block should appear — the handoff plan is internal state.
-    output = buf.getvalue()
-    assert "Requested actions" not in output
-    assert "assistant handoff" not in output.lower()

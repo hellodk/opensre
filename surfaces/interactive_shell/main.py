@@ -10,18 +10,19 @@ from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
-from infrastructure.analytics.cli import identify_saved_github_username
+from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
+from infrastructure.terminal.theme import set_active_theme
 from surfaces.interactive_shell.controller import InteractiveShellController
-from surfaces.interactive_shell.runtime.context import create_repl_runtime_context
-from surfaces.interactive_shell.runtime.startup.first_launch_github import (
-    require_startup_github_login,
+from surfaces.interactive_shell.runtime.context import create_repl_runtime
+from surfaces.interactive_shell.runtime.startup.account_gate import (
+    pass_sign_in_gate,
+    should_paint_launch_banner,
 )
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.runtime.startup.loop_suggestions import offer_loop_suggestions
-from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
-from tools.system.fleet_monitoring.sweep import run_startup_sweep
+from surfaces.shared.terminal.components.rendering import repl_clear_screen
 
 # Fallback when a caller does not supply one. Forces a terminal because the
 # shell owns the screen; an embedding caller passes its own instead.
@@ -48,19 +49,25 @@ async def run_repl_async(
     identify_saved_github_username()
 
     cfg = config or ReplConfig.load()
+    set_active_theme(cfg.theme)
     out = console or _DEFAULT_CONSOLE
     # WARNING+ records print through the shell console, so one emitted from a
     # probe thread while a status spinner animates lands whole above it instead
     # of racing the spinner's redraw on the tty and staircasing what follows.
     install_shell_log_handler(lambda: out)
-    pt_session = build_prompt_session()
-    runtime_context = create_repl_runtime_context(pt_session=pt_session)
+    # Let PromptBuilder build the prompt session so it can wire the
+    # composer-hide (needs the session + REPL state, which do not exist yet).
+    runtime_context = create_repl_runtime()
     session = runtime_context.session
     session.terminal.cli_command_group = cli_command_group
 
     if initial_input:
         session.warm_resolved_integrations()
         return run_initial_input(initial_input, session, out)
+
+    # The sign-in gate runs once, in the synchronous ``run_repl`` entrypoint,
+    # where it interleaves with the launch-banner paint. This coroutine is the
+    # shell body only; embedders driving it directly manage their own auth.
 
     # Open the session file now that we know this is an interactive REPL run.
     SessionManager.for_session(session).open_store(session)
@@ -105,19 +112,25 @@ def run_repl(
 ) -> int:
     """Run the shell on a new event loop and return its exit code."""
     cfg = config or ReplConfig.load()
+    set_active_theme(cfg.theme)
     out = console or _DEFAULT_CONSOLE
     if not cfg.enabled and not resume_session_id:
         return 0
     if not sys.stdin.isatty() and initial_input is None:
         return 0
 
-    run_startup_sweep()
-
     try:
         if not initial_input:
-            render_terminal_ui(out)
-            if not require_startup_github_login(out):
+            # Unsigned TTY: the gate paints the banner as part of the sign-in
+            # screen. Signed-in / non-interactive starts still need the chrome.
+            paint_banner = should_paint_launch_banner()
+            if not pass_sign_in_gate(out):
                 return 0
+            if paint_banner:
+                # Wipe the calling shell prompt so the REPL reads as its own
+                # screen (Droid/Claude Code), not a banner under ``uv run …``.
+                repl_clear_screen()
+                render_terminal_ui(out)
 
         return asyncio.run(
             run_repl_async(

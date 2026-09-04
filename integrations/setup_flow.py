@@ -142,8 +142,7 @@ class SetupField:
 
     When set, collection surfaces skip this field and :func:`apply_setup`
     ignores any submitted value under *name*. Use for transport modes and
-    other values the user must not choose — OpenClaw's ``stdio`` mode, for
-    example, whose config-model default is ``streamable-http``.
+    other values the user must not choose.
     """
 
     validate: Callable[[str], str | None] | None = None
@@ -267,7 +266,7 @@ def _collect_credentials(
     credentials: dict[str, str | None] = {}
     for field in spec.fields:
         if field.is_constant:
-            # Keep "" as "" — OpenClaw's empty url/auth_token are intentional.
+            # Keep "" as "" for optional constant fields.
             credentials[field.name] = field.constant
             continue
         value = (values.get(field.name) or "").strip() or field.default
@@ -292,11 +291,10 @@ def _verify(spec: IntegrationSetupSpec, credentials: dict[str, str | None]) -> t
 
 
 def _persist_env(spec: IntegrationSetupSpec, credentials: dict[str, str | None]) -> Path:
-    """Mirror env-backed fields into the keyring / ``.env`` and return the ``.env`` path.
+    """Mirror env-backed fields into the credentials file / ``.env`` and return the ``.env`` path.
 
-    ``.env`` is rewritten even when no field targets it: the rewrite also strips
-    any stale secret assignments left by an older setup (see
-    :func:`config.env_file.sync_env_values`).
+    ``.env`` is rewritten even when no field targets it so public keys stay in
+    sync. Existing secret assignments are left in place.
 
     Raises whatever the writers raise — notably ``PermissionError`` from
     :func:`config.env_file.write_env_lines` on an unwritable ``.env``.

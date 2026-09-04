@@ -22,22 +22,20 @@ def test_shell_agent_build_omits_capability_policy() -> None:
     assert config.apply_capability_policy is None
     assert config.build_tools is not None
     assert config.build_prompts is not None
-    assert config.build_gather is not None
 
 
 def test_gateway_policy_still_withholds_on_a_fresh_session() -> None:
     session = Session()
     ensure_gateway_capability_policy(session)
-    assert session.available_capabilities["investigation"] == ()
     assert session.available_capabilities["llm_provider"] == ()
     assert session.available_capabilities["task_cancel"] == ()
 
 
-def test_build_shell_agent_keeps_investigation_capability() -> None:
+def test_build_shell_agent_keeps_existing_capabilities() -> None:
     session = Session()
-    session.available_capabilities["investigation"] = ("investigate",)
+    session.available_capabilities["task_cancel"] = ("cancel",)
     build_shell_agent(session, Console(file=io.StringIO(), force_terminal=False))
-    assert session.available_capabilities["investigation"] == ("investigate",)
+    assert session.available_capabilities["task_cancel"] == ("cancel",)
 
 
 def test_build_shell_agent_applies_capability_policy_when_set(
@@ -51,7 +49,6 @@ def test_build_shell_agent_applies_capability_policy_when_set(
         return AgentBuildConfig(
             build_tools=base.build_tools,
             build_prompts=base.build_prompts,
-            build_gather=base.build_gather,
             error_reporter=base.error_reporter,
             apply_capability_policy=seen.append,
         )

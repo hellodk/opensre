@@ -7,15 +7,20 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.groundcover.availability import groundcover_available_or_backend
 from integrations.groundcover.client import GroundcoverClient
-from integrations.groundcover.helpers import (
+from integrations.groundcover.guidance import (
     DEFAULT_LOGS_QUERY,
     GCQL_GUIDANCE,
-    base_extract_params,
-    run_signal_query,
+)
+from integrations.groundcover.params import base_extract_params
+from integrations.groundcover.query_runner import run_signal_query
+from integrations.groundcover.tools._evidence import (
+    map_get_groundcover_query_reference,
+    map_query_groundcover_logs,
+    map_query_groundcover_traces,
 )
 
 _LOGS_SOURCE = "groundcover_logs"
@@ -74,6 +79,7 @@ def _logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     },
     is_available=_logs_is_available,
     extract_params=_logs_extract_params,
+    evidence_mapper=map_query_groundcover_logs,
 )
 def query_groundcover_logs(
     query: str = "",
@@ -110,7 +116,7 @@ def query_groundcover_logs(
 
 from typing import cast
 
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 
 _QUERY_REF_SOURCE = "groundcover_query_reference"
 
@@ -130,7 +136,7 @@ def _query_ref_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     display_name="groundcover query reference",
     source="groundcover",
     tags=("observability", "reference"),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     description=(
         "Get the groundcover Query Language (gcQL) reference: operators, functions, pipes, and "
         "query patterns. Call this ONCE before writing gcQL for any query_groundcover_* tool. "
@@ -145,6 +151,7 @@ def _query_ref_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     input_schema={"type": "object", "properties": {}, "additionalProperties": False},
     is_available=_query_ref_is_available,
     extract_params=_query_ref_extract_params,
+    evidence_mapper=map_get_groundcover_query_reference,
 )
 def get_groundcover_query_reference(
     _groundcover_client: GroundcoverClient | None = None,
@@ -178,8 +185,8 @@ def get_groundcover_query_reference(
 """groundcover traces query tool (gcQL over query_traces)."""
 
 
-from core.tool_framework.tool_decorator import tool
-from integrations.groundcover.helpers import (
+from core.tool_framework import tool
+from integrations.groundcover.guidance import (
     DEFAULT_TRACES_QUERY,
     GCQL_GUIDANCE,
 )
@@ -246,6 +253,7 @@ def _traces_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     },
     is_available=_traces_is_available,
     extract_params=_traces_extract_params,
+    evidence_mapper=map_query_groundcover_traces,
 )
 def query_groundcover_traces(
     query: str = "",

@@ -7,6 +7,8 @@ import re
 from typing import TYPE_CHECKING
 
 from core.agent_harness.prompts.action.text import _SYSTEM_PROMPT_BASE
+from core.agent_harness.prompts.action.turn_interaction import turn_interaction_facts_block
+from core.agent_harness.prompts.getting_started import load_getting_started_block
 from core.agent_harness.prompts.kernel.envelope import (
     PromptBlock,
     PromptBlockId,
@@ -20,7 +22,11 @@ from core.agent_harness.prompts.memory.conversation import (
 )
 from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
 from core.agent_harness.prompts.skills.loader import load_skills_index
-from infrastructure.harness_ports import action_prompt_vendor_fragments
+from core.agent_harness.task_plan.prompt import (
+    ask_user_answered_block,
+    current_task_plan_block,
+)
+from infrastructure.harness_providers import action_prompt_vendor_fragments
 
 if TYPE_CHECKING:
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -88,7 +94,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             # Trailing separators stay in the block; avoid ``base + "\n\n"`` which
             # copies the entire stable prompt body on every turn.
             content="".join((_SYSTEM_PROMPT_BASE, "\n\n")),
-            provenance="core.agent_harness.prompts.action.text",
+            provenance="core.agent_harness.prompts.opensre_system_prompt.md",
         ),
     ]
     vendor_fragments = action_prompt_vendor_fragments()
@@ -98,7 +104,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             kind=PromptBlockKind.RULE,
             tier=PromptTier.STABLE,
             content=vendor_fragments,
-            provenance="infrastructure.harness_ports.action_prompt_vendor_fragments",
+            provenance="infrastructure.harness_providers.action_prompt_vendor_fragments",
             suffix="\n\n",
         )
     )
@@ -113,7 +119,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             suffix="\n\n",
         )
     )
-    skills_index = load_skills_index()
+    skills_index = "\n\n".join(filter(None, (load_skills_index(), load_getting_started_block())))
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_SKILLS,
@@ -142,6 +148,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             provenance="core.agent_harness.turns.turn_snapshot",
         )
     )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.REPOSITORY_CONTEXT,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.CONTEXT,
+            content=repository_context_block(turn_snapshot),
+            provenance="core.agent_harness.turns.turn_snapshot",
+        )
+    )
     # Volatile before ephemeral so render_cached + render_ephemeral reassemble
     # into render() and the cache breakpoint can sit after memory.
     memory_block = long_term_memory_block()
@@ -152,6 +167,28 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             tier=PromptTier.VOLATILE,
             content=memory_block,
             provenance="core.domain.memory",
+        )
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.ASK_USER_ANSWERED,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.EPHEMERAL,
+            content=ask_user_answered_block(
+                turn_snapshot.text,
+                plan_only=turn_snapshot.plan_only_until_authorized,
+            ),
+            provenance="core.agent_harness.task_plan.prompt",
+            suffix="\n\n",
+        )
+    )
+    blocks.append(
+        PromptBlock(
+            id=PromptBlockId.TURN_INTERACTION,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=turn_interaction_facts_block(turn_snapshot),
+            provenance="core.agent_harness.prompts.action.turn_interaction",
         )
     )
     blocks.append(
@@ -186,6 +223,20 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
                 provenance="core.agent_harness.session.persistence.wal_recovery",
             )
         )
+    plan_block = current_task_plan_block(
+        turn_snapshot.task_plan,
+        plan_only=turn_snapshot.plan_only_until_authorized,
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.CURRENT_TASK_PLAN,
+            kind=PromptBlockKind.CONTEXT,
+            tier=PromptTier.EPHEMERAL,
+            content=plan_block,
+            provenance="core.agent_harness.task_plan.prompt",
+            suffix="\n",
+        )
+    )
     return PromptEnvelope.from_blocks(
         blocks,
         separator="",
@@ -203,17 +254,35 @@ def connected_integrations_block(turn_snapshot: TurnSnapshot) -> str:
         listing = "none"
     else:
         listing = "unknown"
-    # Listing does not gate diagnostic→investigation: why/figure-out always
-    # hand off for gather + Want-me-to; explicit investigate always dispatches.
-    # The list only tells the planner which sources gather can use.
     gate_note = (
-        "This listing does NOT gate diagnostic→investigation. Cause/why / "
-        "figure-out questions → assistant_handoff + gather + Want-me-to "
-        "investigate offer. Explicit investigate/RCA/diagnose/analyze/"
-        "root-cause verbs → investigation_start ALWAYS (even when this line "
-        "is none).\n"
+        "Cause/why / figure-out questions → use available chat tools, then answer directly.\n"
     )
     return f"CONNECTED INTEGRATIONS (this install, right now): {listing}\n{gate_note}\n"
+
+
+def repository_context_block(turn_snapshot: TurnSnapshot) -> str:
+    """Render one active repo plus every repo retained in session memory."""
+    active = turn_snapshot.active_vcs_repositories
+    known = turn_snapshot.known_vcs_repositories
+    vendors = sorted(set(active) | set(known))
+    if not vendors:
+        return ""
+
+    lines: list[str] = []
+    for vendor in vendors:
+        active_repo = active.get(vendor, "none")
+        remembered = known.get(vendor, ())
+        remembered_text = ", ".join(remembered) if remembered else "none"
+        lines.append(f"- {vendor}: active={active_repo}; remembered={remembered_text}")
+    repository_lines = "\n".join(lines)
+    return (
+        "REPOSITORY CONTEXT (this session; one active target per vendor, many "
+        "remembered repositories):\n"
+        f"{repository_lines}\n"
+        "Use the active target for an unqualified repository request. A user-named "
+        "repository becomes active without deleting the others. Do not describe the "
+        "active repository as the only repository OpenSRE remembers.\n\n"
+    )
 
 
 def recent_conversation_block(turn_snapshot: TurnSnapshot) -> str:
@@ -278,7 +347,9 @@ def long_term_memory_block() -> str:
         "every turn). Use listed facts when planning; when the USER MESSAGE "
         "contains a new useful durable fact, call memory_remember in this turn "
         "even if they never said remember/save — do not wait for special phrasing. "
-        "Prefer updating an existing name over near-duplicates:\n"
+        "Prefer updating an existing name over near-duplicates. Repository memories "
+        "are a collection: keep one stable memory per repository and never overwrite "
+        "one repository's facts merely because another repository became active:\n"
         f"{rendered}\n\n"
     )
 
@@ -320,5 +391,6 @@ __all__ = [
     "long_term_memory_block",
     "prior_action_facts_block",
     "recent_conversation_block",
+    "repository_context_block",
     "sanitize_action_text",
 ]

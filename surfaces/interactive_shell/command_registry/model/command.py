@@ -19,6 +19,11 @@ from surfaces.interactive_shell.command_registry.model.switching import (
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
+from surfaces.shared.llm_setup.provider_choices import (
+    OTHER_PROVIDER_SELECTION,
+    focused_setup_provider_options,
+    other_setup_provider_options,
+)
 from surfaces.shared.terminal.components.choice_menu import (
     CRUMB_SEP,
     repl_choose_one,
@@ -30,14 +35,38 @@ _ROOT = "/model"  # breadcrumb root label
 
 
 def _provider_menu_choices() -> list[tuple[str, str]]:
-    from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
-
     current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
     options: list[tuple[str, str]] = []
-    for provider in SUPPORTED_PROVIDERS:
+    for provider in focused_setup_provider_options():
+        suffix = "*" if provider.value == current_provider else ""
+        options.append((provider.value, f"{provider.value}{suffix}"))
+    suffix = "*" if current_provider not in {value for value, _label in options} else ""
+    options.append((OTHER_PROVIDER_SELECTION, f"other provider{suffix}"))
+    return options
+
+
+def _other_provider_menu_choices() -> list[tuple[str, str]]:
+    current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
+    options: list[tuple[str, str]] = []
+    for provider in other_setup_provider_options():
         suffix = "*" if provider.value == current_provider else ""
         options.append((provider.value, f"{provider.value}{suffix}"))
     return options
+
+
+def _choose_provider_value(*, title: str, breadcrumb: str) -> str | None:
+    provider_value = repl_choose_one(
+        title=title,
+        breadcrumb=breadcrumb,
+        choices=_provider_menu_choices(),
+    )
+    if provider_value != OTHER_PROVIDER_SELECTION:
+        return provider_value
+    return repl_choose_one(
+        title="other provider",
+        breadcrumb=f"{breadcrumb}{CRUMB_SEP}other",
+        choices=_other_provider_menu_choices(),
+    )
 
 
 def _reasoning_model_menu_choices(provider: object) -> list[tuple[str, str]]:
@@ -88,10 +117,9 @@ def _interactive_set_provider(console: Console) -> bool | None:
 
     crumb_set = f"{_ROOT}{CRUMB_SEP}set"
     while True:
-        provider_value = repl_choose_one(
+        provider_value = _choose_provider_value(
             title="LLM provider",
             breadcrumb=crumb_set,
-            choices=_provider_menu_choices(),
         )
         if provider_value is None:
             return None
@@ -154,10 +182,9 @@ def _interactive_set_provider(console: Console) -> bool | None:
 
 
 def _interactive_restore_provider(console: Console) -> bool | None:
-    provider_value = repl_choose_one(
+    provider_value = _choose_provider_value(
         title="LLM provider",
         breadcrumb=f"{_ROOT}{CRUMB_SEP}restore",
-        choices=_provider_menu_choices(),
     )
     if provider_value is None:
         return None
@@ -168,10 +195,9 @@ def _interactive_set_toolcall(console: Console) -> bool | None:
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     crumb_tc = f"{_ROOT}{CRUMB_SEP}toolcall"
-    provider_value = repl_choose_one(
+    provider_value = _choose_provider_value(
         title="LLM provider",
         breadcrumb=crumb_tc,
-        choices=_provider_menu_choices(),
     )
     if provider_value is None:
         return None
@@ -290,7 +316,17 @@ def parse_model_set_args(args: list[str]) -> tuple[str, str | None, str | None]:
 
 def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
     if not args and repl_tty_interactive():
-        return _interactive_model_menu(session, console)
+        # User-typed bare ``/model`` reserves exclusive stdin and opens the
+        # picker. Agent ``slash_invoke`` runs without that reservation — opening
+        # the picker against the live prompt races CPR into the composer and
+        # stalls SessionGoal turns (shell-load dogfood H3). Show settings
+        # instead; interactive switch stays on typed ``/model`` or ``/model set``.
+        from core.agent_harness.spi.session_state import exclusive_stdin_active
+
+        if exclusive_stdin_active(session):
+            return _interactive_model_menu(session, console)
+        render_models_table(console, repl_data.load_llm_settings())
+        return True
 
     sub = (args[0].lower() if args else "show").strip()
 
@@ -396,7 +432,8 @@ COMMANDS: list[SlashCommand] = [
             "/model toolcall set <model>",
         ),
         notes=(
-            "In a TTY, bare /model opens an interactive menu.",
+            "Typed bare /model opens an interactive menu; "
+            "agent slash_invoke /model shows current settings.",
             "The menu stays open after show actions and closes after set, restore, or toolcall changes.",
         ),
         first_arg_completions=_MODEL_FIRST_ARGS,

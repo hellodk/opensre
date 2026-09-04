@@ -1,6 +1,6 @@
 ---
 title: "Temporal"
-description: "Connect Temporal so OpenSRE can inspect workflow executions, event history, and worker health during investigations"
+description: "Connect Temporal so OpenSRE can inspect workflow executions, event history, and worker health"
 ---
 
 ## Overview
@@ -81,15 +81,23 @@ Set `base_url` / `TEMPORAL_API_URL` to the frontend's HTTP API endpoint. Leave `
 ### Quick local test with Docker
 
 ```bash
-docker run --rm \
+docker run -d --rm \
   --name temporal-dev \
-  -p 7233:7233 \
-  -p 8233:8233 \
-  -p 7243:7243 \
+  -p 127.0.0.1:7233:7233 \
+  -p 127.0.0.1:8233:8233 \
+  -p 127.0.0.1:7243:7243 \
   temporalio/temporal:latest \
   server start-dev \
     --ip 0.0.0.0 \
     --http-port 7243
+
+i=0
+until curl -sf -o /dev/null http://localhost:7243/api/v1/namespaces/default; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: Temporal never became ready" >&2; exit 1; }
+  sleep 2
+done
+[ $i -lt 30 ] || { echo "ERROR: Temporal never became ready" >&2; exit 1; }
 ```
 
 | Port | Purpose |
@@ -98,13 +106,110 @@ docker run --rm \
 | `8233` | Web UI (`http://localhost:8233`) |
 | `7243` | **HTTP API** — set this as `base_url` |
 
-Confirm the HTTP API answers before configuring the integration:
+Confirm the HTTP API answers:
 
 ```bash
 curl -s http://localhost:7243/api/v1/namespaces/default
 ```
 
-## Investigation tools
+```bash
+export TEMPORAL_API_URL="http://localhost:7243"
+```
+
+Verify:
+
+```bash
+opensre integrations verify temporal
+```
+
+```
+SERVICE  │ SOURCE    │ STATUS   │ DETAIL
+temporal │ local env │ ✓ passed │ Successfully connected to Temporal.
+```
+
+A fresh namespace has no workflows, and `temporal_namespace_info`'s `workflow_count: "0"` on its own isn't useful evidence. Run a real, deliberately failing workflow first:
+
+```bash
+pip install temporalio
+cat > worker.py << 'EOF'
+import asyncio
+from datetime import timedelta
+from temporalio import activity, workflow
+from temporalio.client import Client
+from temporalio.common import RetryPolicy
+from temporalio.worker import Worker
+
+
+@activity.defn
+async def deploy_payment_service() -> str:
+    raise RuntimeError("payment-service deploy failed: connection refused to billing-api")
+
+
+@workflow.defn
+class PaymentServiceDeploy:
+    @workflow.run
+    async def run(self) -> str:
+        return await workflow.execute_activity(
+            deploy_payment_service,
+            start_to_close_timeout=timedelta(seconds=5),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+
+async def main():
+    client = await Client.connect("localhost:7233")
+    worker = Worker(client, task_queue="payment-service-queue",
+                     workflows=[PaymentServiceDeploy], activities=[deploy_payment_service])
+    async with worker:
+        try:
+            await client.execute_workflow(PaymentServiceDeploy.run,
+                id="payment-service-deploy-1", task_queue="payment-service-queue")
+        except Exception as e:
+            print("workflow failed:", e)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
+python worker.py
+```
+
+Chat sessions only treat an integration as active once the store resolution has *something* to fall through to env vars with -- an untouched `~/.opensre/integrations.json` with an unrelated integration in it blocks env-var fallback entirely. Point `OPENSRE_INTEGRATIONS_STORE_PATH` at an empty, valid store instead, so your real config is never read or written and `TEMPORAL_API_URL` above is the only source of connection info:
+
+```bash
+export OPENSRE_INTEGRATIONS_STORE_PATH=$(mktemp /tmp/opensre-temporal-demo.XXXXXX)
+echo '{"version": 2, "integrations": []}' > "$OPENSRE_INTEGRATIONS_STORE_PATH"
+```
+
+A literal zero-byte file does not work here -- the store loader expects valid JSON and raises on an empty read, so this writes an explicitly empty (but valid) store rather than just creating the file with `mktemp` alone.
+
+Now ask the agent about the failed workflow:
+
+```bash
+opensre
+```
+
+Ask: *Why did the Temporal workflow payment-service-deploy-1 fail?*
+
+Against this exact local workflow the agent calls all 4 registered tools —
+namespace info, workflow list, workflow history, and task queue — and finds the
+real cause: the `deploy_payment_service` activity raised
+`RuntimeError('payment-service deploy failed: connection refused to billing-api')`
+and, with `maximumAttempts=1`, the failure propagated straight to
+`WORKFLOW_EXECUTION_FAILED`. An empty store makes the session fall through to
+env-var resolution for *every* integration, not just Temporal -- if your shell
+already resolves another integration from its own env vars, it rides along too
+(harmless).
+
+Teardown:
+
+```bash
+docker rm -f temporal-dev
+rm -f "$OPENSRE_INTEGRATIONS_STORE_PATH"
+unset OPENSRE_INTEGRATIONS_STORE_PATH TEMPORAL_API_URL
+```
+
+## Tools
 
 | Tool | What it does |
 | --- | --- |
@@ -113,7 +218,7 @@ curl -s http://localhost:7243/api/v1/namespaces/default
 | `temporal_workflow_history` | Event history for a specific execution |
 | `temporal_task_queue` | Active pollers and backlog stats (depth, add/dispatch rates) |
 
-### Typical investigation flow
+### Typical flow when you ask about a failed workflow
 
 1. **Namespace info** — how many workflows are running vs failed?
 2. **Workflows** — filter to failed/timed-out executions; note workflow type and task queue

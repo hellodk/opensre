@@ -21,7 +21,6 @@ def _stub_turn_result(*, text: str = "ok") -> TurnResult:
             handled=True,
         ),
         assistant_response_text=text,
-        llm_run=object(),
     )
 
 
@@ -34,8 +33,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
         session: Any,
         *,
         execute_actions: Any,
-        answer: Any,
-        gather: Any,
         accounting: Any,
         confirm_fn: Any = None,
         is_tty: bool | None = None,
@@ -47,8 +44,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
                 "message": message,
                 "session": session,
                 "execute_actions": execute_actions,
-                "answer": answer,
-                "gather": gather,
                 "accounting": accounting,
                 "confirm_fn": confirm_fn,
                 "is_tty": is_tty,
@@ -62,15 +57,11 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
 
     session = object()
     execute = object()
-    answer = object()
-    gather = object()
     accounting = object()
     confirm = object()
     output = object()
     bindings = ChatTurnBindings(
         execute_actions=execute,  # type: ignore[arg-type]
-        answer=answer,  # type: ignore[arg-type]
-        gather=gather,  # type: ignore[arg-type]
         accounting=accounting,  # type: ignore[arg-type]
         confirm_fn=confirm,  # type: ignore[arg-type]
         is_tty=False,
@@ -85,8 +76,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
         "message": "hello",
         "session": session,
         "execute_actions": execute,
-        "answer": answer,
-        "gather": gather,
         "accounting": accounting,
         "confirm_fn": confirm,
         "is_tty": False,
@@ -136,6 +125,6 @@ def test_only_chat_api_module_defines_dispatch_chat_turn() -> None:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name == "dispatch_chat_turn":
-                definers.append(str(path.relative_to(root)))
+                definers.append(path.relative_to(root).as_posix())
 
     assert definers == ["core/agent_harness/turns/chat_api.py"], definers

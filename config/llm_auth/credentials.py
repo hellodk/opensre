@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from config.llm_auth.cli_auth import resolve_cli_auth_state
 from config.llm_auth.provider_catalog import (
     API_KEY_PROVIDER_ENVS,
     ProviderSpec,
@@ -26,8 +27,7 @@ class CredentialSource(StrEnum):
     """Where a provider's credential resolves from, for prompt-safe status."""
 
     ENV = "env"
-    KEYRING = "keyring"
-    #: The owner-only local file used when no OS keychain could store the secret.
+    #: The owner-only local credentials file (``~/.opensre/credentials.json``).
     #: Distinct from ``LOCAL``, which means a locally hosted model runtime (Ollama).
     FALLBACK = "fallback"
     METADATA = "metadata"
@@ -97,6 +97,9 @@ def _bool_record_value(record: dict[str, str], key: str, default: bool) -> bool:
 
 def _normalize_source(raw: str | None, *, fallback: CredentialSource) -> CredentialSource:
     value = (raw or "").strip().lower()
+    if value == "keyring":
+        # Legacy metadata from the removed OS-keychain tier.
+        return CredentialSource.FALLBACK
     try:
         return CredentialSource(value)
     except ValueError:
@@ -190,9 +193,7 @@ def _record_status(spec: ProviderSpec, record: dict[str, str]) -> CredentialStat
     return CredentialStatus(
         provider=spec.value,
         configured=True,
-        source=CredentialSource.METADATA
-        if source in {CredentialSource.KEYRING, CredentialSource.FALLBACK}
-        else source,
+        source=CredentialSource.METADATA if source is CredentialSource.FALLBACK else source,
         verified=verified and not stale,
         stale=stale,
         detail=detail,
@@ -202,7 +203,7 @@ def _record_status(spec: ProviderSpec, record: dict[str, str]) -> CredentialStat
 def status(provider: str) -> CredentialStatus:
     """Return prompt-safe provider auth status.
 
-    This function must not read Keychain secrets. It may inspect environment,
+    This function must not read stored secrets. It may inspect environment,
     non-secret metadata, CLI adapter probes, and ambient/local config markers.
     """
     spec = provider_spec(provider)
@@ -253,19 +254,7 @@ def status(provider: str) -> CredentialStatus:
                 detail=record.get("detail") or f"{spec.label} auth metadata is present.",
             )
         try:
-            from integrations.llm_cli.registry import get_cli_provider_registration
-
-            reg = get_cli_provider_registration(spec.value)
-            if reg is None:
-                return CredentialStatus(
-                    spec.value,
-                    False,
-                    CredentialSource.NONE,
-                    False,
-                    False,
-                    "No CLI adapter registered.",
-                )
-            probe = reg.adapter_factory().detect()
+            cli_auth = resolve_cli_auth_state(spec.value)
         except Exception as exc:
             return CredentialStatus(
                 spec.value,
@@ -275,7 +264,16 @@ def status(provider: str) -> CredentialStatus:
                 False,
                 f"CLI auth status could not be checked: {exc}",
             )
-        configured = probe.installed and probe.logged_in is True
+        if cli_auth is None:
+            return CredentialStatus(
+                spec.value,
+                False,
+                CredentialSource.NONE,
+                False,
+                False,
+                "No CLI adapter registered.",
+            )
+        configured = cli_auth.installed and cli_auth.logged_in is True
         source: CredentialSource = CredentialSource.CLI if configured else CredentialSource.NONE
         return CredentialStatus(
             provider=spec.value,
@@ -283,7 +281,7 @@ def status(provider: str) -> CredentialStatus:
             source=source,
             verified=configured,
             stale=False,
-            detail=probe.detail,
+            detail=cli_auth.detail,
         )
 
     if spec.credential_kind == "ambient":
@@ -365,15 +363,9 @@ def resolve_for_request(provider: str) -> CredentialResolution:
         from config.secrets.store import lookup
 
         found = lookup(spec.api_key_env)
-        if found.value and found.tier in {"keyring", "fallback"}:
-            source: CredentialSource = (
-                CredentialSource.KEYRING if found.tier == "keyring" else CredentialSource.FALLBACK
-            )
-            detail = (
-                f"{spec.api_key_env} resolved from secure local storage."
-                if found.tier == "keyring"
-                else f"{spec.api_key_env} resolved from the local fallback credential store."
-            )
+        if found.value and found.tier == "fallback":
+            source = CredentialSource.FALLBACK
+            detail = f"{spec.api_key_env} resolved from the local credentials file."
             save_provider_auth_record(
                 provider=spec.value,
                 auth_name=spec.value,
@@ -446,7 +438,7 @@ def save_api_key(provider: str, value: str, *, detail: str | None = None) -> Sec
     """Store an OpenSRE-managed API key and refresh prompt-safe metadata.
 
     Returns which tier accepted the write so onboarding can tell the user when
-    the credential landed in the local fallback file rather than the keychain.
+    the credential landed in the local credentials file.
     """
     spec = require_provider_spec(provider)
     if not spec.uses_open_sre_api_key:
@@ -454,9 +446,7 @@ def save_api_key(provider: str, value: str, *, detail: str | None = None) -> Sec
     from config.secrets.store import save_secret
 
     result = save_secret(spec.api_key_env, value)
-    source: CredentialSource = (
-        CredentialSource.FALLBACK if result.used_fallback else CredentialSource.KEYRING
-    )
+    source = CredentialSource.FALLBACK
     save_provider_auth_record(
         provider=spec.value,
         auth_name=spec.value,
@@ -476,8 +466,6 @@ def delete(provider: str) -> None:
     if spec.uses_open_sre_api_key:
         from config.secrets.store import delete_secret
 
-        # Clears the local file *and* any legacy OS-keychain copy — leaving the
-        # keychain entry would let a logged-out credential be recovered.
         delete_secret(spec.api_key_env)
     delete_provider_auth_record(spec.value)
 
@@ -517,8 +505,7 @@ def has_api_key_env_status(env_var: str) -> bool:
 def llm_api_key_source(env_var: str) -> str:
     """Return where an LLM credential resolves from: ``env``, ``fallback``, or ``none``.
 
-    Goes through the secret store so a pending keychain import can finish. Does
-    not report bare OS-keychain presence — that tier is no longer a resolve path.
+    Goes through the secret store (env, then the local credentials file).
     """
     from config.secrets.store import secret_source
 

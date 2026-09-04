@@ -17,7 +17,7 @@ MAX_TIMEOUT_SECONDS = 120
 # and the context budget silently trims the tail, so the agent reads a handful
 # of records and cannot tell the rest existed. Cap here instead and say so on
 # the payload, matching what ``shell_run`` already does.
-MAX_GH_OUTPUT_CHARS = 24_000
+MAX_GH_OUTPUT_CHARS = 6_000
 
 # Top-level ``gh`` commands that must never run under OpenSRE-injected credentials.
 # - auth: ``gh auth token`` prints GH_TOKEN to stdout (self-exfiltration)

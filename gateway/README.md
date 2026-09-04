@@ -4,7 +4,7 @@ Standalone inbound messaging gateway for chat platforms: Telegram DM text chat
 via long polling, Slack mentions/DMs via **Socket Mode** (default) or **Events API
 HTTP**, and Discord via Gateway WebSocket.
 
-The gateway is a separate surface. Transports receive an injected turn handler;
+The gateway is a separate surface. Transports receive an injected turn runner;
 agent startup and integration loading run through the shared harness, not
 transport-specific code.
 
@@ -22,7 +22,7 @@ transport-specific code.
 | **Telegram transport** | `gateway/transports/telegram/startup.py` → `start_telegram_worker` | Via the startup registry |
 | **Slack transport** | `gateway/transports/slack/startup.py` → `start_slack_worker` | Via the startup registry |
 | **Discord transport** | `gateway/transports/discord/startup.py` → `start_discord_worker` | Via the startup registry (includes readiness wait) |
-| **Per-message turn** | `infrastructure/turn_host/turn_handler.py` → `TurnHandler` | Injected into chat transports as the agent callback |
+| **Per-message turn** | `infrastructure/turn_host/turn_runner.py` → `TurnRunner` | Injected into chat transports as the agent callback |
 
 ```text
 opensre gateway start
@@ -70,8 +70,7 @@ channel), `slack_read_messages` (history / thread),
 `slack_list_team_members` (roster), plus search / join / react helpers
 under `integrations/slack/tools/`. See `docs/messaging/slack.mdx` for
 OAuth scopes. Telegram has `telegram_send_message`; Discord is gateway
-chat plus delivery today (no investigation tool pack yet — see
-`docs/messaging/discord.mdx`).
+chat plus delivery today (see `docs/messaging/discord.mdx`).
 
 Inbound and outbound are independent per platform:
 
@@ -79,11 +78,11 @@ Inbound and outbound are independent per platform:
 |---|---|---|
 | **Telegram** | Yes — `gateway/transports/telegram/` | Yes — integration + `telegram_send_message` |
 | **Slack** | Yes — `gateway/transports/slack/` (Socket Mode by default; Events API HTTP optional; each thread is a conversation) | Yes — webhook + bot-token tools |
-| **Discord** | Yes — `gateway/transports/discord/` (DMs, mentions, threads; `/investigate`) | Delivery + slash registration (no investigation tool pack yet) |
+| **Discord** | Yes — `gateway/transports/discord/` (DMs, mentions, threads) | Delivery + slash registration |
 
 **One core for every surface.** Shell, CLI, and the gateway transports all hand the
 message to the same place: a session-scoped `HeadlessAgent`
-(`agent.handle(...)` via `TurnHandler`). They differ only in *how they
+(`agent.handle(...)` via `TurnRunner`). They differ only in *how they
 receive input and send output* — never in how the agent thinks.
 
 ## Quick start
@@ -157,8 +156,8 @@ with the same five pieces `gateway/transports/telegram/` and `gateway/transports
 
 Then register it in the composition root (`GatewayController` in
 `gateway/core/lifecycle/controller.py`) beside the existing transports. Reuse the handler
-from `TurnHandler(...)` as-is.
+from `TurnRunner(...)` as-is.
 
-**What you never change:** `TurnHandler`, harness prompts/tools, or the
+**What you never change:** `TurnRunner`, harness prompts/tools, or the
 session agent pool. Keeping the handler transport-agnostic is exactly what makes
 a new platform a small, self-contained add.

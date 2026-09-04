@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.yandex_cloud.availability import (
     YC_INJECTED_PARAMS,
@@ -33,8 +33,8 @@ SOURCE = "yandex_cloud"
 _WHERE_ELSE_LOGS_LIVE = (
     "No entries in Cloud Logging for this window. That is not evidence nothing "
     "logged: a managed database keeps its own log and sends nothing here unless "
-    "export was switched on, and those database logs are not readable yet — fall "
-    "back to metrics and cluster state. Kubernetes container logs are read with "
+    "export was switched on, so read that one with read_yc_db_logs. Kubernetes "
+    "container logs are read with "
     "kubernetes_get_pod_logs. Serverless functions do log here by default, so "
     "for those an empty result is meaningful. Check the window too: "
     "window_minutes counts back from now, and a past incident needs since "
@@ -66,7 +66,7 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="read_yc_logs",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
     display_name="Cloud Logging",
     source=SOURCE,
     description=(
@@ -223,7 +223,7 @@ def read_yc_logs(
 
 @tool(
     name="list_yc_log_groups",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
     display_name="Cloud Logging",
     source=SOURCE,
     description=(

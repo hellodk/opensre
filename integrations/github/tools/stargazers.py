@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
+from http import HTTPStatus
 from math import ceil
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
@@ -83,18 +85,37 @@ def _daily_rows(start_day: date, days: int, counts: Counter[date]) -> list[dict[
 
 def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
     message = str(exc)
-    if exc.status_code == 401:
+    if exc.status_code == HTTPStatus.UNAUTHORIZED:
         return (
             "GitHub authentication is required to read timestamped stargazer history; "
             "the current repository star count is still available from public metadata."
         )
-    if exc.status_code in {403, 404, 422}:
+    if exc.status_code in {
+        HTTPStatus.FORBIDDEN,
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.UNPROCESSABLE_ENTITY,
+    }:
         return (
             f"{message}. GitHub stargazer timestamp listings may require repository "
             "admin/collaborator access or token access for this endpoint; current "
             "repository star count can still be available from metadata."
         )
     return message
+
+
+def _map_get_github_star_history(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    daily = output.get("daily", [])
+    if daily:
+        count = len(daily)
+        word = "day" if count == 1 else "days"
+        record_evidence_entry(
+            evidence,
+            source="get_github_star_history",
+            label="GitHub Star History",
+            summary=f"{count} {word} recorded",
+        )
 
 
 @tool(
@@ -120,7 +141,7 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
         "stars_in_window": "Total stars gained during the returned window",
         "complete": "Whether the requested window was fully scanned before the page cap",
     },
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
@@ -146,6 +167,7 @@ def _github_stargazer_listing_error(exc: GitHubApiError) -> str:
         "repo",
         "public_repository",
     ),
+    evidence_mapper=_map_get_github_star_history,
 )
 def get_github_star_history(
     owner: str,

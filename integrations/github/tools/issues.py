@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import (
@@ -36,6 +37,21 @@ def _search_github_issues_available(sources: dict[str, dict]) -> bool:
     return bool(github_source_available(sources) and gh.get("owner") and gh.get("repo"))
 
 
+def _map_search_github_issues(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    issues = output.get("issues")
+    if not isinstance(issues, list) or not issues:
+        return
+    query = output.get("query", "")
+    record_evidence_entry(
+        evidence,
+        source="search_github_issues",
+        label="GitHub Issues Search",
+        summary=f"{len(issues)} matches: {query}" if query else f"{len(issues)} matches",
+    )
+
+
 @tool(
     name="search_github_issues",
     source="github",
@@ -46,7 +62,8 @@ def _search_github_issues_available(sources: dict[str, dict]) -> bool:
         "Finding related bug reports that may explain a failure",
     ],
     requires=["owner", "repo", "query"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_search_github_issues,
     input_schema={
         "type": "object",
         "properties": {

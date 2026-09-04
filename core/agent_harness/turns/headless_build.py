@@ -4,7 +4,7 @@
 session + output in memory (scripts, tests, a turn with zero configuration).
 :class:`DefaultHeadlessBuild` is session + output + console + logger +
 error reporter (gateway ``SessionAgentPool``, the REPL, ``AgentSession.start``).
-Both build through ``.agent(tools=…, prompts=…, gather=…)``; hosts never
+Both build through ``.agent(tools=…, prompts=…)``; hosts never
 construct :class:`HeadlessAgent` directly.
 
 Per-message values are bound on the agent with :meth:`HeadlessAgent.handle`
@@ -15,6 +15,7 @@ Per-message values are bound on the agent with :meth:`HeadlessAgent.handle`
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from io import StringIO
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 
-from core.agent_harness.accounting.run_record import DefaultRunRecordFactory
+from core.agent_harness.agent_build_config import AgentBuildConfig
 from core.agent_harness.error_reporting import DefaultErrorReporter
 from core.agent_harness.llm_resolution import default_llm_factory
 from core.agent_harness.ports import (
@@ -30,9 +31,8 @@ from core.agent_harness.ports import (
     LlmFactory,
     OutputSink,
     PromptContextProvider,
-    ReasoningClientProvider,
-    RunRecordFactory,
     SessionState,
+    ToolEventObserver,
     ToolProvider,
 )
 from core.agent_harness.prompts.grounding import (
@@ -40,18 +40,14 @@ from core.agent_harness.prompts.grounding import (
     supports_default_prompt_context,
 )
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
-from core.agent_harness.turns.default_reasoning_client import DefaultReasoningClientProvider
-from core.agent_harness.turns.gather_phase import GATHER_DISABLED, GatherPhase
 from core.agent_harness.turns.headless_adapters import (
     BufferOutputSink,
     EmptyPromptContextProvider,
     InMemorySessionState,
     NoopErrorReporter,
-    SimpleRunRecordFactory,
-    StaticReasoningClientProvider,
 )
 from core.agent_harness.turns.headless_agent import HeadlessAgent
-from infrastructure.harness_ports import get_subprocess_presenter_factory
+from infrastructure.harness_providers import resolve_subprocess_presenter
 
 if TYPE_CHECKING:
     from core.agent_harness.session.session_core import SessionCore
@@ -61,16 +57,12 @@ if TYPE_CHECKING:
 class InMemoryHeadlessBuild:
     """The in-memory family: a turn runs with zero configuration.
 
-    ``session`` defaults to an in-memory state, ``output`` to a buffer sink,
-    ``reasoning`` to "no client" (the conversational assistant is skipped) —
-    inject a client to get an answer. ``tools`` is required on ``agent()``: a
-    text-only turn passes :class:`~core.agent_harness.turns.headless_adapters.NullToolProvider`
-    explicitly.
+    ``session`` defaults to an in-memory state and ``output`` to a buffer sink.
+    ``tools`` is required on ``agent()``.
     """
 
     session: SessionState | None = None
     output: OutputSink | None = None
-    reasoning: ReasoningClientProvider | None = None
 
     @cached_property
     def _session(self) -> SessionState:
@@ -90,7 +82,6 @@ class InMemoryHeadlessBuild:
         *,
         tools: ToolProvider,
         prompts: PromptContextProvider | None = None,
-        gather: GatherPhase | None = None,
         llm_factory: LlmFactory | None = None,
     ) -> HeadlessAgent:
         return HeadlessAgent(
@@ -98,12 +89,7 @@ class InMemoryHeadlessBuild:
             session=self._session,
             output=self._output,
             prompts=prompts if prompts is not None else self.prompts(),
-            reasoning=(
-                self.reasoning if self.reasoning is not None else StaticReasoningClientProvider()
-            ),
-            run_factory=SimpleRunRecordFactory(),
             error_reporter=NoopErrorReporter(),
-            gather=gather if gather is not None else GATHER_DISABLED,
             llm_factory=llm_factory if llm_factory is not None else default_llm_factory,
         )
 
@@ -157,7 +143,7 @@ class DefaultHeadlessBuild:
             self.session,
             self._console,
             tool_action_logger=self._logger,
-            subprocess_presenter_factory=get_subprocess_presenter_factory(),
+            subprocess_presenter_factory=resolve_subprocess_presenter(),
         )
 
     def prompts(self) -> PromptContextProvider:
@@ -165,39 +151,56 @@ class DefaultHeadlessBuild:
             return DefaultPromptContextProvider(self.session, surface=self.surface)
         return DefaultPromptContextProvider(self.session)
 
-    def reasoning(self) -> ReasoningClientProvider:
-        return DefaultReasoningClientProvider(
-            output=self.output, error_reporter=self._error_reporter, session=self.session
-        )
-
-    def run_factory(self) -> RunRecordFactory:
-        return DefaultRunRecordFactory(self.session)
-
     def agent(
         self,
         *,
         tools: ToolProvider | None = None,
         prompts: PromptContextProvider | None = None,
-        gather: GatherPhase | None = None,
         llm_factory: LlmFactory | None = None,
     ) -> HeadlessAgent:
         """The agent on this family; each port a host passes replaces that default.
 
-        ``gather`` defaults to disabled because the evidence pass reaches live
-        integrations. ``is not None`` rather than ``or``: a provider defining
-        ``__bool__`` must not be silently replaced.
+        ``is not None`` rather than ``or``: a provider defining ``__bool__``
+        must not be silently replaced.
         """
         return HeadlessAgent(
             session=self.session,
             output=self.output,
             tools=tools if tools is not None else self.tools(),
             prompts=prompts if prompts is not None else self.prompts(),
-            reasoning=self.reasoning(),
-            run_factory=self.run_factory(),
             error_reporter=self._error_reporter,
-            gather=gather if gather is not None else GATHER_DISABLED,
             llm_factory=llm_factory if llm_factory is not None else default_llm_factory,
         )
 
 
-__all__ = ["DefaultHeadlessBuild", "InMemoryHeadlessBuild"]
+def resolve_agent_ports(
+    config: AgentBuildConfig,
+    *,
+    session: Any,
+    console: Any,
+    logger: logging.Logger,
+    observer: ToolEventObserver | None = None,
+    default_tools: Callable[[], ToolProvider] | None = None,
+) -> tuple[ToolProvider | None, PromptContextProvider | None]:
+    """Resolve ``(tools, prompts)`` from a host's :class:`AgentBuildConfig`.
+
+    The single expansion of ``build_tools`` / ``build_prompts``, each falling
+    back to ``default_tools`` / ``None`` when the hook is omitted. Callers
+    pass the result to ``DefaultHeadlessBuild(...).agent(...)``. The gateway
+    pool and the shell builder share this so both expand a config the same way.
+
+    ``config.apply_capability_policy`` is the caller's to run, not this
+    function's: the pool applies it every turn (the session is re-resolved even
+    on a cached agent), so binding it here would skip it on cache hits.
+    """
+    if config.build_tools is not None:
+        tools: ToolProvider | None = config.build_tools(session, console, logger, observer)
+    elif default_tools is not None:
+        tools = default_tools()
+    else:
+        tools = None
+    prompts = config.build_prompts(session) if config.build_prompts is not None else None
+    return tools, prompts
+
+
+__all__ = ["DefaultHeadlessBuild", "InMemoryHeadlessBuild", "resolve_agent_ports"]

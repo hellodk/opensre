@@ -3,8 +3,8 @@
 One best-effort LLM pass over a chat transcript. Callers schedule it via
 :func:`schedule_memory_extraction` after every recorded turn and again on
 session close / rotation. Mid-session runs coalesce onto a single daemon worker
-so rapid turns do not pile up provider calls. Process-exit close runs extraction
-synchronously (after resources are released) so durable facts always persist.
+so rapid turns do not pile up provider calls. Process-exit close waits for
+extraction to finish (interruptible by Ctrl+C) so durable facts always persist.
 Never raises out: any failure (LLM unavailable, malformed output, disk errors)
 is logged and ignored. Environment gates can disable the whole feature or only
 the extraction pass.
@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 MIN_CHAT_MESSAGES = 2
 MAX_MEMORIES_PER_SESSION = 5
+# Poll interval while waiting for close-path extraction. Short enough that
+# Ctrl+C stays responsive; the join itself runs until the worker finishes so
+# durable facts are never abandoned on a slow provider.
+_CLOSE_EXTRACTION_POLL_SECONDS = 0.25
 _MAX_TRANSCRIPT_TURNS = 30
 
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\[.*?\])\s*```", re.DOTALL)
@@ -45,7 +49,7 @@ _SAMPLE_OR_SYNTHETIC_RE = re.compile(
     r"\b(?:sample|template):[a-z0-9_-]+\b"
 )
 _EXPLICIT_MEMORY_RE = re.compile(r"(?i)\b(?:remember|save|store|keep|note|memorize)\b")
-_USER_GROUNDED_TYPES = frozenset({"infrastructure", "investigation_learning"})
+_USER_GROUNDED_TYPES = frozenset({"infrastructure", "repository", "investigation_learning"})
 _GROUNDING_STOPWORDS = frozenset(
     {
         "about",
@@ -98,6 +102,8 @@ will help later turns.
 Extract ONLY durable knowledge worth keeping across future sessions:
 - who the user is (name, role, how they like to work)
 - infrastructure facts and conventions (cluster names, naming schemes, known-flaky services)
+- repository facts (owner/name, purpose, default branch, conventions); keep a separate
+  stable memory for each repository instead of replacing the previously active repo
 - stable preferences the user stated
 - lessons learned from real incidents or investigations the user confirmed
 
@@ -112,7 +118,7 @@ scenarios, or generated RCA examples as the user's infrastructure or incident
 history unless the user explicitly says they are real and asks to remember them.
 
 Return a JSON array (no prose). Each item:
-{{"name": "kebab-case-slug", "type": "user|infrastructure|preference|investigation_learning",
+{{"name": "kebab-case-slug", "type": "user|infrastructure|repository|preference|investigation_learning",
   "description": "one line, max 200 chars", "content": "full markdown body"}}
 
 Return [] when nothing qualifies. At most {max_memories} items.
@@ -159,7 +165,27 @@ def schedule_memory_extraction(
         with _worker_lock:
             _pending_messages = None
             _pending_context = None
-        _extract_memories_safe(snapshot)
+        # Run extraction off the main thread and wait until it finishes so
+        # durable facts always land before process exit. Poll the join so
+        # Ctrl+C during shutdown stays interruptible without raising through
+        # the network read mid-call.
+        ctx = contextvars.copy_context()
+        worker = threading.Thread(
+            target=ctx.run,
+            args=(_extract_memories_safe, snapshot),
+            name="opensre-memory-extraction-close",
+            daemon=True,
+        )
+        worker.start()
+        try:
+            while worker.is_alive():
+                worker.join(timeout=_CLOSE_EXTRACTION_POLL_SECONDS)
+        except KeyboardInterrupt:
+            logger.warning(
+                "Memory extraction interrupted during session close; "
+                "final transcript facts may be incomplete"
+            )
+            raise
         return
     _schedule_coalesced(snapshot)
 

@@ -6,9 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from core.agent_harness.session.persistence.ports import SessionPersistenceSource
-
-_TRIGGER_MAX_CHARS = 200
+from core.agent_harness.session.persistence.contracts import SessionPersistenceSource
 
 
 def _now() -> str:
@@ -190,31 +188,6 @@ class InMemorySessionStore:
             },
         )
 
-    def append_investigation_result(
-        self,
-        session_id: str,
-        state: dict[str, Any],
-        *,
-        trigger: str = "",
-    ) -> str:
-        investigation_id = uuid.uuid4().hex[:8]
-        report = state.get("problem_md") or state.get("slack_message") or state.get("report") or ""
-        self._append(
-            session_id,
-            "investigation_result",
-            {
-                "investigation_id": investigation_id,
-                "completed_at": _now(),
-                "trigger": trigger.strip()[:_TRIGGER_MAX_CHARS],
-                "root_cause": str(state.get("root_cause") or ""),
-                "report": str(report),
-                "root_cause_category": str(state.get("root_cause_category") or ""),
-                "alert_name": str(state.get("alert_name") or ""),
-                "run_id": str(state.get("run_id") or ""),
-            },
-        )
-        return investigation_id
-
     def flush(self, session: SessionPersistenceSource) -> None:
         records = self._files.get(session.session_id)
         if not records:
@@ -253,6 +226,25 @@ class InMemorySessionStore:
                     {
                         "custom_type": SESSION_GOAL_STATE_CUSTOM_TYPE,
                         "content": goal_state,
+                        "display": False,
+                    },
+                )
+                records = self._files.get(session.session_id, records)
+        if hasattr(session, "task_plan"):
+            from core.agent_harness.task_plan.persist import (
+                TASK_PLAN_STATE_CUSTOM_TYPE,
+                should_persist_task_plan_state,
+                task_plan_state_snapshot,
+            )
+
+            plan_state = task_plan_state_snapshot(session)
+            if should_persist_task_plan_state(plan_state, prior_records=records):
+                self._append(
+                    session.session_id,
+                    "custom_message",
+                    {
+                        "custom_type": TASK_PLAN_STATE_CUSTOM_TYPE,
+                        "content": plan_state or {},
                         "display": False,
                     },
                 )

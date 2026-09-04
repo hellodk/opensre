@@ -22,13 +22,15 @@ _CORE_FIELDS = (
     "store",
     "resumed_from_name",
     "history",
-    "last_state",
-    "last_investigation_id",
     "last_assistant_intent",
-    "last_synthetic_observation_path",
     "pending_schedule_offer",
-    "pending_investigation_offer",
     "pending_user_choice",
+    "ask_user_rounds",
+    "task_plan",
+    "task_plan_work",
+    "task_plan_work_step_texts",
+    "task_plan_breakdown_emitted",
+    "plan_only_until_authorized",
     "pending_recovery_note",
     # Outer multi-turn goal, plus the evidence-tier upgrade CTA it can offer.
     "session_goal",
@@ -46,7 +48,6 @@ _CORE_FIELDS = (
     "agent",
     "grounding",
     "runtime_metadata",
-    "_ACCUMULATED_KEYS",
 )
 
 

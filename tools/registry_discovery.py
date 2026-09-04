@@ -50,7 +50,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.grafana.tools",
     "integrations.groundcover.tools",
     "integrations.helm.tools",
-    "integrations.hermes.tools",
     "integrations.honeycomb.tools",
     "integrations.incident_io.tools",
     "integrations.jenkins.tools",
@@ -62,7 +61,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.mongodb_atlas.tools",
     "integrations.mysql.tools",
     "integrations.new_relic.tools",
-    "integrations.openclaw.tools",
     "integrations.openobserve.tools",
     "integrations.opensearch.tools",
     "integrations.opsgenie.tools",
@@ -99,7 +97,6 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
 
 _SKIP_MODULE_NAMES = {
     "__pycache__",
-    "investigation_registry",
     "registry",
 }
 _TOOL_MODULES_ATTR = "TOOL_MODULES"

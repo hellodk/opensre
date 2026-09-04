@@ -3,7 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.redis import (
     RedisConfig,
     get_list_depth,
@@ -20,7 +20,7 @@ from integrations.redis import (
         "workers for Sidekiq/Celery/Bull/Resque-style job queues."
     ),
     source="redis",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Check a job-queue backlog when workers fall behind (growing list length).",
         "Inspect the head/tail of a queue to spot stuck, malformed, or poison jobs.",

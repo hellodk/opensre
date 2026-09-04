@@ -1,12 +1,12 @@
 ---
 title: "Alertmanager"
-description: "Connect Alertmanager so OpenSRE can surface firing alerts and active silences during investigations"
+description: "Connect Alertmanager so OpenSRE can surface firing alerts and active silences"
 ---
 
 ## Overview
 
-OpenSRE queries Alertmanager for firing, silenced, and inhibited alerts so investigations
-can correlate the triggering alert with other concurrent signals.
+OpenSRE queries Alertmanager for firing, silenced, and inhibited alerts so the agent
+can correlate the alert you ask about with other concurrent signals.
 
 ## Prerequisites
 
@@ -78,9 +78,9 @@ is rejected.
 
 Alertmanager itself often has no built-in API key UI. Credentials usually come from the
 reverse proxy or basic auth in front of the instance. Prefer a **read-only** token or
-user — OpenSRE only reads alerts and silences during investigations.
+user — OpenSRE only reads alerts and silences.
 
-## Investigation tools
+## Tools
 
 | Tool | What it does |
 | --- | --- |
@@ -96,8 +96,8 @@ Typical uses:
 - Understand blast radius from active alert labels
 - Correlate Prometheus alerts (OOM, latency, error-rate) into one timeline
 
-The `alertname` label from the incoming alert is used as a filter by default so results
-stay scoped to the incident.
+Name the alert in your question — the agent filters on the `alertname` label so
+results stay scoped to the incident.
 
 ### `alertmanager_silences`
 
@@ -121,6 +121,69 @@ Status:  passed
 Detail:  Connected to Alertmanager at http://alertmanager.monitoring.svc:9093; cluster status: ready.
 ```
 
+### Local Docker verification
+
+Start a disposable Alertmanager without external credentials:
+
+```bash
+docker run --rm --detach --name opensre-alertmanager \
+  --publish 127.0.0.1:9093:9093 \
+  prom/alertmanager:v0.28.1 || exit 1
+for attempt in $(seq 1 30); do
+  curl --fail --silent http://127.0.0.1:9093/-/ready && break
+  if [ "$attempt" -eq 30 ]; then
+    docker logs opensre-alertmanager
+    exit 1
+  fi
+  sleep 1
+done
+```
+
+Seed one firing alert and one active silence so both tools return
+real data:
+
+```bash
+curl --fail --silent --request POST \
+  --header "Content-Type: application/json" \
+  --data '[{"labels":{"alertname":"OpenSREHighLatency","service":"checkout","severity":"critical"},"annotations":{"summary":"Checkout p99 latency exceeds 2 seconds"}}]' \
+  http://127.0.0.1:9093/api/v2/alerts
+
+starts_at=$(uv run python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).isoformat())')
+ends_at=$(uv run python -c 'from datetime import UTC, datetime, timedelta; print((datetime.now(UTC) + timedelta(hours=1)).isoformat())')
+curl --fail --silent --request POST \
+  --header "Content-Type: application/json" \
+  --data "{\"matchers\":[{\"name\":\"alertname\",\"value\":\"OpenSREMaintenance\",\"isRegex\":false}],\"startsAt\":\"${starts_at}\",\"endsAt\":\"${ends_at}\",\"createdBy\":\"opensre-local-verification\",\"comment\":\"Disposable local verification silence\"}" \
+  http://127.0.0.1:9093/api/v2/silences
+```
+
+From a source checkout, run `uv run opensre integrations setup alertmanager`.
+Enter `http://127.0.0.1:9093` as the URL and select **None** for authentication,
+then verify the connection:
+
+```bash
+uv run opensre integrations verify alertmanager
+```
+
+The verifier should report cluster status `ready`. Exercise both tools through
+an agent turn:
+
+```bash
+uv run opensre ask \
+  --allowed-tool alertmanager_alerts \
+  --allowed-tool alertmanager_silences \
+  "Report the firing Alertmanager alert and the active silence."
+```
+
+The result should include the `OpenSREHighLatency` alert and the
+`OpenSREMaintenance` silence. Stop the disposable instance when finished:
+
+```bash
+docker stop opensre-alertmanager
+```
+
+This unauthenticated instance binds only to loopback and is for local
+verification only.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -134,6 +197,6 @@ Detail:  Connected to Alertmanager at http://alertmanager.monitoring.svc:9093; c
 
 ## Security
 
-- Prefer a **read-only** reverse-proxy token — OpenSRE never writes to Alertmanager during investigations.
+- Prefer a **read-only** reverse-proxy token — OpenSRE never writes to Alertmanager.
 - Store credentials in `.env` or your secret manager — not in source control.
 - For internal Kubernetes deployments, prefer network isolation over exposing credentials.

@@ -11,19 +11,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.agent_harness.ports import (
+    CancelCapableConsole,
     ConfirmFn,
     ToolEventObserver,
 )
 from core.agent_harness.session.history_entry import build_history_entry
-from core.agent_harness.session.pending_offer import (
-    PendingInvestigationOffer,
-    PendingScheduleOffer,
-)
+from core.agent_harness.session.pending_offer import PendingScheduleOffer
 from core.agent_harness.turns.turn_results import (
     ToolCallingTurnResult,
     TurnResult,
 )
-from core.llm.types import StreamingReasoningClient
 
 
 @dataclass
@@ -34,15 +31,14 @@ class InMemorySessionState:
     cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
     configured_integrations: list[str] = field(default_factory=list)
     configured_integrations_known: bool = False
-    last_state: dict[str, Any] | None = None
-    last_synthetic_observation_path: str | None = None
     pending_schedule_offer: PendingScheduleOffer | None = None
-    pending_investigation_offer: PendingInvestigationOffer | None = None
     reasoning_effort: Any | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
     last_command_observation: str | None = None
     resolved_integrations_cache: dict[str, Any] | None = None
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    active_vcs_repositories: dict[str, str] = field(default_factory=dict)
+    known_vcs_repo_scopes: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
     records: list[tuple[str, str, bool]] = field(default_factory=list)
     available_capabilities: dict[str, Any] = field(default_factory=dict)
 
@@ -127,9 +123,6 @@ class EmptyPromptContextProvider:
         _ = query
         return ""
 
-    def investigation_flow(self) -> str:
-        return ""
-
     def runtime_facts(self) -> Mapping[str, Any]:
         from config.runtime_metadata import capture_runtime_facts
 
@@ -144,9 +137,6 @@ class EmptyPromptContextProvider:
     def setup_state(self) -> str:
         return ""
 
-    def suggested_synthetic_prompt(self) -> str:
-        return ""
-
     def log_diagnostics(self, reason: str) -> None:
         _ = reason
 
@@ -158,7 +148,7 @@ class NullToolProvider:
         """No tools to retarget."""
         _ = session
 
-    def bind_console(self, console: Any) -> None:
+    def bind_console(self, console: CancelCapableConsole) -> None:
         """No console-backed tools."""
         _ = console
 
@@ -199,44 +189,3 @@ class NoopErrorReporter:
 
     def report(self, exc: BaseException, *, context: str, expected: bool = False) -> None:
         _ = (exc, context, expected)
-
-
-@dataclass
-class SimpleRunRecord:
-    """Opaque conversational-LLM run record for headless runs."""
-
-    response_text: str
-    prompt: str = ""
-    started: float = 0.0
-
-
-class SimpleRunRecordFactory:
-    """Builds :class:`SimpleRunRecord` values."""
-
-    def bind_session(self, session: Any) -> None:
-        """Records are ephemeral — no session handle to update."""
-        _ = session
-
-    def build(
-        self, *, client: Any, prompt: str, response_text: str, started: float
-    ) -> SimpleRunRecord:
-        _ = client
-        return SimpleRunRecord(response_text=response_text, prompt=prompt, started=started)
-
-
-@dataclass
-class StaticReasoningClientProvider:
-    """Provides a fixed reasoning client (or None to skip the assistant)."""
-
-    client: StreamingReasoningClient | None = None
-
-    def bind_session(self, session: Any) -> None:
-        """Client is fixed at construction — ignore session retargets."""
-        _ = session
-
-    def bind_output(self, output: Any) -> None:
-        """No sink of its own — accept rebind for :class:`OutputBindable` parity."""
-        _ = output
-
-    def get(self) -> StreamingReasoningClient | None:
-        return self.client

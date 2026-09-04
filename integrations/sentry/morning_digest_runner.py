@@ -6,12 +6,11 @@ import logging
 from typing import Any
 
 from core.agent_harness import AgentSession, TurnResult
-from core.agent_harness.runtime import GatherPhase
 from core.agent_harness.spi.integrations import (
     merge_resolved_integrations,
     resolve_and_cache_integrations,
 )
-from infrastructure.harness_ports import configured_integration_services
+from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from integrations.sentry.project_scope import (
     apply_sentry_project_scope,
@@ -63,7 +62,6 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
         message,
         prepare_session=lambda session: _apply_digest_project_scope(session, payload),
         logger=logger,
-        gather=GatherPhase(),
         is_tty=False,
     )
 

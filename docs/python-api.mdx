@@ -33,7 +33,7 @@ Configure a provider once (`opensre onboard`) — the session API reuses the sam
 config and credentials as the CLI. Run your script inside the checkout's
 environment with `uv run python your_script.py`.
 
-Register adapters before the first turn (tools and investigation):
+Register adapters before the first turn:
 
 ```python
 from bootstrap.process import EMBEDDED_PROFILE, configure_process
@@ -71,22 +71,21 @@ if not (result.answered or action_ok) or result.cancelled or not result.primary_
 print(result.primary_response_text)
 ```
 
-### Recipe 2: Automated alert triage and root-cause analysis
+### Recipe 2: Automated alert triage
 
-Use `session.investigate()` to pass a raw alert payload from your alertmanager,
-webhook, or monitoring system directly into OpenSRE's investigation pipeline:
+Hand a raw alert payload from your alertmanager, webhook, or monitoring system
+to the agent as a chat turn — it calls your connected integrations to gather
+context and answers with its findings:
 
 ```python
+import json
+
 from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
 
-# 1. Register tools and investigation adapters
 configure_process(EMBEDDED_PROFILE)
-
-# 2. Start an in-process session
 session = AgentSession.start()
 
-# 3. Triage and investigate a production alert payload
 alert_payload = {
     "alert_name": "HighLatency",
     "service": "checkout-api",
@@ -94,13 +93,13 @@ alert_payload = {
     "description": "p99 latency exceeded 1200ms in us-east-1",
 }
 
-report = session.investigate(alert_payload)
-print(report.report)
+result = session.chat(f"Triage this alert:\n{json.dumps(alert_payload)}")
+print(result.primary_response_text)
 ```
 
-## One API — chat and investigate
+## One API — `chat`
 
-Every surface uses the same two verbs:
+Every surface goes through the same verb:
 
 ```python
 from bootstrap.process import EMBEDDED_PROFILE, configure_process
@@ -117,9 +116,6 @@ action_ok = (
 )
 if (result.answered or action_ok) and not result.cancelled:
     print(result.primary_response_text)
-
-report = session.investigate({"alert_name": "HighLatency", "severity": "warning"})
-print(report.report)
 ```
 
 Or the one-liner that wires the same boot step for you:
@@ -134,8 +130,7 @@ session = start_embedded_session()
 an agent with the standard ports — the same tools and prompts the interactive
 shell uses. It does **not** register adapters (``core`` may not import
 ``bootstrap``); call ``configure_process`` first or use
-``start_embedded_session``. `investigate` does not require an attached chat
-agent; it uses the payload runner installed by `configure_process`.
+``start_embedded_session``.
 
 Always verify turn success before trusting chat text:
 - For conversational questions and digests, the agent synthesizes an answer (`result.answered`).
@@ -144,25 +139,21 @@ Always verify turn success before trusting chat text:
 
 ### Internal seams (not for hosts)
 
-Chat hosts terminate at `dispatch_chat_turn` → `run_turn`. Investigation
-terminates at the installed payload runner (`run_investigation_payload`). Do not
-invent parallel public entrypoints.
+Chat hosts terminate at `dispatch_chat_turn` → `run_turn`. Do not invent
+parallel public entrypoints.
 
 ## Unattended daily delivery and background loops
 
 For recurring daily workflows (such as scheduled morning digests or CI health
-checks), start an in-process session with live gathering enabled to query active
-integrations and forward findings to team channels:
+checks), start an in-process session and forward findings to team channels:
 
 ```python
 from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
-from core.agent_harness.turns.gather_ports import GatherPorts
 
 configure_process(EMBEDDED_PROFILE)
 
-# Start session with live evidence gathering enabled for configured integrations
-session = AgentSession.start(gather=GatherPorts(enabled=True))
+session = AgentSession.start()
 
 result = session.chat("summarize critical alerts and deployment changes from the last 24h")
 action_ok = (
@@ -178,12 +169,9 @@ summary = result.primary_response_text
 print("Delivering daily digest:\n", summary)
 ```
 
-In the interactive shell, asynchronous investigations and automated notifications
-are managed via [`/background`](/background-investigations):
-- `/background on` enables async background investigation launches.
-- `/background notify set telegram` (or `email`, `rocketchat`, `buzz`) routes completed
-  RCA reports directly to your team's notification channels upon task completion.
-- `/background show <task_id>` inspects delivery status and findings.
+In the interactive shell, recurring unattended runs are managed with
+[`/loops`](/cron) — each loop sends its result to the handles OpenSRE can reach
+(Telegram, Slack, and the local shell inbox).
 
 ## A conversation
 
@@ -260,7 +248,7 @@ session = AgentSession.start(SessionConfig(prompts=my_provider))
 If omitted, `core.agent_harness.spi.defaults.DefaultPromptContextProvider` is
 used. A custom provider must implement
 `core.agent_harness.ports.PromptContextProvider`. The same `prompts=` argument
-is accepted by `DefaultPorts.agent()` on the custom-ports path below.
+is accepted by `DefaultHeadlessBuild.agent()` on the custom-ports path below.
 
 ## Custom output and ports
 
@@ -269,13 +257,13 @@ stream to a websocket), build the agent and pass your own sink:
 
 ```python
 from core.agent_harness import AgentSession, SessionConfig
-from core.agent_harness.runtime import DefaultPorts
+from core.agent_harness.runtime import DefaultHeadlessBuild
 from core.agent_harness.turns.headless_adapters import BufferOutputSink
 
 session = AgentSession(SessionConfig())
 startup = session.startup()
 sink = BufferOutputSink()
-agent = DefaultPorts(session=startup.session, output=sink).agent(
+agent = DefaultHeadlessBuild(session=startup.session, output=sink).agent(
     prompts=my_provider,  # optional — same port as SessionConfig.prompts
 )
 session.attach_agent(agent)
@@ -288,7 +276,7 @@ print(sink.streamed)   # streamed answer chunks
 Any object implementing the `OutputSink` protocol
 (`core.agent_harness.ports.OutputSink`: `print`, `render_response_header`,
 `render_error`, `stream`) may replace `BufferOutputSink`.
-`DefaultPorts` also takes a custom logger, console, and prompt surface; its
+`DefaultHeadlessBuild` also takes a custom logger, console, and prompt surface; its
 `agent()` takes your own tool provider (`tools=`, usually a configured
 `DefaultToolProvider`) and gather ports — see its docstring.
 
@@ -305,8 +293,7 @@ register_external_tool_package(my_agent_tools)
 
 Requirements:
 
-1. Declare tools with `surfaces=("action",)` (or include `"action"`). The
-   `@tool` default is `("investigation",)` only; the chat and Python API action
-   loop does not load investigation-only tools.
+1. Declare tools with `surfaces=("action",)` when the action loop should be
+   able to call them. The `@tool` default is `("chat",)`.
 2. Tools may be defined in the package `__init__.py` or in submodules; both are
    discovered after registration.

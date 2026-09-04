@@ -35,19 +35,19 @@ slug: "quickstart"
 
   </Step>
 
-  <Step title="Onboard">
-    Run the onboarding wizard to configure your LLM provider and connect your integrations (Grafana, Datadog, Honeycomb, Coralogix, Slack, AWS, GitHub MCP, Sentry):
+  <Step title="Setup">
+    Run first-run setup to sign in with GitHub and configure the LLM provider OpenSRE uses to reason:
 
     ```bash
-    opensre onboard
+    opensre setup
     ```
 
-    After you pick a provider and a model, the wizard sends one tiny request to that provider with the credential you just entered — so a typo, an expired key, or an Ollama model you have not pulled yet is caught here, not on your first investigation.
+    After GitHub authorization, you pick a provider and a model. The wizard sends one tiny request to that provider with the credential you just entered — so a typo, an expired key, or an Ollama model you have not pulled yet is caught here, not on your first question. When setup finishes, OpenSRE opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
 
     <Tabs>
       <Tab title="macOS / Linux">
         <Frame>
-          ![Onboarding OpenSRE with the setup wizard to configure your LLM provider and integrations](/images/quickstart-onboard.gif)
+          ![Onboarding OpenSRE with the setup wizard to configure your LLM provider](/images/quickstart-onboard.gif)
         </Frame>
       </Tab>
       <Tab title="Windows">
@@ -59,7 +59,7 @@ slug: "quickstart"
 
   </Step>
 
-  <Step title="Run an investigation">
+  <Step title="Ask your first question">
     Choose either path — both use the same local `opensre` binary:
 
     **Interactive prompt shell** — start OpenSRE with no arguments (TTY) to type incidents in plain language and use slash commands (`/help`, `/status`, `/effort`, `/exit`, …):
@@ -68,23 +68,23 @@ slug: "quickstart"
     opensre
     ```
 
-    **Direct investigation** — one-shot run from your shell with an alert file:
+    **One-shot headless run** — a single agent turn from your shell or a CI job:
 
     ```bash
-    opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
+    opensre ask "why did checkout latency increase today?"
     ```
 
-    For file-based runs, OpenSRE fetches alert context, reasons across connected systems, and generates a structured root-cause report.
+    OpenSRE reasons across your connected systems, calling the tools it needs, and prints the answer. See [Headless CLI](/headless-cli) for tool approvals, `--json` output, and exit codes.
 
     <Tabs>
       <Tab title="macOS / Linux">
         <Frame>
-          ![Running an OpenSRE investigation on a sample alert through to a structured root-cause report](/images/quickstart-investigate.gif)
+          ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
         </Frame>
       </Tab>
       <Tab title="Windows">
         <Frame>
-          ![Running an OpenSRE investigation on Windows through to a structured root-cause report](/images/quickstart-investigate-windows.gif)
+          ![Running an OpenSRE turn on Windows](/images/quickstart-investigate-windows.gif)
         </Frame>
       </Tab>
     </Tabs>
@@ -118,4 +118,4 @@ opensre uninstall --yes
 - **`make` is missing**: Install it via your package manager (`brew install make` on macOS, `choco install make` on Windows).
 - **No local LLM provider is configured**: Run `opensre onboard` to select and configure your LLM credentials. Leave the key blank to finish onboarding and add it later with `opensre auth login <provider>`.
 - **Onboarding says your key could not be verified, but you know it is valid**: The check needs to reach the provider, so a firewall, a proxy, or being offline will fail it. Choose **Save anyway without validating** to keep the key and move on — you can rerun `opensre onboard` to re-enter it later.
-- **Onboarding could not save your key**: Follow the setup steps it prints for your system keychain, then choose **Retry saving to the system keychain**. To get going right now, choose **Continue without saving (this session only)** — the key works for this run and you re-enter it next time.
+- **Onboarding could not save your key**: Follow the setup steps it prints for `~/.opensre/credentials.json`, then choose **Retry saving to the local credentials file**. To get going right now, choose **Continue without saving (this session only)** — the key works for this run and you re-enter it next time.

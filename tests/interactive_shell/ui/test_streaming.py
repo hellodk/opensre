@@ -13,7 +13,9 @@ from rich.console import Console
 from surfaces.interactive_shell.ui.streaming import (
     finish_deferred_closer,
     format_token_count_short,
+    publish_full_response,
     render_markdown_block,
+    render_note_block,
     render_response_header,
     stream_to_console,
     stream_to_console_state,
@@ -23,6 +25,62 @@ from surfaces.interactive_shell.ui.streaming import (
 def _strip_ansi(text: str) -> str:
     """Drop ANSI escapes so assertions check the visible output."""
     return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
+
+
+def test_render_note_block_is_recessed_and_indented_but_keeps_bold() -> None:
+    # A working note reads as soft recessed grey + indented (no glyph), distinct
+    # from the bright reply, while the bold action word stays bold.
+    from infrastructure.terminal import theme as ui_theme
+
+    ui_theme.set_active_theme("amber")
+    buf = io.StringIO()
+    console = Console(
+        file=buf,
+        force_terminal=True,
+        color_system="truecolor",
+        legacy_windows=False,
+        no_color=False,
+        width=80,
+        highlight=False,
+    )
+
+    render_note_block(console, "I'll **load** the workflow.")
+
+    raw = buf.getvalue()
+    # Soft recessed base (SECONDARY), not ghost DIM — accept truecolor or 256.
+    assert "38;2;" in raw or "38;5;" in raw
+    assert re.search(r"\x1b\[[0-9;]*1[;m]", raw)  # bold action word survives
+    first_line = _strip_ansi(raw).splitlines()[0]
+    assert first_line.startswith("   ")  # three-space left indent, no glyph
+    assert "load the workflow" in first_line
+
+
+def test_table_reply_renders_as_a_table_not_flattened_pipes() -> None:
+    # A reply that leads with a Markdown table must render as an aligned table. The
+    # inline ``Ω `` marker fused onto the header row breaks CommonMark block parsing
+    # and flattens the table to one line of raw pipes, so the marker goes on its own
+    # line before a leading block.
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=60, highlight=False)
+
+    publish_full_response(
+        console, "| Rank | Folder | Size |\n|---:|---|---:|\n| 1 | Library | 113G |"
+    )
+
+    out = buf.getvalue()
+    assert "| Rank | Folder |" not in out  # not the raw flattened markdown row
+    assert "Rank" in out and "Folder" in out and "Size" in out
+    assert "─" in out  # rendered as a table with a header rule
+
+
+def test_prose_reply_keeps_the_inline_marker() -> None:
+    # Prose still carries the marker inline on the first line.
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=60, highlight=False)
+
+    publish_full_response(console, "Root disk is 44% full.")
+
+    assert "Ω  Root disk is 44% full." in buf.getvalue()
 
 
 def _tty_console() -> tuple[Console, io.StringIO]:
@@ -56,14 +114,25 @@ class TestNonTtyFallback:
 
         output = buf.getvalue()
         assert result == "Hello, world"
-        # Bullet header + label + text reach piped output so captured
-        # logs are useful. ``●`` is the row marker; ``assistant`` is the
-        # dim label alongside it.
-        assert "●" in output
-        assert "assistant" in output
+        # The inline ``Ω`` marker + text reach piped output so captured logs
+        # are useful (the standalone label header was removed).
+        assert "Ω" in output
         assert "Hello, world" in output
         # No spinner / Live cursor-movement artifacts in non-TTY captures.
         assert "thinking" not in output
+
+    def test_strips_terminal_controls_from_streamed_model_prose(self) -> None:
+        console, buf = _non_tty_console()
+        result = stream_to_console(
+            console,
+            label="assistant",
+            chunks=_yield_chunks(["Hello\x1b[2J", ", world\x07"]),
+        )
+
+        assert "\x1b" not in buf.getvalue()
+        assert "\x07" not in buf.getvalue()
+        assert "Hello" in result
+        assert "world" in result
 
     def test_suppression_drains_silently_in_non_tty(self) -> None:
         """Suppressed payloads (machine-readable payloads) must not appear in piped output."""
@@ -78,7 +147,7 @@ class TestNonTtyFallback:
         assert result == '{"actions":[]}'
         output = buf.getvalue()
         # No bullet header for suppressed responses.
-        assert "●" not in output
+        assert "Ω" not in output
         assert '{"actions"' not in output
 
 
@@ -114,16 +183,16 @@ class TestTtyParagraphRender:
         result = stream_to_console(
             console,
             label="assistant",
-            chunks=_yield_chunks(["Run **opensre", " investigate** to start."]),
+            chunks=_yield_chunks(["Run **opensre", " setup** to start."]),
         )
 
         output = _strip_ansi(buf.getvalue())
-        assert result == "Run **opensre investigate** to start."
+        assert result == "Run **opensre setup** to start."
         # Bullet row marker pinned above the rendered paragraph.
-        assert "●" in output
+        assert "Ω" in output
         # End-of-stream force-flush rendered Markdown — ``**`` stripped.
         assert "**opensre" not in output
-        assert "opensre investigate" in output
+        assert "opensre setup" in output
 
     def test_renders_first_paragraph_before_second_completes(self) -> None:
         """A complete paragraph (``\\n\\n``) flushes immediately, even
@@ -151,14 +220,31 @@ class TestTtyParagraphRender:
         assert "**para**" not in output
 
     def test_preserves_blank_line_between_list_and_following_paragraph(self) -> None:
-        """Standalone Rich list renders have no trailing vertical space."""
+        """One blank line between a list and the next paragraph — no double gap.
+
+        The whole reply hangs in the ``Ω`` gutter, so the list and the following
+        paragraph sit in the indented body column.
+        """
         console, buf = _tty_console()
         text = "Ready:\n\n- first\n- second\n\nBlocked pending a choice."
 
         stream_to_console(console, label="OpenSRE", chunks=_yield_chunks([text]))
 
         visible = "\n".join(line.rstrip() for line in _strip_ansi(buf.getvalue()).splitlines())
-        assert "Ready:\n\n • first\n • second\n\nBlocked pending a choice." in visible
+        assert "Ω  Ready:\n\n    • first\n    • second\n\n   Blocked pending a choice." in visible
+
+    def test_reply_hangs_indented_under_the_marker(self) -> None:
+        """A wrapped reply hangs in the Ω gutter: line one carries the marker,
+        every continuation line aligns in the indented body column."""
+        console, buf = _tty_console()
+        text = "A fairly long assistant reply that has to wrap across several lines. " * 3
+
+        stream_to_console(console, label="assistant", chunks=_yield_chunks([text]))
+
+        lines = [line for line in _strip_ansi(buf.getvalue()).splitlines() if line.strip()]
+        assert lines[0].startswith("Ω  ")  # marker leads the first line
+        assert len(lines) > 1  # the reply actually wrapped
+        assert all(line.startswith("  ") for line in lines[1:])  # hang-indent at col 2
 
     def test_paragraph_break_across_chunk_boundary_flushes(self) -> None:
         """The cross-chunk seam — chunk N ends with ``\\n``, chunk N+1
@@ -557,9 +643,9 @@ class TestTtyParagraphRender:
         )
 
         assert result == ""
-        # Bullet still printed (header fires before chunk processing),
-        # but no spinner residue at finalize.
-        assert "●" in _strip_ansi(buf.getvalue())
+        # The marker is inline on the first paragraph, so an empty stream prints
+        # no marker at all — and no spinner residue at finalize.
+        assert "Ω" not in _strip_ansi(buf.getvalue())
 
 
 class TestMidStreamError:
@@ -630,7 +716,8 @@ class TestMidStreamError:
 class TestTimingFooter:
     """A small dim ``· Ns`` footer appears after a rendered live response."""
 
-    def test_footer_printed_after_streamed_response(self) -> None:
+    def test_no_timing_footer_after_streamed_response(self) -> None:
+        """The per-turn ``· Ns · ↓ tokens`` footer was removed for compactness."""
         console, buf = _tty_console()
         stream_to_console(
             console,
@@ -639,7 +726,7 @@ class TestTimingFooter:
         )
 
         output = _strip_ansi(buf.getvalue())
-        assert re.search(r"·\s+\d+\.\d+s", output) is not None
+        assert re.search(r"·\s+\d+\.\d+s", output) is None
 
     def test_footer_skipped_when_stream_is_empty(self) -> None:
         """Empty stream must not print a timing footer under nothing."""
@@ -673,20 +760,20 @@ class TestRenderResponseHeader:
     to one helper, so we lock in the visible output here.
     """
 
-    def test_emits_bullet_glyph_and_label(self) -> None:
+    def test_emits_bullet_glyph_without_role_label(self) -> None:
         console, buf = _tty_console()
         render_response_header(console, "assistant")
         output = _strip_ansi(buf.getvalue())
-        assert "●" in output
-        assert "assistant" in output
+        assert "Ω" in output
+        assert "assistant" not in output
 
-    def test_label_is_passthrough(self) -> None:
-        """The function takes the label verbatim — callers pass either
-        ``STREAM_LABEL_ANSWER`` or ``STREAM_LABEL_ASSISTANT`` (or any
-        free-form word). No filtering, no defaults."""
+    def test_role_label_is_accepted_but_not_painted(self) -> None:
+        """Callers still pass ``STREAM_LABEL_ANSWER`` / ``STREAM_LABEL_ASSISTANT``
+        for port compatibility; the shell no longer echoes the dim role word."""
         console, buf = _tty_console()
         render_response_header(console, "answer")
-        assert "answer" in _strip_ansi(buf.getvalue())
+        assert "answer" not in _strip_ansi(buf.getvalue())
+        assert "Ω" in _strip_ansi(buf.getvalue())
 
 
 class TestFormatTokenCountShort:
@@ -989,7 +1076,7 @@ class TestSuppressionPeek:
         assert result == '{"actions":[]}'
         # No bullet header, no markdown, no live-region artifacts.
         output = _strip_ansi(buf.getvalue())
-        assert "●" not in output
+        assert "Ω" not in output
         assert '{"actions"' not in output
 
     def test_renders_normally_when_first_char_does_not_match(self) -> None:
@@ -1003,7 +1090,7 @@ class TestSuppressionPeek:
 
         assert result == "Hello, world"
         output = _strip_ansi(buf.getvalue())
-        assert "●" in output
+        assert "Ω" in output
         assert "Hello, world" in output
 
     def test_skips_leading_whitespace_before_deciding(self) -> None:
@@ -1018,7 +1105,7 @@ class TestSuppressionPeek:
 
         assert result == '  \n{"action":"slash"}'
         output = _strip_ansi(buf.getvalue())
-        assert "●" not in output
+        assert "Ω" not in output
 
 
 class TestRenderMarkdownBlock:
@@ -1047,6 +1134,135 @@ class TestRenderMarkdownBlock:
         render_markdown_block(console, "Check __init__.py for the export list.")
 
         assert "__init__.py" in _strip_ansi(buf.getvalue())
+
+    def test_strips_terminal_controls_from_model_prose(self) -> None:
+        """Intermediate/closing model commentary must not inject ESC/BEL."""
+        console, buf = _non_tty_console()
+
+        render_markdown_block(
+            console,
+            "### Phase\x1b[2J\nChecking the token\x07…",
+        )
+
+        output = buf.getvalue()
+        assert "\x1b" not in output
+        assert "\x07" not in output
+        plain = _strip_ansi(output)
+        assert "Phase" in plain
+        assert "Checking the token" in plain
+
+    def test_collapses_url_heavy_json_the_model_pasted(self) -> None:
+        """The real gh case: URL-heavy JSON, no inline marker. Long URLs dilute a
+        char ratio, so detection keys off the ``":`` separators instead."""
+        console, buf = _non_tty_console()
+        dump = (
+            '"login":"Tracer-Cloud",'
+            '"followers_url":"https://api.github.com/users/Tracer-Cloud/followers",'
+            '"following_url":"https://api.github.com/users/Tracer-Cloud/following{/other_user}",'
+            '"gists_url":"https://api.github.com/users/Tracer-Cloud/gists{/gist_id}",'
+            '"organizations_url":"https://api.github.com/users/Tracer-Cloud/orgs",'
+            '"type":"Organization","site_admin":false'
+        )
+
+        render_markdown_block(console, dump)
+
+        out = _strip_ansi(buf.getvalue())
+        assert "tool output omitted" in out  # collapsed to a one-line marker
+        assert "followers_url" not in out  # the raw blob is gone
+
+    def test_collapses_a_dump_flagged_by_the_truncated_marker(self) -> None:
+        console, buf = _non_tty_console()
+        rows = "\n".join(f"repo-{i}\tmain\t2026-01-01\t{i}\t0\t0" for i in range(20))
+
+        render_markdown_block(console, f"{rows}\n… (output truncated)")
+
+        assert "tool output omitted" in _strip_ansi(buf.getvalue())
+
+    def test_keeps_the_summary_and_collapses_only_the_pasted_blob(self) -> None:
+        """When a summary sentence and a pasted blob arrive as one block, keep the
+        summary and collapse only the blob — never nuke the whole reply."""
+        console, buf = _non_tty_console()
+        reply = (
+            "Repository is public with 10,984 stars.\n\n"
+            '"login":"Tracer-Cloud","followers_url":"https://api.github.com/users/Tracer-Cloud/f",'
+            '"gists_url":"https://api.github.com/users/Tracer-Cloud/gists{/gist_id}",'
+            '"organizations_url":"https://api.github.com/users/Tracer-Cloud/orgs",'
+            '"type":"Organization","site_admin":false'
+        )
+
+        render_markdown_block(console, reply)
+
+        out = _strip_ansi(buf.getvalue())
+        assert "Repository is public" in out  # summary survives
+        assert "tool output omitted" in out  # blob collapsed
+        assert "followers_url" not in out
+
+    def test_keeps_a_short_inline_json_snippet(self) -> None:
+        console, buf = _non_tty_console()
+
+        render_markdown_block(console, 'The API returned `{"ok": true, "count": 3}`.')
+
+        out = _strip_ansi(buf.getvalue())
+        assert '"ok"' in out
+        assert "tool output omitted" not in out
+
+    def test_keeps_ordinary_prose(self) -> None:
+        console, buf = _non_tty_console()
+
+        render_markdown_block(console, "The repository is public and its default branch is main.")
+
+        out = _strip_ansi(buf.getvalue())
+        assert "default branch is main" in out
+        assert "tool output omitted" not in out
+
+    def test_keeps_fenced_code_the_model_meant_to_show(self) -> None:
+        """A fenced block signals intent — never collapse it."""
+        console, buf = _non_tty_console()
+
+        render_markdown_block(console, '```json\n{"stars": 10984, "forks": 1603}\n```')
+
+        out = _strip_ansi(buf.getvalue())
+        assert "10984" in out
+        assert "tool output omitted" not in out
+
+    def test_collapses_an_independent_dump_beside_a_fenced_block(self) -> None:
+        """A fence exempts only its region — a separate dump still collapses."""
+        console, buf = _non_tty_console()
+        dump = (
+            '"login":"Tracer-Cloud",'
+            '"followers_url":"https://api.github.com/users/Tracer-Cloud/followers",'
+            '"following_url":"https://api.github.com/users/Tracer-Cloud/following{/other_user}",'
+            '"gists_url":"https://api.github.com/users/Tracer-Cloud/gists{/gist_id}",'
+            '"organizations_url":"https://api.github.com/users/Tracer-Cloud/orgs",'
+            '"type":"Organization","site_admin":false'
+        )
+        reply = f'Use this snippet:\n\n```json\n{{"stars": 10984, "forks": 1603}}\n```\n\n{dump}'
+
+        render_markdown_block(console, reply)
+
+        out = _strip_ansi(buf.getvalue())
+        assert "10984" in out  # intentional fence survives
+        assert "tool output omitted" in out  # independent dump collapsed
+        assert "followers_url" not in out
+
+    def test_keeps_dump_like_content_inside_a_fenced_block(self) -> None:
+        """Blank lines inside a fence must not expose the inner body to collapsing."""
+        console, buf = _non_tty_console()
+        inner = (
+            '{"note":"inside-fence",'
+            '"homepage":"https://example.com/inside-fence/homepage",'
+            '"clone_url":"https://example.com/inside-fence.git",'
+            '"ssh_url":"git@example.com:inside-fence/repo.git",'
+            '"description":"kept because it sits inside the intentional fence"}'
+        )
+        reply = f'```json\n{{"stars": 10984}}\n\n{inner}\n```'
+
+        render_markdown_block(console, reply)
+
+        out = _strip_ansi(buf.getvalue())
+        assert "10984" in out
+        assert "inside-fence" in out
+        assert "tool output omitted" not in out
 
 
 class TestDeferWantMeToCloser:

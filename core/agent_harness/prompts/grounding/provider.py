@@ -5,11 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from config.constants.prompts import SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
-from core.agent_harness.grounding.investigation_flow_reference import (
-    build_investigation_flow_reference_text,
-)
-from core.agent_harness.prompts.assistant.environment import build_environment_block
+from core.agent_harness.prompts.grounding.environment import build_environment_block
 from core.agent_harness.prompts.kernel.surfaces import profile_for
 from core.llm.provider_models import resolve_provider_models
 from infrastructure.observability.trace.spans import component_span
@@ -25,7 +21,7 @@ _DOCS_RELEVANCE_FLOOR = 8
 def load_llm_settings() -> Any | None:
     """Best-effort LLM settings load for prompt environment grounding."""
     try:
-        from config.config import LLMSettings
+        from config.llm_settings import LLMSettings
 
         return LLMSettings.from_env()
     except Exception:
@@ -84,9 +80,6 @@ class DefaultPromptContextProvider:
         # colliding with cost-center-mapping) so unrelated pages never leak into
         # the answer. Below the floor the block is omitted entirely.
         return str(self._session.grounding.docs.build_text(query, min_score=_DOCS_RELEVANCE_FLOOR))
-
-    def investigation_flow(self) -> str:
-        return build_investigation_flow_reference_text()
 
     def runtime_facts(self) -> Mapping[str, Any]:
         from config.runtime_metadata import capture_runtime_facts
@@ -152,9 +145,6 @@ class DefaultPromptContextProvider:
         if not profile.setup_state:
             return ""
         return cached_setup_state(self._visible_integrations())
-
-    def suggested_synthetic_prompt(self) -> str:
-        return SUGGESTED_PROMPT_AFTER_FAILED_SYNTHETIC_TEST
 
     def log_diagnostics(self, reason: str) -> None:
         self._session.grounding.log_cache_diagnostics(reason)

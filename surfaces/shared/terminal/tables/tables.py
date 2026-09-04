@@ -6,6 +6,8 @@ All rendering is delegated to the REPL TTY helpers in :mod:`rendering`.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +15,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
+from infrastructure.terminal.peek import cap_output_for_display
 from infrastructure.terminal.theme import (
     BOLD_BRAND,
     DIM,
@@ -33,7 +36,7 @@ if TYPE_CHECKING:
     from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 
 # MCP-type services are also rendered under `/mcp list` for focused MCP actions.
-MCP_INTEGRATION_SERVICES = frozenset({"github", "openclaw"})
+MCP_INTEGRATION_SERVICES = frozenset({"github"})
 
 
 def status_style(status: str) -> str:
@@ -153,7 +156,8 @@ def render_integrations_table(console: Console, results: list[dict[str, str]]) -
     )
     if not rows:
         repl_print(
-            console, f"[{DIM}]no integrations configured.  try `opensre onboard` to add one.[/]"
+            console,
+            f"[{DIM}]no integrations configured.  try `opensre integrations setup` to add one.[/]",
         )
         return
     render_table(console, "Integrations", _INTEGRATION_COLS, [_integration_row(r) for r in rows])
@@ -205,10 +209,56 @@ def render_tools_table(console: Console, entries: list[ToolCatalogEntry]) -> Non
     )
 
 
-def print_command_output(console: Console, output: str, *, style: str | None = None) -> None:
+_COMMAND_OUTPUT_INDENT = "    "  # aligns wrapped lines under the ``  ↳ `` marker
+
+_TRACEBACK_HEADER = "Traceback (most recent call last):"
+_TRACEBACK_FRAME_RE = re.compile(r'^\s*File "(?P<file>.+)", line (?P<line>\d+), in (?P<fn>.+)$')
+
+
+def _collapse_traceback(text: str) -> str | None:
+    """Collapse a Python traceback to ``ExcType: message`` + its innermost frame.
+
+    Returns ``None`` when *text* is not a traceback, so ordinary output is left
+    untouched. A full trace buries the two lines that matter — what failed and
+    where it raised — so keep those and fold the intermediate frames.
+    """
+    if _TRACEBACK_HEADER not in text:
+        return None
+    lines = text.rstrip().split("\n")
+    frames = [m for line in lines if (m := _TRACEBACK_FRAME_RE.match(line))]
+    exception = next((line.strip() for line in reversed(lines) if line.strip()), "")
+    if not frames or not exception:
+        return None
+    innermost = frames[-1]
+    hidden = len(frames) - 1
+    rendered = [exception, f"  at {innermost['file']}:{innermost['line']} in {innermost['fn']}"]
+    if hidden:
+        rendered.append(f"  ({hidden} more frame{'s' if hidden != 1 else ''} hidden)")
+    return "\n".join(rendered)
+
+
+def print_command_output(
+    console: Console,
+    output: str,
+    *,
+    style: str | None = None,
+    on_collapse: Callable[[str], None] | None = None,
+) -> None:
     if not output:
         return
-    text = output.rstrip()
+    text = _collapse_traceback(output.rstrip()) or output.rstrip()
+    preview, folded = cap_output_for_display(text)
+    if folded is not None and on_collapse is not None:
+        on_collapse(folded)
+    lines = preview.split("\n")
+    # Frame every result under its `$ command` header with a ``↳`` gutter so the
+    # output reads as the command's child (parent → child) and stays grouped and
+    # set off from the reply prose above — wide output included. A single wide
+    # line wraps within the block instead of flushing the whole block (and its
+    # narrow siblings) to the left margin. Long bodies collapse to a Droid-style
+    # peek plus ``Ctrl+O to view``; the caller stashes *folded* for paging.
+    framed = [f"  ↳ {lines[0]}", *(f"{_COMMAND_OUTPUT_INDENT}{line}" for line in lines[1:])]
+    text = "\n".join(framed)
     # Parse any ANSI the captured child emitted so its Rich styling (bold, colour)
     # survives being re-printed here instead of showing as raw escape codes.
     rendered = Text.from_ansi(text) if style is None else Text.from_ansi(text, style=style)

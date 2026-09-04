@@ -153,67 +153,27 @@ def test_group_identify_direct(monkeypatch: pytest.MonkeyPatch) -> None:
     assert props["$group_set"] == {"name": "Acme"}
 
 
-def test_process_session_id_stamps_cli_investigate_without_repl(
+def test_process_session_id_stamps_cli_capture_without_repl(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     posted = _stub_httpx_client(monkeypatch)
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_cli")
 
-    from infrastructure.analytics import cli as analytics_cli
+    from infrastructure.analytics import capture
     from infrastructure.analytics.usage_context import ensure_process_session_id
 
     analytics = provider.Analytics()
     monkeypatch.setattr(provider, "_instance", analytics)
-    monkeypatch.setattr(analytics_cli, "get_analytics", lambda: analytics)
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
 
-    analytics_cli.capture_cli_invoked({"entrypoint": "opensre"})
+    capture.capture_cli_invoked({"entrypoint": "opensre"})
     process_session = ensure_process_session_id()
-    with analytics_cli.track_investigation(
-        entrypoint=analytics_cli.EntrypointSource.CLI_COMMAND,
-        trigger_mode=analytics_cli.TriggerMode.FILE,
-        input_path="alert.json",
-    ):
-        pass
+    capture.capture_onboard_started()
     analytics.shutdown(flush=True)
 
-    started = next(
-        p["json"] for p in posted if p["json"]["event"] == Event.INVESTIGATION_STARTED.value
-    )
-    props = started["properties"]
+    onboard = next(p["json"] for p in posted if p["json"]["event"] == Event.ONBOARD_STARTED.value)
+    props = onboard["properties"]
     assert props["organization_id"] == "org_cli"
     assert props["$groups"] == {ORGANIZATION_GROUP_TYPE: "org_cli"}
     assert props["surface"] == UsageSurface.CLI
     assert props["session_id"] == process_session
-
-
-def test_track_investigation_binds_session_from_session_object(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    posted = _stub_httpx_client(monkeypatch)
-    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_repl")
-
-    from infrastructure.analytics import cli as analytics_cli
-
-    analytics = provider.Analytics()
-    monkeypatch.setattr(provider, "_instance", analytics)
-    monkeypatch.setattr(analytics_cli, "get_analytics", lambda: analytics)
-    analytics.set_persistent_property("surface", UsageSurface.CLI)
-
-    class _Session:
-        session_id = "repl-session-123"
-        last_investigation_id = ""
-
-    with analytics_cli.track_investigation(
-        entrypoint=analytics_cli.EntrypointSource.CLI_REPL_FILE,
-        trigger_mode=analytics_cli.TriggerMode.FILE,
-        session=_Session(),  # type: ignore[arg-type]
-    ):
-        pass
-    analytics.shutdown(flush=True)
-
-    started = next(
-        p["json"] for p in posted if p["json"]["event"] == Event.INVESTIGATION_STARTED.value
-    )
-    assert started["properties"]["session_id"] == "repl-session-123"
-    assert started["properties"]["surface"] == UsageSurface.CLI
-    assert started["properties"]["organization_id"] == "org_repl"

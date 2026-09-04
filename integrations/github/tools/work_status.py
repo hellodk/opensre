@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 from typing import Any, Literal, cast
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
@@ -101,6 +102,44 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _map_list_github_work_items(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    items = output.get("items")
+    if not isinstance(items, list) or not items:
+        return
+    counts = output.get("counts") or {}
+    record_evidence_entry(
+        evidence,
+        source="list_github_work_items",
+        label="GitHub Work Items",
+        summary=(
+            f"{len(items)} items: {counts.get('taken', 0)} taken, "
+            f"{counts.get('up_for_grabs', 0)} up for grabs, "
+            f"{counts.get('unassigned', 0)} unassigned"
+        ),
+    )
+
+
+def _map_summarize_github_pr_status(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    prs = output.get("pull_requests")
+    if not isinstance(prs, list) or not prs:
+        return
+    counts = output.get("counts") or {}
+    record_evidence_entry(
+        evidence,
+        source="summarize_github_pr_status",
+        label="GitHub PR Status",
+        summary=(
+            f"{len(prs)} PRs: {counts.get('mergeable', 0)} mergeable, "
+            f"{counts.get('blocked', 0)} blocked, "
+            f"{counts.get('unknown', 0)} unknown"
+        ),
+    )
+
+
 @tool(
     name="list_github_work_items",
     source="github",
@@ -112,8 +151,9 @@ def _count_work_items(items: list[dict[str, Any]]) -> dict[str, int]:
     ],
     anti_examples=["Creating, editing, or closing GitHub issues"],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    evidence_mapper=_map_list_github_work_items,
     input_schema={
         "type": "object",
         "properties": {
@@ -252,8 +292,9 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
         "Preparing engineering status updates without changing GitHub state",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    evidence_mapper=_map_summarize_github_pr_status,
     input_schema={
         "type": "object",
         "properties": {
@@ -340,6 +381,21 @@ def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> Security
     )
 
 
+def _map_list_github_security_alerts(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    alerts = output.get("alerts", [])
+    if alerts:
+        count = len(alerts)
+        word = "alert" if count == 1 else "alerts"
+        record_evidence_entry(
+            evidence,
+            source="list_github_security_alerts",
+            label="GitHub Security Alerts",
+            summary=f"{count} {word}",
+        )
+
+
 _ALERT_ENDPOINTS = {
     "dependabot": "dependabot/alerts",
     "secret_scanning": "secret-scanning/alerts",
@@ -359,7 +415,7 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         "Building a read-only engineering status report with security context",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     input_schema={
         "type": "object",
@@ -378,6 +434,7 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
     is_available=_github_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_security_alerts,
 )
 def list_github_security_alerts(
     owner: str,

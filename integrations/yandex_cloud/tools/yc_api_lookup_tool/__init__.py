@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.yandex_cloud.api_index import (
     DEFAULT_LIMIT,
     endpoint_count,
@@ -28,7 +28,7 @@ SOURCE = "yandex_cloud"
     name="find_yc_api",
     display_name="Yandex Cloud",
     source=SOURCE,
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
     description=(
         "Find the exact REST path for any Yandex Cloud resource, across every "
         "service the API exposes — not just the ones with a dedicated tool. "

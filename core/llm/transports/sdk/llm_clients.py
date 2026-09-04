@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import boto3
@@ -34,7 +34,7 @@ from core.llm.providers import provider_credentials
 from core.llm.providers.bedrock_model_ids import is_anthropic_bedrock_model
 from core.llm.shared.llm_retry import (
     extract_retry_after_seconds,
-    is_credit_exhausted_error,
+    maybe_raise_credit_exhausted,
 )
 from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
@@ -306,7 +306,7 @@ class LLMClient:
         # What this request carries, decided before any concurrent turn can
         # clear the shared flag.
         marked = strip_cache_markers(kwargs) != kwargs
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
@@ -360,7 +360,7 @@ class LLMClient:
         so any post-emission failure propagates immediately. Auth and
         guardrail errors never retry.
         """
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         kwargs = self._build_request_kwargs(prompt_or_messages)
         # What this request carries, decided before any concurrent turn can
@@ -456,7 +456,7 @@ class BedrockLLMClient:
         system, messages = _normalize_messages(prompt_or_messages)
 
         from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         messages, system = apply_guardrails_to_messages(messages, system)
 
@@ -558,7 +558,7 @@ class BedrockLLMClient:
         system, messages = _normalize_messages(prompt_or_messages)
 
         from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         messages, system = apply_guardrails_to_messages(messages, system)
 
@@ -697,8 +697,10 @@ class OpenAILLMClient:
         api_key_env: str = "OPENAI_API_KEY",
         api_key_default: str = "",
         default_headers: dict[str, str] | None = None,
+        credential_resolver: Callable[[str], str] | None = None,
     ) -> None:
-        api_key = provider_credentials.resolve_llm_api_key(api_key_env) or api_key_default
+        self._credential_resolver = credential_resolver or provider_credentials.resolve_llm_api_key
+        api_key = self._credential_resolver(api_key_env) or api_key_default
         self._api_key = api_key
         self._api_key_default = api_key_default
         self._base_url = base_url
@@ -786,6 +788,7 @@ class OpenAILLMClient:
             except (OpenAIAuthError, OpenAINotFoundError, OpenAIBadRequestError):
                 raise
             except Exception as err:
+                maybe_raise_credit_exhausted(getattr(self, "_provider_label", "OpenAI"), err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS - 1:
                     raise
@@ -794,9 +797,7 @@ class OpenAILLMClient:
         raise RuntimeError("OpenAI structured invocation failed") from last_err
 
     def _ensure_client(self) -> OpenAI:
-        api_key = (
-            provider_credentials.resolve_llm_api_key(self._api_key_env) or self._api_key_default
-        )
+        api_key = self._credential_resolver(self._api_key_env) or self._api_key_default
         if not api_key:
             raise RuntimeError(
                 f"Missing {self._api_key_env}. Set it in your environment, .env, or secure local keychain before running LLM steps."
@@ -838,7 +839,7 @@ class OpenAILLMClient:
         return kwargs
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — guards against a
@@ -891,11 +892,7 @@ class OpenAILLMClient:
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
-                if is_credit_exhausted_error(err):
-                    raise RuntimeError(
-                        f"{self._provider_label} billing quota exceeded. "
-                        "Check your plan and billing details."
-                    ) from err
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
                 if attempt == max_attempts - 1:
                     raise RuntimeError(
@@ -907,6 +904,7 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
                 if attempt == max_attempts - 1:
                     raise RuntimeError(
@@ -938,7 +936,7 @@ class OpenAILLMClient:
         retrying would duplicate visible output, so post-emission failures
         propagate. Auth and guardrail errors never retry.
         """
-        from infrastructure.safety.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — same rotation
@@ -1005,11 +1003,7 @@ class OpenAILLMClient:
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
-                if is_credit_exhausted_error(err):
-                    raise RuntimeError(
-                        f"{self._provider_label} billing quota exceeded. "
-                        "Check your plan and billing details."
-                    ) from err
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     raise
                 if attempt == max_attempts - 1:
@@ -1022,6 +1016,7 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     # Mid-stream failure: never retry — chunks are already on
                     # the user's screen and a retry would duplicate them.

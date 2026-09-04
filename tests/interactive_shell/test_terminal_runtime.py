@@ -25,16 +25,22 @@ from prompt_toolkit.output import DummyOutput
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
     ANSI_RESET,
+    THEME_REGISTRY,
     get_active_theme_name,
     set_active_theme,
 )
+
+
+def _rgb(hex_color: str) -> str:
+    """``"#RRGGBB"`` → the ``"r;g;b"`` triple as it appears in a truecolor escape."""
+    h = hex_color.lstrip("#")
+    return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
+
+
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.runtime.core import confirmation as controller_runtime
 from surfaces.interactive_shell.runtime.core import state as loop_state
 from surfaces.interactive_shell.runtime.core import turn_detection as loop_turn_detection
-from surfaces.interactive_shell.runtime.investigation_adapter import (
-    repl_investigation_launch_ports,
-)
 from surfaces.interactive_shell.runtime.startup import initial_input as startup_initial_input
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import input_prompt
@@ -163,8 +169,71 @@ def test_build_prompt_session_uses_persistent_history(
     assert tmp_path.exists()
     assert isinstance(prompt.completer, ShellCompleter)
     assert prompt.multiline is True
-    assert prompt.reserve_space_for_menu == 8
+    assert prompt.reserve_space_for_menu == 0
     assert prompt.app.key_bindings is not None
+
+
+def test_build_prompt_session_installs_growing_bordered_composer() -> None:
+    from prompt_toolkit.layout.containers import (
+        FloatContainer,
+        HSplit,
+        VSplit,
+        Window,
+    )
+
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        prompt = input_prompt.build_prompt_session()
+
+    root = prompt.layout.container
+    assert isinstance(root, HSplit)
+    framed_input = root.children[0]
+    assert isinstance(framed_input, FloatContainer)
+    chrome = framed_input.content
+    assert isinstance(chrome, HSplit)
+    assert len(chrome.children) == 3
+    composer = chrome.children[1]
+    footer = chrome.children[2]
+    assert isinstance(composer, HSplit)
+    assert composer.height is None
+    editable_row = composer.children[1]
+    assert isinstance(editable_row, VSplit)
+    surface_body = editable_row.children[1]
+    assert isinstance(surface_body, HSplit)
+    editable_body = surface_body.children[0]
+    default_buffer_slot = editable_body.children[0]
+    assert default_buffer_slot.content.height.min == 1
+    assert default_buffer_slot.content.height.max == 8
+    assert isinstance(footer, Window)
+    assert chrome.preferred_width(80).preferred == 79
+
+
+@pytest.mark.asyncio
+async def test_bordered_composer_grows_with_input_up_to_eight_edit_rows() -> None:
+    with (
+        create_pipe_input() as pipe_input,
+        create_app_session(input=pipe_input, output=DummyOutput()),
+    ):
+        prompt = input_prompt.build_prompt_session()
+        task = asyncio.create_task(prompt.prompt_async(""))
+        await asyncio.sleep(0)
+
+        composer = prompt.layout.container.children[0].content.children[1]
+        prompt.default_buffer.text = "first"
+        single_line_height = composer.preferred_height(79, 30).preferred
+        prompt.default_buffer.text = "x" * 200
+        wrapped_line_height = composer.preferred_height(79, 30).preferred
+        prompt.default_buffer.text = "first\nsecond\nthird"
+        multiline_height = composer.preferred_height(79, 30).preferred
+        prompt.default_buffer.text = "\n".join(str(index) for index in range(12))
+        capped_height = composer.preferred_height(79, 30).preferred
+
+        pipe_input.send_text("\r")
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert single_line_height == 3
+    assert single_line_height < wrapped_line_height <= 10
+    assert multiline_height == 5
+    assert capped_height == 10
 
 
 def test_build_prompt_session_falls_back_to_memory_history(
@@ -204,13 +273,25 @@ def test_prompt_message_uses_accent_glyph() -> None:
     rendered = _prompt_message(Session()).value
 
     assert ui_theme.PROMPT_ACCENT_ANSI in rendered
-    assert "❯" in rendered
+    assert ">" in rendered
     assert ANSI_RESET in rendered
 
 
-def test_shift_enter_inserts_newline_before_submit(
+@pytest.mark.parametrize(
+    "newline_sequence",
+    [
+        _SHIFT_ENTER_SEQUENCE,
+        "\x1b[13;2u",  # CSI-u Shift+Enter
+        "\x1b[27;5;13~",  # xterm Ctrl+Enter
+        "\x1b[13;5u",  # CSI-u Ctrl+Enter
+        "\x1b\r",  # Alt/Option+Enter
+        "\n",  # Shift+Enter in terminals that emit LF
+    ],
+)
+def test_modified_enter_inserts_newline_before_submit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    newline_sequence: str,
 ) -> None:
     import config.constants as const_module
 
@@ -228,7 +309,7 @@ def test_shift_enter_inserts_newline_before_submit(
             # under loaded ``test-cov`` (xdist + coverage) a 1s wait_for flakes.
             await asyncio.sleep(0)
             pipe_input.send_bytes(b"first line")
-            pipe_input.send_bytes(_SHIFT_ENTER_SEQUENCE.encode())
+            pipe_input.send_bytes(newline_sequence.encode())
             pipe_input.send_bytes(b"second line\r")
             return await asyncio.wait_for(task, timeout=5.0)
 
@@ -373,20 +454,27 @@ def test_build_prompt_style_tracks_active_theme() -> None:
     amber_attrs = _build_prompt_style().get_attrs_for_style_str("class:prompt-frame-line")
     set_active_theme("teal")
     teal_attrs = _build_prompt_style().get_attrs_for_style_str("class:prompt-frame-line")
-    assert amber_attrs.color and amber_attrs.color.lower() == "f2d48a"
-    assert teal_attrs.color and teal_attrs.color.lower() == "8ae2d6"
+    assert (
+        amber_attrs.color
+        and amber_attrs.color.lower() == THEME_REGISTRY["amber"].HIGHLIGHT.lstrip("#").lower()
+    )
+    assert (
+        teal_attrs.color
+        and teal_attrs.color.lower() == THEME_REGISTRY["teal"].HIGHLIGHT.lstrip("#").lower()
+    )
     assert amber_attrs.color != teal_attrs.color
 
 
 def test_completion_menu_current_item_uses_highlight_style() -> None:
-    from infrastructure.terminal.theme import BG, HIGHLIGHT
+    from infrastructure.terminal.theme import BG, HIGHLIGHT, INPUT_SURFACE
 
     set_active_theme("green")
     style = _build_prompt_style()
     attrs = style.get_attrs_for_style_str("class:repl-slash-command")
 
     assert attrs.color == HIGHLIGHT.lstrip("#")
-    assert attrs.bgcolor == BG.lstrip("#")
+    # Slash tokens sit on the composer plate, not the terminal bg.
+    assert attrs.bgcolor == str(INPUT_SURFACE).lstrip("#")
     assert attrs.bold is True
 
     attrs_menu = style.get_attrs_for_style_str("class:completion-menu.completion.current")
@@ -395,6 +483,27 @@ def test_completion_menu_current_item_uses_highlight_style() -> None:
     assert attrs_menu.bgcolor == BG.lstrip("#")
     assert attrs_menu.reverse is False
     assert attrs_menu.bold is True
+
+
+def test_composer_uses_input_surface_fill() -> None:
+    """Composer plate uses INPUT_SURFACE — same role as Droid/Claude/Cursor input bg."""
+    from infrastructure.terminal.theme import INPUT_SURFACE
+
+    set_active_theme("green")
+    style = _build_prompt_style()
+    surface = str(INPUT_SURFACE).lstrip("#")
+
+    for style_name in (
+        "class:frame",
+        "class:frame.border",
+        "class:composer",
+        "class:composer-body",
+        "class:placeholder",
+    ):
+        assert style.get_attrs_for_style_str(style_name).bgcolor == surface
+
+    # Help line under the plate stays on terminal bg.
+    assert not style.get_attrs_for_style_str("class:composer-footer").bgcolor
 
 
 def test_lazy_rich_style_split_tracks_active_theme() -> None:
@@ -426,87 +535,6 @@ def test_lazy_rich_style_parses_as_real_rich_style() -> None:
     set_active_theme("blue")
     assert Style.parse(str(ui_theme.DIM)) != Style.null()
     assert Style.parse(str(ui_theme.BOLD_BRAND)) != Style.null()
-
-
-def test_shell_completer_path_completion_honors_mixed_case_prefix(tmp_path: Path) -> None:
-    """Regression: path fragments must not be lowercased before PathCompleter.
-
-    On case-sensitive filesystems, a lowered prefix can stop matching real directory
-    names (e.g. ``RePoRtS`` no longer matches prefix ``re``).
-    """
-    mixed_dir = tmp_path / "RePoRtS"
-    mixed_dir.mkdir()
-    (mixed_dir / "x.txt").write_text("x", encoding="utf-8")
-    partial = str(tmp_path / "Re")
-    line = f"/investigate {partial}"
-    completions = list(
-        ShellCompleter().get_completions(
-            Document(line, len(line)),
-            CompleteEvent(text_inserted=True),
-        )
-    )
-    assert completions
-    joined = " ".join(str(c.display) for c in completions)
-    assert "RePoRtS" in joined
-
-
-def test_shell_completer_investigate_includes_template_hints() -> None:
-    completions = list(
-        ShellCompleter().get_completions(
-            Document("/investigate ", len("/investigate ")),
-            CompleteEvent(text_inserted=True),
-        )
-    )
-    assert any(c.text == "generic" for c in completions)
-    assert any(c.text == "splunk" for c in completions)
-
-
-def test_run_text_investigation_uses_background_launcher_when_mode_enabled() -> None:
-    from rich.console import Console
-
-    from tools.interactive_shell.actions.investigation import (
-        run_text_investigation,
-    )
-
-    launches: list[tuple[str, str]] = []
-
-    def _fake_start_background_text_investigation(
-        *,
-        alert_text: str,
-        session: Session,
-        console: Console,
-        display_command: str,
-    ) -> str:
-        _ = (session, console)
-        launches.append((alert_text, display_command))
-        return "bg123"
-
-    def _unexpected_sample_launcher(
-        *,
-        template_name: str,
-        session: Session,
-        console: Console,
-        display_command: str,
-    ) -> str:
-        _ = (template_name, session, console, display_command)
-        raise AssertionError("sample launcher should not run")
-
-    session = Session()
-    session.terminal.background_mode_enabled = True
-    console = Console(file=io.StringIO(), force_terminal=False, highlight=False)
-
-    run_text_investigation(
-        "High CPU alert",
-        session,
-        console,
-        ports=repl_investigation_launch_ports(
-            start_background_text=_fake_start_background_text_investigation,
-            start_background_sample=_unexpected_sample_launcher,
-        ),
-    )
-
-    assert launches == [("High CPU alert", "background free-text investigation")]
-    assert session.task_registry.list_recent(10) == []
 
 
 def test_run_initial_input_dispatches_as_non_tty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -680,29 +708,35 @@ class TestSpinnerState:
         assert spinner.streaming is False
         assert spinner.inline_spinner_ansi() == ""
 
-    def test_inline_spinner_uses_active_theme_highlight(self) -> None:
-        from infrastructure.terminal.theme import set_active_theme
+    def test_inline_spinner_thinking_uses_warm_reply_marker(self) -> None:
+        from infrastructure.terminal.theme import reply_marker_hex, set_active_theme
 
         set_active_theme("blue")
         spinner = loop_state.SpinnerState()
         spinner.start()
+        spinner.set_phase(loop_state.SpinnerState.THINKING_PHASE)
         raw = spinner.inline_spinner_ansi()
-        assert "168;212;255" in raw
-        assert "185;237;175" not in raw
+        assert _rgb(reply_marker_hex()) in raw  # Factory-warm glyph accent
+        assert _rgb(THEME_REGISTRY["green"].HIGHLIGHT) not in raw
 
-    @staticmethod
-    def _all_verbs(spinner: loop_state.SpinnerState) -> tuple[str, ...]:
-        """Union of every tier's verb pool."""
-        return tuple(verb for _threshold, pool in spinner._VERB_TIERS for verb in pool)
+    def test_inline_spinner_invoking_tools_uses_same_warm_accent(self) -> None:
+        from infrastructure.terminal.theme import reply_marker_hex, set_active_theme
+
+        set_active_theme("blue")
+        spinner = loop_state.SpinnerState()
+        spinner.start()
+        spinner.set_phase(loop_state.SpinnerState.INVOKING_TOOLS_PHASE)
+        raw = spinner.inline_spinner_ansi()
+        # One sunny accent for every phase — not a second cold brand strip.
+        assert _rgb(reply_marker_hex()) in raw
+        assert _rgb(THEME_REGISTRY["blue"].BRAND) not in raw.split("(Press ESC")[0]
 
     def test_streaming_inline_spinner_includes_glyph_and_token_count(self) -> None:
         spinner = loop_state.SpinnerState()
         spinner.start()
         spinner.bytes_in = 1234 * _CHARS_PER_TOKEN  # = 1234 tokens
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
-        # The verb is randomly picked from the tier pools per turn —
-        # any of them followed by ``…`` is acceptable.
-        assert any(f"{verb}…" in rendered for verb in self._all_verbs(spinner))
+        assert loop_state.SpinnerState.EXECUTING_PHASE in rendered
         # 1234 tokens → "1.2k" via format_token_count_short.
         assert "1.2k tokens" in rendered
         # Spinner glyph from the brail palette.
@@ -732,88 +766,22 @@ class TestSpinnerState:
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
         assert "tokens" in rendered
 
-    def test_streaming_inline_spinner_verb_stays_constant_across_calls(self) -> None:
-        """A turn's verb is fixed at ``start()`` so the indicator
-        doesn't flicker between words mid-stream."""
+    def test_streaming_inline_spinner_phase_stays_stable_across_calls(self) -> None:
+        """Phase labels are the product UX — no rotating verbs mid-stream."""
         spinner = loop_state.SpinnerState()
         spinner.start()
-        verbs_seen: set[str] = set()
         for _ in range(20):
             rendered = _strip_ansi(spinner.inline_spinner_ansi())
-            for verb in self._all_verbs(spinner):
-                if f"{verb}…" in rendered:
-                    verbs_seen.add(verb)
-                    break
-        assert len(verbs_seen) == 1, f"verb changed mid-turn — saw {verbs_seen}"
+            assert loop_state.SpinnerState.EXECUTING_PHASE in rendered
 
-    def test_advance_verb_changes_verb_between_agent_steps(self) -> None:
-        """``advance_verb`` re-rolls the verb and never repeats the current one."""
+    def test_inline_spinner_folds_live_tool_onto_status_row(self) -> None:
         spinner = loop_state.SpinnerState()
         spinner.start()
-        for _ in range(20):
-            before = spinner._verb
-            spinner.advance_verb()
-            assert spinner._verb != before
-            assert spinner._verb in spinner._VERB_TIERS[0][1]
-
-    def test_weighted_verbs_are_picked_about_twice_as_often(self) -> None:
-        """Verbs in ``_VERB_WEIGHTS`` (weight 2) beat the unweighted average."""
-        import random as _random
-
-        _random.seed(20260807)
-        spinner = loop_state.SpinnerState()
-        counts: dict[str, int] = dict.fromkeys(spinner._VERB_TIERS[0][1], 0)
-        for _ in range(6000):
-            spinner.start()
-            counts[spinner._verb] += 1
-        plain = [count for verb, count in counts.items() if verb not in spinner._VERB_WEIGHTS]
-        plain_avg = sum(plain) / len(plain)
-        for verb in spinner._VERB_WEIGHTS:
-            assert counts[verb] > 1.5 * plain_avg, (
-                f"{verb!r} picked {counts[verb]}x vs plain avg {plain_avg:.0f}"
-            )
-
-    def test_spinner_verb_escalates_through_tiers_with_elapsed_time(self) -> None:
-        """The verb pool escalates as the run goes hot, and never de-escalates."""
-        spinner = loop_state.SpinnerState()
-        spinner.start()
-        tier0, tier1, tier2 = (pool for _threshold, pool in spinner._VERB_TIERS)
-        assert spinner._verb in tier0
-
-        spinner.started_at -= 45  # elapsed ≈ 45s → ICE contact
-        _strip_ansi(spinner.inline_spinner_ansi())
-        assert spinner._verb in tier1
-        assert spinner._verb_tier == 1
-
-        spinner.started_at -= 75  # elapsed ≈ 120s → deep run
-        _strip_ansi(spinner.inline_spinner_ansi())
-        assert spinner._verb in tier2
-        assert spinner._verb_tier == 2
-
-        # Re-rendering at the same elapsed time keeps the deep-run tier.
-        _strip_ansi(spinner.inline_spinner_ansi())
-        assert spinner._verb in tier2
-
-    def test_advance_verb_after_escalation_picks_within_escalated_tier(self) -> None:
-        spinner = loop_state.SpinnerState()
-        spinner.start()
-        spinner.started_at -= 45  # escalate to the ICE-contact tier
-        spinner.inline_spinner_ansi()
-        tier1 = spinner._VERB_TIERS[1][1]
-        for _ in range(10):
-            spinner.advance_verb()
-            assert spinner._verb in tier1
-
-    def test_start_resets_escalation_to_calm_tier(self) -> None:
-        spinner = loop_state.SpinnerState()
-        spinner.start()
-        spinner.started_at -= 120
-        spinner.inline_spinner_ansi()
-        assert spinner._verb_tier == 2
-
-        spinner.start()
-        assert spinner._verb_tier == 0
-        assert spinner._verb in spinner._VERB_TIERS[0][1]
+        spinner.set_phase(loop_state.SpinnerState.INVOKING_TOOLS_PHASE)
+        spinner.set_active_action("GitHub CLI · gh api repos/x")
+        rendered = _strip_ansi(spinner.inline_spinner_ansi())
+        assert "Invoking tools…" in rendered
+        assert "GitHub CLI · gh api repos/x" in rendered
 
     def test_inline_spinner_glyph_animates_with_elapsed_time(self) -> None:
         """The frame is a function of elapsed time, not of render-call count.
@@ -871,6 +839,7 @@ class TestSpinnerState:
         """
         spinner = loop_state.SpinnerState()
         rendered = _strip_ansi(spinner.idle_hint_ansi())
+        assert rendered.startswith("Ready")
         assert "/ for commands" in rendered
         assert "tab tool details" in rendered
         assert "history" in rendered
@@ -900,15 +869,15 @@ class TestSpinnerState:
         assert "esc to clear" in rendered
         assert "/ for commands" in rendered
 
-    def test_inline_spinner_contains_esc_to_cancel_when_streaming(self) -> None:
+    def test_inline_spinner_contains_stop_hint_when_streaming(self) -> None:
         """During streaming the inline spinner (shown in the prompt's first
-        reserved line) carries the ``esc to cancel`` hint so the user can
+        reserved line) carries ``(Press ESC to stop)`` so the user can
         interrupt the dispatch.
         """
         spinner = loop_state.SpinnerState()
         spinner.start()
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
-        assert "esc to cancel" in rendered
+        assert "(Press ESC to stop)" in rendered
         # Idle hint text should NOT appear in the spinner row.
         assert "/ for commands" not in rendered
 
@@ -1247,13 +1216,14 @@ class TestBuildCancelKeyBindings:
     machinery; this test instantiates the bindings and verifies they
     were registered for the right keys."""
 
-    def test_returns_bindings_for_escape_and_ctrl_l(self) -> None:
+    def test_returns_bindings_for_ctrl_c_escape_and_ctrl_l(self) -> None:
         state = loop_state.ReplState()
         kb = build_cancel_key_bindings(state)
         # Flatten each binding's keys tuple. ``Keys`` enum members have
         # ``.value`` strings like ``"escape"``/``"c-l"`` matching the
         # decorator argument; plain string keys are themselves.
         registered = {getattr(k, "value", k) for b in kb.bindings for k in b.keys}
+        assert "c-c" in registered, f"Ctrl+C binding missing — registered: {registered}"
         assert "escape" in registered, f"escape binding missing — registered: {registered}"
         assert "c-l" in registered, f"Ctrl+L binding missing — registered: {registered}"
 
@@ -1557,6 +1527,43 @@ class TestRequestConfirmationViaPrompt:
         assert result == [""]
         assert state.confirm_event is None
         assert state.confirm_response == []
+
+
+def test_reset_prompt_buffer_schedules_on_the_ui_loop() -> None:
+    """Confirmation parks on a worker thread; buffer.reset must not run there."""
+    from surfaces.interactive_shell.runtime.turn_host import _reset_prompt_buffer
+
+    scheduled: list[object] = []
+
+    class _Loop:
+        def call_soon_threadsafe(self, fn: object, *args: object) -> None:
+            scheduled.append((fn, args))
+
+    class _Buffer:
+        def __init__(self) -> None:
+            self.resets = 0
+
+        def reset(self) -> None:
+            self.resets += 1
+
+    class _App:
+        def __init__(self) -> None:
+            self.current_buffer = _Buffer()
+
+    session = Session()
+    app = _App()
+    session.terminal.prompt_app = app
+    session.terminal.main_loop = _Loop()
+
+    _reset_prompt_buffer(session)
+
+    assert app.current_buffer.resets == 0
+    assert len(scheduled) == 1
+    fn, args = scheduled[0]
+    assert args == ()
+    assert callable(fn)
+    fn()
+    assert app.current_buffer.resets == 1
 
 
 class TestExecutionAllowedRespectsDispatchCancelled:

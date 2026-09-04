@@ -9,6 +9,24 @@ from __future__ import annotations
 
 from typing import Final
 
+#: The CLI command identity (lowercase, matches the ``opensre`` executable).
+PRODUCT_NAME: Final[str] = "opensre"
+
+#: The brand name for display headers (launch banner, sign-in screen).
+PRODUCT_DISPLAY_NAME: Final[str] = "OpenSRE"
+
+#: Sign-in / welcome screen copy, shown when the shell requires login.
+WELCOME_TITLE: Final[str] = "Welcome to OpenSRE CLI"
+WELCOME_DESCRIPTION: Final[str] = (
+    "OpenSRE is an AI-powered DevOps agent that diagnoses, fixes and "
+    "optimizes your production software."
+)
+SIGN_IN_PROMPT: Final[str] = "Please login with your OpenSRE account to continue."
+
+#: Opt-in flag to show the forced sign-in screen on shell startup, pending the
+#: web-app auth gate. Off unless truthy so startup is unchanged by default.
+FORCE_SIGN_IN_ENV: Final[str] = "OPENSRE_FORCE_SIGNIN"
+
 #: Release maturity, as users see it. Keep in step with the README badge.
 RELEASE_STAGE: Final[str] = "Public Alpha"
 
@@ -25,8 +43,14 @@ RELEASES_API_URL_ENV: Final[str] = "OPENSRE_RELEASES_API_URL"
 UV_RUN_RECURSION_DEPTH_ENV: Final[str] = "UV_RUN_RECURSION_DEPTH"
 
 __all__ = [
+    "FORCE_SIGN_IN_ENV",
+    "PRODUCT_DISPLAY_NAME",
+    "PRODUCT_NAME",
     "RELEASES_API_URL_ENV",
     "RELEASE_STAGE",
     "RELEASE_STAGE_BANNER",
+    "SIGN_IN_PROMPT",
     "UV_RUN_RECURSION_DEPTH_ENV",
+    "WELCOME_DESCRIPTION",
+    "WELCOME_TITLE",
 ]

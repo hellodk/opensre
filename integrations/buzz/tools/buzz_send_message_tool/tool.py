@@ -6,7 +6,7 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.buzz.tools.buzz_send_message_tool.constants import SOURCE
 from integrations.buzz.tools.buzz_send_message_tool.delivery import (
     dispatch_message,
@@ -37,8 +37,6 @@ class BuzzSendMessageTool(BaseTool):
     ]
     requires = ["buzz"]
     side_effect_level = SideEffectLevel.EXTERNAL
-    requires_approval = True
-    approval_reason = "Sends a message via Buzz on your behalf."
     input_schema = {
         "type": "object",
         "properties": {
@@ -118,5 +116,5 @@ class BuzzSendMessageTool(BaseTool):
 
 buzz_send_message = tool(
     BuzzSendMessageTool(),
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.ACTION),
+    surfaces=(ToolSurface.ACTION,),
 )

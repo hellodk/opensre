@@ -1,19 +1,19 @@
 ---
 title: "Slack"
-description: "Deliver investigation findings via webhook, and chat with the agent via Socket Mode."
+description: "Post messages via webhook, and chat with the agent via Socket Mode."
 ---
 
 ## Overview
 
 The Slack integration covers two surfaces:
 
-1. **Incoming webhook** — outbound delivery of investigation findings to a channel.
+1. **Incoming webhook** — outbound delivery of agent messages and scheduled reports to a channel.
 2. **Socket Mode bot** — two-way chat with the OpenSRE agent (mentions and DMs), managed the same way as the [Telegram gateway](/messaging/telegram#two-way-chat-gateway-dm-text).
 
 ## Prerequisites
 
 - A Slack workspace where you can create or install apps (workspace admin or app-install permissions).
-- The channel you want findings posted to (webhook) and/or where the bot will be invited (Socket Mode).
+- The channel you want messages posted to (webhook) and/or where the bot will be invited (Socket Mode).
 
 ## Setup
 
@@ -25,15 +25,7 @@ opensre integrations setup slack
 
 Choose **webhook**, **Socket Mode**, or **both**. Credentials are persisted to `~/.opensre/integrations.json` (and can be merged on re-run). Picking one mode clears the other when you intentionally switch.
 
-### Option 2: Onboarding wizard
-
-```bash
-opensre onboard
-```
-
-Select **Slack** and choose webhook / Socket Mode / both. The wizard validates the webhook when configured, then persists credentials to the integration store. Socket Mode tokens are dual-written to the OS keyring; the webhook URL is not.
-
-### Option 3: Environment variables
+### Option 2: Environment variables
 
 ```bash
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/<workspace-id>/<binding-id>/<secret>
@@ -51,11 +43,12 @@ SLACK_ALLOWED_USERS=U0123ABCD
 | `SLACK_BOT_TOKEN` | Bot token (`xoxb-…`) for the two-way Slack bot. Env or integration store. |
 | `SLACK_DEFAULT_CHAT_ID` | Default channel (`C…`) for scheduled delivery when using a bot token. Env or integration store; pair it with the same source as the bot token. |
 | `SLACK_APP_TOKEN` | App-level token (`xapp-…`) for Socket Mode. Env or integration store. |
+| `SLACK_ACCESS_TOKEN` | User token (`xoxp-…`) with `search:read`. Required only for `slack_search_messages` — Slack rejects bot tokens there. |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs allowed to talk to the bot (required unless open workspace). |
 | `SLACK_ALLOW_OPEN_WORKSPACE` | Set to `1` to allow any workspace member (dogfood escape hatch). |
 | `SLACK_TEAM_TASKS_LIST_ID` | Optional Slack List id (`F…`) for `slack_read_list` without a name search. |
 
-OpenSRE reads env as a fallback when no Slack entry exists in `~/.opensre/integrations.json`. Bot / app tokens use `resolve_env_credential` (process env, then OS keyring). `SLACK_WEBHOOK_URL` is store/env only — never keyring.
+OpenSRE reads env as a fallback when no Slack entry exists in `~/.opensre/integrations.json`. Bot / app tokens use `resolve_env_credential` (process env, then the credentials file). `SLACK_WEBHOOK_URL` is store/env only.
 
 <Note>
 **Credential resolution.** Store first when present. Then: `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` → env then keyring; `SLACK_WEBHOOK_URL` → plain env only (never keyring).
@@ -71,7 +64,7 @@ Socket Mode needs **both** `xoxb-` and `xapp-` tokens (prefixes enforced).
 2. Name the app (e.g. `OpenSRE`) and pick your workspace.
 3. In the left sidebar, open **Incoming Webhooks** and toggle the feature **On**.
 4. Click **Add New Webhook to Workspace**.
-5. Pick the channel where findings should be posted and click **Allow**.
+5. Pick the channel where messages should be posted and click **Allow**.
 6. Copy the generated URL:
 
    ```text
@@ -103,12 +96,6 @@ Treat this URL like a password — anyone holding it can post to your channel. I
 | `files:read` | Inbound file-attachment downloads + discover Slack Lists (`files.list`) |
 | `files:write` | Upload files as the bot |
 | `lists:read` | `slack_read_list` — read Slack List rows (`slackLists.items.list`) |
-| `search:read.public` | `slack_search_messages` in public channels |
-| `search:read.private` | Search private channels |
-| `search:read.im` | Search DMs |
-| `search:read.mpim` | Search group DMs |
-| `search:read.files` | Search files |
-| `search:read.users` | Search users |
 | `usergroups:read` | View workspace user groups |
 | `users.profile:read` | Speaker profile details |
 | `users:read` | `slack_list_team_members` + user lookup |
@@ -118,6 +105,10 @@ Add these only if you use the feature — they are not in the current app config
 </Note>
 
 Reinstall the app after adding scopes so the bot token picks them up. Invite the bot (`/invite @OpenSRE`) to private channels it should read or post in.
+
+<Note>
+`slack_search_messages` is the one tool a bot token can never run — Slack refuses bot tokens for workspace message search, no matter which scopes you grant. To enable search, add `search:read` under **OAuth & Permissions → User Token Scopes**, reinstall, and set `SLACK_ACCESS_TOKEN` to the resulting user token (`xoxp-…`). Leave it unset and search simply stays hidden from the agent; every other Slack tool works on the bot token alone.
+</Note>
 
 ### Allow your Slack user
 
@@ -149,16 +140,16 @@ opensre messaging status -p slack
 opensre messaging revoke -p slack -u U0123ABCD
 ```
 
-## Investigation tools
+## Slack tools
 
 Teammate tools (bot token) plus webhook blast. Credentials resolve inside the tools (never in tool-call traces). Shared client: `integrations/slack/web_client.py`.
 
 | Tool | What it does | Needs | Approval |
 | --- | --- | --- | --- |
-| `slack_send_message` | Post to the webhook's fixed channel | `SLACK_WEBHOOK_URL` | Yes |
-| `slack_reply_message` | Post to any channel/thread (`C…` or `#name`) | bot token, `chat:write` | Yes |
+| `slack_send_message` | Post to the webhook's fixed channel | `SLACK_WEBHOOK_URL` | No |
+| `slack_reply_message` | Post to any channel/thread (`C…` or `#name`) | bot token, `chat:write` | No |
 | `slack_read_messages` | Read channel history or a thread (`thread_ts`) | bot token, history + list scopes | No |
-| `slack_search_messages` | Workspace message search | bot token, `search:read` | No |
+| `slack_search_messages` | Workspace message search | **user** token (`SLACK_ACCESS_TOKEN`), `search:read` | No |
 | `slack_list_team_members` | List workspace members | bot token, `users:read` | No |
 | `slack_join_channel` | Join a public channel | bot token, `channels:join` | Yes |
 | `slack_add_reaction` | React to a message ts | bot token, `reactions:write` | No |
@@ -182,8 +173,8 @@ Example prompts:
 The last two need [GitHub configured](/github) and name the repository explicitly
 (`your-org/your-repo`) so the GitHub tools can resolve it — see
 [GitHub workflow tools](/github-workflow-tools) for what they can report on.
-`slack_send_message` requires approval before it posts; confirm the prompt when
-it appears, then check the channel for the message.
+Message tools post without a separate approval prompt; check the target channel
+for the delivered message.
 
 ### Production Engineer schedules (Slack)
 
@@ -204,14 +195,11 @@ opensre sentry digest schedule add \
   --provider slack --chat-id C0123ABCD
 
 # Webhook: omit --chat-id
-opensre cron add --kind daily_summary --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
   --tz Europe/London --provider slack
 
 # Bot token: default channel or explicit --chat-id
 export SLACK_DEFAULT_CHAT_ID=C0123ABCD
-opensre cron add --kind daily_summary --cron "0 9 * * 1-5" \
-  --tz Europe/London --provider slack
-
 opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
   --tz Europe/London --provider slack --chat-id C0123ABCD
 ```
@@ -261,12 +249,6 @@ opensre integrations verify slack --send-slack-test
 
 This posts a small test message to the configured channel.
 
-Delivery test:
-
-```bash
-opensre investigate --input tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
-```
-
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -275,7 +257,7 @@ opensre investigate --input tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 | **`slack: not configured` from gateway status** | Missing `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` or empty allowlist without `SLACK_ALLOW_OPEN_WORKSPACE=1`. Allow yourself, then `gateway stop` / `start`. |
 | **Connected, but deny reply** | Your `U…` is not in the allowlist. Pair with `/pair <code>` or `messaging allow`. |
 | **`invalid_payload` or `channel_not_found`** | Recreate the webhook for the current channel and update `SLACK_WEBHOOK_URL`. |
-| **Findings posted to the wrong channel** | A webhook is bound to the channel it was created against — create a new webhook for the new channel. |
+| **Messages posted to the wrong channel** | A webhook is bound to the channel it was created against — create a new webhook for the new channel. |
 | **Webhook returns `no_service`** | The Slack app or webhook was deleted. Re-create it and update the URL. |
 
 ## Security

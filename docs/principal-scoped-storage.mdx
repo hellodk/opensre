@@ -88,9 +88,10 @@ store.
 
 ## Other surfaces
 
-`principal` and `actor` are optional on the binding store and resolver.
-Callers that omit them — Telegram, and the unbound CLI path — key bindings by
-empty principal/actor ids.
+All four chat transports — Slack, Discord, Telegram, Buzz — resolve a scope
+and meter the turn. `principal` and `actor` stay optional on the binding store
+and resolver: the unbound CLI path omits them and keys bindings by empty
+principal/actor ids.
 
 ## Which organization a deployment serves
 
@@ -158,7 +159,7 @@ rows.
 
 - CLI emulation of a Slack or Discord member
 - Per-user integration credentials or LLM auth
-- Nesting `opensre.json`, investigations, or REPL history under member homes
+- Nesting `opensre.json`, sessions, or REPL history under member homes
 - Changing local CLI individual home layout
 - A database of any kind: bindings are a JSON file
 - A workspace → organization catalog, so one process serves one organization

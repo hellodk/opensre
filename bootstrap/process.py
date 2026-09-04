@@ -21,7 +21,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from bootstrap.adapters import install_harness_adapters, install_scheduler_runners
+from bootstrap.adapters import (
+    install_cli_auth_checker,
+    install_harness_adapters,
+    install_scheduled_delivery_adapters,
+)
 from config.local_env import bootstrap_opensre_env_once
 
 _LOG = logging.getLogger(__name__)
@@ -140,10 +144,13 @@ def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
 
 def _run_harness_adapters(_profile: ProcessProfile, _log: logging.Logger) -> None:
     install_harness_adapters()
+    install_cli_auth_checker()
 
 
 def _run_scheduler_runners(_profile: ProcessProfile, _log: logging.Logger) -> None:
-    install_scheduler_runners()
+    # The agent runners are now built at the scheduler-start call
+    # site and passed in (no global); this step only installs delivery adapters.
+    install_scheduled_delivery_adapters()
 
 
 def _run_capability_warnings(profile: ProcessProfile, log: logging.Logger) -> None:

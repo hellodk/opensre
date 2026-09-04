@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import io
-import re
 
 from rich.console import Console
 
-from core.agent_harness.session.pending_offer import ensure_canonical_investigation_closer
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
 
@@ -40,36 +38,6 @@ def test_render_error_no_hint_for_generic_error() -> None:
     output = _render_error("some other failure")
     assert "/model" not in output
     assert "/auth login" not in output
-
-
-def _strip_ansi(text: str) -> str:
-    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
-
-
-def test_finish_streamed_response_paints_canonical_not_dual_menu() -> None:
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=True, color_system=None, width=100, highlight=False)
-    sink = ShellOutputSink(console)
-    dual = (
-        "Grafana unreachable; kube refused.\n\n"
-        "**Want me to:**\n"
-        "1. run a full investigation once you paste the alert, or\n"
-        "2. walk you through `/integrations setup grafana`?"
-    )
-    streamed = sink.stream(
-        label="assistant",
-        chunks=[dual],
-        defer_want_me_to_closer=True,
-    )
-    mid = _strip_ansi(buf.getvalue())
-    assert "Grafana unreachable" in mid
-    assert "/integrations setup grafana" not in mid
-
-    canonical = ensure_canonical_investigation_closer(streamed)
-    sink.finish_streamed_response(canonical)
-    final = _strip_ansi(buf.getvalue())
-    assert "run a full investigation" in final
-    assert "/integrations" not in final
 
 
 def test_finalize_does_not_reprint_an_answer_the_console_already_showed() -> None:
@@ -107,13 +75,12 @@ def test_finalize_satisfies_the_host_contract_while_staying_silent() -> None:
     assert isinstance(sink, TurnOutput)
 
 
-def test_response_header_opens_with_a_blank_line() -> None:
-    """The sink owns this spacing: the turn engine no longer emits it.
+def test_response_header_opens_without_a_leading_blank() -> None:
+    """The sink used to print a blank before ``Ω``; that padded turns vs Droid.
 
-    ``_show_response`` used to print a blank line before the header. That was
-    terminal layout living in the shared turn engine — chat sinks route
-    ``print`` to a placeholder status and never wanted it. Moving it here kept
-    the REPL looking the same; without a test, deleting it stays green.
+    ``_show_response`` used to own that spacer in the shared turn engine.
+    Chat sinks never wanted it; keeping a blank in the shell sink only was
+    the remaining gap between user row and reply marker.
     """
     # Arrange
     console = _RecordingConsole()
@@ -121,6 +88,7 @@ def test_response_header_opens_with_a_blank_line() -> None:
     # Act
     ShellOutputSink(console).render_response_header("assistant")  # type: ignore[arg-type]
 
-    # Assert: blank line first, then the ● marker.
-    assert console.lines[0] == ""
-    assert "●" in console.lines[1]
+    # Assert: marker on the first painted line — no spacer row above.
+    assert console.lines
+    assert "Ω" in console.lines[0]
+    assert console.lines[0] != ""

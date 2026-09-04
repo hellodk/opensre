@@ -26,10 +26,16 @@ GUIDED_TOOLS = frozenset({"find_yc_api", "execute_yc_operation"})
 #: Tools named in the guidance that this tree does not ship would hand the model
 #: a next action it cannot take.
 LATER_FAMILY_TOOLS = (
-    "read_yc_db_logs",
     "read_yc_audit_events",
     "list_yc_k8s_clusters",
     "get_yc_k8s_cluster",
+)
+#: Tools the guidance may name because this tree does ship them. Kept explicit
+#: so that adding a family means moving a name across rather than deleting one.
+SHIPPED_FAMILY_TOOLS = (
+    "list_yc_db_clusters",
+    "get_yc_db_cluster",
+    "read_yc_db_logs",
 )
 
 
@@ -58,7 +64,7 @@ class TestTheSkillDocument:
 class TestWhatReachesTheModel:
     def test_both_generic_readers_carry_the_guidance(self) -> None:
         clear_tool_registry_cache()
-        tools = get_registered_tool_map("investigation")
+        tools = get_registered_tool_map("action")
 
         for name in sorted(GUIDED_TOOLS):
             assert tools[name].skill_guidance, f"{name} carries no guidance"
@@ -66,7 +72,7 @@ class TestWhatReachesTheModel:
     def test_the_pod_paragraph_survives_truncation(self) -> None:
         """Without it the agent burns the investigation looking for pods in the REST API."""
         clear_tool_registry_cache()
-        tools = get_registered_tool_map("investigation")
+        tools = get_registered_tool_map("action")
 
         for name in sorted(GUIDED_TOOLS):
             attached = tools[name].skill_guidance
@@ -80,9 +86,24 @@ class TestWhatReachesTheModel:
         for absent in LATER_FAMILY_TOOLS:
             assert absent not in result.skill.content, absent
 
+    def test_a_shipped_family_is_named_as_the_way_to_reach_it(self) -> None:
+        """The other half of the rule above: a tool that exists should be offered.
+
+        Leaving "not readable yet" in place after a family lands is the same
+        failure as naming a tool that does not exist - the model is told to fall
+        back when it could have read the thing.
+        """
+        result = load_tool_skill_guidance(SKILL_FILE, known_tool_names=GUIDED_TOOLS)
+
+        assert result.skill is not None
+        registered = get_registered_tool_map("action")
+        for shipped in SHIPPED_FAMILY_TOOLS:
+            assert shipped in registered, shipped
+            assert shipped in result.skill.content, shipped
+
     def test_the_attached_slice_stays_within_the_registry_ceiling(self) -> None:
         clear_tool_registry_cache()
-        tools = get_registered_tool_map("investigation")
+        tools = get_registered_tool_map("action")
 
         for name in sorted(GUIDED_TOOLS):
             assert len(tools[name].skill_guidance) <= MAX_ATTACHED_CHARS, name

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from surfaces.cli.wizard._ui import Choice
+from surfaces.cli.wizard.components import Choice
 
 ONBOARD_INTEGRATION_GROUP_ORDER: tuple[str, ...] = (
     "Observability",
@@ -149,7 +149,7 @@ ONBOARD_INTEGRATION_CHOICES: tuple[Choice, ...] = (
         value="discord",
         label="Discord",
         group="Incident & Comms",
-        hint="Trigger investigations via slash commands and post findings to threads",
+        hint="Chat with the agent from Slack threads",
     ),
     Choice(
         value="telegram",
@@ -176,12 +176,6 @@ ONBOARD_INTEGRATION_CHOICES: tuple[Choice, ...] = (
         hint="Create shareable incident postmortem reports",
     ),
     Choice(
-        value="notion",
-        label="Notion",
-        group="Incident & Comms",
-        hint="Post investigation reports to a Notion database",
-    ),
-    Choice(
         value="gitlab",
         label="Gitlab",
         group="Dev & Deploy",
@@ -200,12 +194,6 @@ ONBOARD_INTEGRATION_CHOICES: tuple[Choice, ...] = (
         hint="Let the agent inspect repos, PRs, and issues",
     ),
     Choice(
-        value="openclaw",
-        label="OpenClaw (recommended)",
-        group="MCP & Protocols",
-        hint="Connect OpenSRE to OpenClaw for editor-driven RCA, setup checks, and write-back",
-    ),
-    Choice(
         value="posthog_mcp",
         label="PostHog (MCP)",
         group="MCP & Protocols",
@@ -222,5 +210,5 @@ ONBOARD_INTEGRATION_CHOICES: tuple[Choice, ...] = (
 ONBOARD_SKIP_CHOICE = Choice(
     value="skip",
     label="Skip for now",
-    hint="Finish onboarding without configuring an integration",
+    hint="Finish setup without configuring an integration",
 )

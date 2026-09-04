@@ -177,7 +177,7 @@ def test_anthropic_rate_limit_error_is_retried_then_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate-limit is transient by design — retry with backoff like 500s do.
-    Without retry, a single 429 mid-investigation kills the whole case.
+    Without retry, a single 429 mid-turn kills the whole turn.
     """
     from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
 
@@ -403,6 +403,42 @@ def test_openai_insufficient_quota_raises_LLMCreditExhaustedError(
 
     # Fail fast — exactly one attempt, no retry waste.
     assert call_count == 1
+
+
+def test_opensre_payment_required_raises_upgrade_error_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hosted proxy returns HTTP 402 as a generic SDK status error."""
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    _install_fake_openai(monkeypatch)
+    call_count = 0
+    upgrade_url = "https://app.opensre.dev/usage"
+
+    class HostedPaymentRequired(Exception):
+        code = "opensre_credits_exhausted"
+        body = {
+            "code": "opensre_credits_exhausted",
+            "upgrade_url": "https://app.opensre.dev/usage",
+        }
+
+    def raise_payment_required(**_: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        raise HostedPaymentRequired("Payment required")
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=raise_payment_required))
+    )
+    client._model = "gpt-4o"
+    client._max_tokens = 512
+
+    with pytest.raises(OpenSRECreditsExhaustedError) as excinfo:
+        client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    assert call_count == 1
+    assert excinfo.value.upgrade_url == upgrade_url
 
 
 def test_anthropic_rate_limit_honors_retry_after_header(
@@ -853,7 +889,7 @@ def test_openai_rate_limit_error_is_retried_then_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate-limit is transient by design — retry with backoff like 500s do.
-    Without retry, a single 429 mid-investigation kills the whole case (matters
+    Without retry, a single 429 mid-turn kills the whole turn (matters
     especially on tight OpenAI tiers like gpt-4o's 30k TPM).
     """
     from core.llm.shared.openai_chat_completions import _RETRY_MAX_ATTEMPTS
@@ -1078,9 +1114,6 @@ def test_build_openai_tool_specs_preserves_additional_properties_false() -> None
 
 def test_build_openai_tool_specs_normalizes_anyof_optional_parameters() -> None:
     from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
-    from tests.core.runtime.llm.investigation_tool_schema_contract import (
-        assert_strict_tool_schema_node,
-    )
 
     tool = types.SimpleNamespace(
         name="optional_field_tool",
@@ -1098,9 +1131,8 @@ def test_build_openai_tool_specs_normalizes_anyof_optional_parameters() -> None:
     specs = build_openai_tool_specs([tool])
     parameters = specs[0]["function"]["parameters"]
     assert parameters["type"] == "object"
-    assert "anyOf" not in parameters["properties"]["optional_field"]
-    assert parameters["properties"]["optional_field"]["type"] == "string"
-    assert_strict_tool_schema_node(parameters, path="optional_field_tool")
+    optional_field = parameters["properties"]["optional_field"]
+    assert optional_field == {"type": "string"}, "anyOf/nullable must be flattened away"
 
 
 def test_get_llm_agent_routes_deepseek_to_openai_compatible_client(
@@ -1205,42 +1237,20 @@ def test_get_llm_agent_returns_cli_backed_client_for_cli_providers(
     )
 
 
-def test_get_llm_agent_openai_oauth_routes_to_codex_cli(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core.llm.transports.sdk.agent_clients import (
-        CLIBackedAgentClient,
-    )
+def test_get_llm_agent_openai_ignores_legacy_oauth_auth_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.transports.sdk.agent_clients import OpenAIAgentClient
 
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CODEX_MODEL", "gpt-5.5")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_REASONING_MODEL", "gpt-5.4")
 
     reset_llm_clients()
     client = get_llm(LLMRole.AGENT)
 
-    assert isinstance(client, CLIBackedAgentClient)
-    assert client._adapter.name == "codex"
-    assert client._model == "gpt-5.5"
-
-
-def test_get_llm_agent_anthropic_oauth_routes_to_claude_code_cli(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from core.llm.transports.sdk.agent_clients import (
-        CLIBackedAgentClient,
-    )
-
-    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
-    monkeypatch.setenv("LLM_AUTH_METHOD", "oauth")
-    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-opus-4-7")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    reset_llm_clients()
-    client = get_llm(LLMRole.AGENT)
-
-    assert isinstance(client, CLIBackedAgentClient)
-    assert client._adapter.name == "claude-code"
-    assert client._model == "claude-opus-4-7"
+    assert isinstance(client, OpenAIAgentClient)
 
 
 def test_cli_backed_agent_client_tool_call_parsing() -> None:
@@ -1324,80 +1334,44 @@ def test_try_parse_tool_call_json_recovers_when_unfenced_preamble_precedes_json(
     assert parsed["tool_calls"][0]["name"] == "t1"
 
 
-def test_cli_backed_agent_client_streamed_initial_prose_becomes_assistant_handoff() -> None:
-    """A CLI planner that starts writing the answer should hand off instead of running long."""
-
+def test_cli_backed_agent_client_accepts_plain_text_as_final_answer() -> None:
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 
-    class _ClosingChunkStream:
-        def __init__(self) -> None:
-            self.closed = False
-            self.yield_count = 0
-
-        def __iter__(self) -> _ClosingChunkStream:
-            return self
-
-        def __next__(self) -> str:
-            if self.closed:
-                raise StopIteration
-            self.yield_count += 1
-            if self.yield_count > 20:
-                pytest.fail("plain-text handoff guard did not stop the CLI stream")
-            return "OpenSRE is a command-line SRE assistant for operational work. "
-
-        def close(self) -> None:
-            self.closed = True
-
     class _FakeCLI:
-        def __init__(self, stream: _ClosingChunkStream) -> None:
-            self.stream = stream
-
-        def invoke_stream(self, prompt: str) -> _ClosingChunkStream:
-            _ = prompt
-            return self.stream
-
         def invoke(self, prompt: str) -> object:
             _ = prompt
-            pytest.fail("handoff guard should use streaming invocation")
+            return type("Response", (), {"content": "Direct answer"})()
 
-    stream = _ClosingChunkStream()
     client = CLIBackedAgentClient.__new__(CLIBackedAgentClient)
-    client._cli_client = _FakeCLI(stream)
-    result = client.invoke(
-        [{"role": "user", "content": "what is this tool and how do i use it in 10k words"}],
-        tools=[{"name": "assistant_handoff", "input_schema": {"type": "object"}}],
-    )
+    client._cli_client = _FakeCLI()
+    result = client.invoke([{"role": "user", "content": "what is this tool?"}], tools=[])
 
-    assert stream.closed
-    assert stream.yield_count < 20
-    assert result.content == ""
-    assert len(result.tool_calls) == 1
-    assert result.tool_calls[0].name == "assistant_handoff"
-    assert result.tool_calls[0].input == {"content": "chat:conversation"}
+    assert result.content == "Direct answer"
+    assert result.tool_calls == []
 
 
-def test_cli_backed_agent_client_streamed_tool_json_with_handoff_available() -> None:
-    """The prose guard must not swallow valid JSON tool calls."""
+def test_cli_backed_agent_client_parses_tool_json() -> None:
 
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 
     class _FakeCLI:
-        def invoke_stream(self, prompt: str) -> object:
-            _ = prompt
-            return iter([('{"tool_calls": [{"id": "c1", "name": "my_tool", "input": {"x": 1}}]}')])
-
         def invoke(self, prompt: str) -> object:
             _ = prompt
-            pytest.fail("handoff guard should use streaming invocation")
+            return type(
+                "Response",
+                (),
+                {
+                    "content": (
+                        '{"tool_calls": [{"id": "c1", "name": "my_tool", "input": {"x": 1}}]}'
+                    )
+                },
+            )()
 
     client = CLIBackedAgentClient.__new__(CLIBackedAgentClient)
     client._cli_client = _FakeCLI()
     result = client.invoke(
         [{"role": "user", "content": "investigate"}],
-        tools=[
-            {"name": "assistant_handoff", "input_schema": {"type": "object"}},
-            {"name": "my_tool", "input_schema": {"type": "object"}},
-        ],
+        tools=[{"name": "my_tool", "input_schema": {"type": "object"}}],
     )
 
     assert result.content == ""
@@ -1835,7 +1809,7 @@ def test_anthropic_unexpected_response_shape_raises_runtime_error(
 
 def test_anthropic_agent_client_emits_provider_usage(monkeypatch: pytest.MonkeyPatch) -> None:
     """Successful agent invokes must report provider token usage via the usage hook
-    so investigation-turn telemetry can carry real token counts (issue #3698)."""
+    so agent-turn telemetry can carry real token counts (issue #3698)."""
     from core.llm.shared.usage import set_usage_hook
 
     _install_fake_anthropic(monkeypatch)

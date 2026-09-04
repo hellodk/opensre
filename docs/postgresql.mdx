@@ -1,11 +1,11 @@
 ---
 title: "PostgreSQL"
-description: "Connect PostgreSQL so OpenSRE can diagnose database issues during investigations"
+description: "Connect PostgreSQL so OpenSRE can diagnose database issues"
 ---
 
 ## Overview
 
-OpenSRE uses PostgreSQL diagnostics to investigate database-related alerts — checking server health, surfacing slow queries, monitoring replication status, and analyzing table statistics. All queries are read-only SELECTs.
+OpenSRE uses PostgreSQL diagnostics to investigate database issues — checking server health, surfacing slow queries, monitoring replication status, and analyzing table statistics. All queries are read-only SELECTs.
 
 ## Prerequisites
 
@@ -98,7 +98,83 @@ Restart PostgreSQL, then:
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 ```
 
-## Investigation tools
+### Quick local test with Docker
+
+```bash
+docker run -d --name postgres-dev -p 127.0.0.1:5433:5432 \
+  -e POSTGRES_PASSWORD=verifypass \
+  -e POSTGRES_DB=app_db \
+  postgres:16 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
+
+i=0
+until docker exec postgres-dev pg_isready -U postgres > /dev/null 2>&1; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: PostgreSQL never became ready" >&2; exit 1; }
+  sleep 2
+done
+
+docker exec postgres-dev psql -U postgres -d app_db -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+docker exec postgres-dev psql -U postgres -d app_db -c "
+CREATE TABLE orders (id INT PRIMARY KEY, amount DECIMAL(10,2));
+INSERT INTO orders VALUES (1, 42.50), (2, 17.00);
+"
+docker exec postgres-dev psql -U postgres -d app_db -c "SELECT pg_sleep(2);" > /dev/null
+```
+
+```bash
+export POSTGRESQL_HOST=127.0.0.1
+export POSTGRESQL_PORT=5433
+export POSTGRESQL_DATABASE=app_db
+export POSTGRESQL_USERNAME=postgres
+export POSTGRESQL_PASSWORD=verifypass
+export POSTGRESQL_SSL_MODE=disable
+```
+
+Verify:
+
+```bash
+opensre integrations verify postgresql
+```
+
+```
+SERVICE    │ SOURCE    │ STATUS   │ DETAIL
+postgresql │ local env │ ✓ passed │ Connected to PostgreSQL 16.15
+           │           │          │ target database: app_db.
+```
+
+Use a temporary integration-store path so saved integrations cannot override the demo environment variables:
+
+```bash
+export OPENSRE_DEMO_STORE_DIR="$(mktemp -d /tmp/opensre-postgresql-demo.XXXXXX)"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$OPENSRE_DEMO_STORE_DIR/integrations.json"
+```
+
+The file does not need to exist. OpenSRE treats the missing temporary store as empty and resolves PostgreSQL from the exported variables above.
+
+Now ask the agent about the slow query:
+
+```bash
+opensre
+```
+
+Ask: *Does the app_db PostgreSQL instance have any slow queries?*
+
+Against this exact local instance the agent calls all 6 registered tools — slow
+queries, server status, current queries, lock status, table stats, and replication
+status — and correctly identifies the intentional `SELECT pg_sleep($1)` call
+(~2016 ms average) as the only slow query, with every other health indicator normal.
+
+Teardown:
+
+```bash
+docker rm -f postgres-dev
+rm -rf "$OPENSRE_DEMO_STORE_DIR"
+unset OPENSRE_DEMO_STORE_DIR OPENSRE_INTEGRATIONS_STORE_PATH
+unset POSTGRESQL_HOST POSTGRESQL_PORT POSTGRESQL_DATABASE
+unset POSTGRESQL_USERNAME POSTGRESQL_PASSWORD POSTGRESQL_SSL_MODE
+```
+
+## Tools
 
 | Tool | What it does |
 | --- | --- |

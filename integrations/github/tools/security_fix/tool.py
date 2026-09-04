@@ -7,7 +7,7 @@ from typing import Any
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.github.client import resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -108,7 +108,7 @@ def _confirm_fn(context: Any) -> Any:
         "Fix a GitHub security and quality issue, Dependabot alert, "
         "code-scanning/CodeQL alert, or Code Quality finding "
         "in the current repository with built-in local fixers and an auto-detected "
-        "coding agent (Pi, Claude Code, or Codex CLI). With open_pr=true, commit the "
+        "coding agent (Pi, Claude Code, Codex, or Cursor CLI). With open_pr=true, commit the "
         "fix to a fresh opensre/github-security-fix-* branch, push it, and open a PR. "
         "It refuses secret-scanning alerts because safe remediation requires "
         "credential rotation."

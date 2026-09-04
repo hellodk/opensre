@@ -6,15 +6,13 @@ Subpackages (by agent path):
   (no agent-path knowledge)
 * ``grounding/`` — prompt-side grounding providers
   (``DefaultPromptContextProvider``); distinct from harness ``grounding/``
-* ``assistant/`` — conversational answer path (parts → contributors →
-  envelope → turn)
-* ``action/`` — tool-calling / slash action-agent system + user prompts
-* ``gather/`` — evidence-gather system prompts
-* ``memory/`` — conversation window + prior-investigation recall fragments
+* ``action/`` — the single tool-calling agent's system + user prompts
+* ``memory/`` — conversation window + prior-turn recall fragments
 * ``runtime_facts/`` — runtime-metadata fact lines for prompt assembly
 * ``skills/`` — progressive skill index (thin) + markdown bodies on demand
 
-Root modules: ``rules.py`` (shared rule fragments), ``synthetic_failure.py``.
+Root modules: ``rules.py`` (shared rule fragments), ``system_prompt.py``
+(the shared ``opensre_system_prompt.md`` loader).
 """
 
 from __future__ import annotations
@@ -27,27 +25,10 @@ from core.agent_harness.prompts.action import (
     connected_integrations_block,
     prior_action_facts_block,
     recent_conversation_block,
+    repository_context_block,
     sanitize_action_text,
 )
-from core.agent_harness.prompts.assistant import (
-    AssistantPromptContextProvider,
-    AssistantPromptParts,
-    AssistantTurnPrompt,
-    _build_observation_block,
-    _build_system_prompt,
-    assemble_assistant_envelope,
-    build_assistant_system_prompt,
-    build_assistant_system_prompt_envelope,
-    build_cli_agent_prompt_from_provider,
-    build_cli_agent_turn_prompt,
-    build_environment_block,
-    build_observation_block,
-)
-from core.agent_harness.prompts.gather import (
-    build_gather_system_prompt,
-    build_gather_system_prompt_envelope,
-    build_gather_system_prompt_from_turn_snapshot,
-)
+from core.agent_harness.prompts.grounding import build_environment_block
 from core.agent_harness.prompts.kernel import (
     PromptBlock,
     PromptBlockId,
@@ -70,11 +51,6 @@ from core.agent_harness.prompts.skills import (
 __all__ = [
     "SKILLS_HEADER",
     "_SYSTEM_PROMPT_BASE",
-    "_build_observation_block",
-    "_build_system_prompt",
-    "AssistantPromptContextProvider",
-    "AssistantPromptParts",
-    "AssistantTurnPrompt",
     "PromptBlock",
     "PromptBlockId",
     "PromptBlockKind",
@@ -82,20 +58,11 @@ __all__ = [
     "PromptSurface",
     "PromptTier",
     "SurfaceProfile",
-    "assemble_assistant_envelope",
     "build_action_system_prompt",
     "profile_for",
     "build_action_system_prompt_envelope",
     "build_action_user_message",
-    "build_assistant_system_prompt",
-    "build_assistant_system_prompt_envelope",
-    "build_gather_system_prompt",
-    "build_gather_system_prompt_envelope",
-    "build_gather_system_prompt_from_turn_snapshot",
-    "build_cli_agent_prompt_from_provider",
-    "build_cli_agent_turn_prompt",
     "build_environment_block",
-    "build_observation_block",
     "connected_integrations_block",
     "list_action_skills",
     "load_skill_body",
@@ -103,6 +70,7 @@ __all__ = [
     "load_skills_index",
     "prior_action_facts_block",
     "recent_conversation_block",
+    "repository_context_block",
     "sanitize_action_text",
     "skills_dir",
 ]

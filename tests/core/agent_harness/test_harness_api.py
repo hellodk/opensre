@@ -37,25 +37,20 @@ ROOT_API = frozenset(
 
 PORTS = frozenset(
     {
-        "AnswerRequest",
+        "CancelCapableConsole",
         "ConfirmFn",
         "ConsoleBindable",
         "ErrorReporter",
-        "EvidenceGatherer",
         "ExecuteActions",
         "GatheredEvidence",
-        "InvestigationPortsFactory",
         "LlmFactory",
         "LlmProviderPortsFactory",
         "OutputBindable",
         "OutputSink",
         "PromptContextProvider",
-        "ReasoningClientProvider",
-        "RunRecordFactory",
         "SessionBindable",
         "SessionState",
         "SlashPortsFactory",
-        "StreamAnswerFn",
         "SubprocessPresenterFactory",
         "TaskCancelPortsFactory",
         "ToolEventObserver",
@@ -73,6 +68,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "SessionGoalReason",
             "SessionGoalStatus",
             "attach_session_goal",
+            "build_session_goal",
             "clear_session_goal",
             "format_session_goal_progress",
             "format_session_goal_status_line",
@@ -87,9 +83,6 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
         {
             "PendingScheduleOffer",
             "PendingUserChoice",
-            "background_investigations",
-            "background_mode_enabled",
-            "background_notification_channels",
             "clear_competing_pending_offers",
             "clear_pending_autosubmit",
             "compact_session_branch",
@@ -153,11 +146,36 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "sessions_dir",
         }
     ),
+    "handoff": frozenset(
+        {
+            "AskUserQuestion",
+            "format_ask_user_answers",
+            "parse_ask_user_answers",
+        }
+    ),
+    "task_plan": frozenset(
+        {
+            "PLAN_STATUS_GLYPH",
+            "PlanStep",
+            "PlanStepStatus",
+            "TaskPlan",
+            "apply_update_plan_host_policy",
+            "apply_update_plan_session",
+            "ensure_active_step",
+            "format_plan_header",
+            "format_task_plan_plain",
+            "is_plan_diagnosis_prose",
+            "parse_task_plan",
+            "promote_first_pending_step",
+            "record_task_plan_work",
+            "take_completed_plan_breakdown",
+            "task_plan_to_payload",
+        }
+    ),
 }
 
 RUNTIME = frozenset(
     {
-        "MAX_REPORT_GATHER_ITERATIONS",
         "ActionTurnRunner",
         "AgentBuildConfig",
         "AgentBusyError",
@@ -165,7 +183,6 @@ RUNTIME = frozenset(
         "DefaultHeadlessBuild",
         "DescribeTool",
         "DefaultToolProvider",
-        "GatherPhase",
         "HeadlessAgent",
         "InMemoryHeadlessBuild",
         "TurnBinding",
@@ -174,15 +191,15 @@ RUNTIME = frozenset(
         "build_agent",
         "default_llm_factory",
         "default_reasoning_llm_factory",
+        "resolve_agent_ports",
     }
 )
 
 TOOLS = frozenset(
     {
-        "EVIDENCE_KIND_VALUES",
-        "ActionToolContext",
-        "HandoffField",
+        "ActionToolScope",
         "action_context_from_agent_context",
+        "action_scope_from_agent_context",
         "capability_available_from_sources",
         "coerce_gathered_evidence",
         "execute_with_action_context",

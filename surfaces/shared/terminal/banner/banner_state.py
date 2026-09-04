@@ -1,82 +1,20 @@
-"""Live system state helpers for the agent ready-state banner.
-
-Queries integration health and alert-listener config without making
-network calls — results are cached-once per banner render and used by
-:func:`surfaces.shared.terminal.banner.banner._build_ambient_right_column`.
-"""
+"""Offline status probes for the compact launch banner."""
 
 from __future__ import annotations
 
-from rich.text import Text
-
-from infrastructure.terminal.theme import BRAND, DIM, HIGHLIGHT, SECONDARY, WARNING
-
-# Display-name overrides for known integration service slugs.
-_SERVICE_DISPLAY_NAMES: dict[str, str] = {
-    "grafana": "Grafana",
-    "datadog": "Datadog",
-    "honeycomb": "Honeycomb",
-    "coralogix": "Coralogix",
-    "aws": "AWS",
-    "github": "GitHub",
-    "sentry": "Sentry",
-    "prometheus": "Prometheus",
-    "loki": "Loki",
-    "elasticsearch": "Elasticsearch",
-    "bigquery": "BigQuery",
-    "pagerduty": "PagerDuty",
-    "slack": "Slack",
-    "telegram": "Telegram",
-    "signoz": "SigNoz",
-    "jira": "Jira",
-    "servicenow": "ServiceNow",
-    "gitlab": "GitLab",
-    "vercel": "Vercel",
-    "mongodb": "MongoDB",
-    "postgresql": "PostgreSQL",
-    "mysql": "MySQL",
-    "redis": "Redis",
-    "kafka": "Kafka",
-    "rabbitmq": "RabbitMQ",
-    "clickhouse": "ClickHouse",
-    "mariadb": "MariaDB",
-    "kubernetes": "Kubernetes",
-    "betterstack": "Better Stack",
-    "snowflake": "Snowflake",
-    "new_relic": "New Relic",
-    "opsgenie": "OpsGenie",
-    "linear": "Linear",
-    "supabase": "Supabase",
-}
+from dataclasses import dataclass
 
 
-def integration_display_name(service: str) -> str:
-    """Human-readable label for an integration service slug."""
-    return _SERVICE_DISPLAY_NAMES.get(service, service.replace("_", " ").title())
+@dataclass(frozen=True)
+class LaunchStatus:
+    """Counts displayed beside the OpenSRE mark."""
 
-
-def _load_integration_health() -> list[tuple[str, str]]:
-    """Return ``(display_name, status)`` for each configured integration.
-
-    ``status`` is ``"ok"`` or ``"incomplete"`` (e.g. a hosted MCP record saved
-    without an API token). Offline and best-effort: never raises and never makes
-    network calls, so the banner reflects health without slowing startup.
-    """
-    try:
-        from integrations.catalog import (  # lazy — avoids circular deps
-            configured_integration_health,
-        )
-
-        return [
-            (integration_display_name(service), status)
-            for service, status in configured_integration_health()
-        ]
-    except Exception:
-        return []
+    skill_count: int
+    integration_count: int
 
 
 def _count_loaded_skills() -> int:
-    """Return the number of discovered action-agent skills. Never raises."""
+    """Return the number of discovered action-agent skills."""
     try:
         from core.agent_harness.spi.grounding import list_action_skills
 
@@ -85,97 +23,22 @@ def _count_loaded_skills() -> int:
         return 0
 
 
-def _count_scheduled_tasks() -> int:
-    """Return the number of persisted scheduled tasks. Never raises."""
+def _count_configured_integrations() -> int:
+    """Return how many integrations are configured (any health state)."""
     try:
-        from infrastructure.scheduling.scheduler.store import list_tasks
+        from integrations.catalog import configured_integration_health
 
-        return len(list_tasks())
+        return len(configured_integration_health())
     except Exception:
         return 0
 
 
-def _is_alert_listener_active() -> bool:
-    """Return True if the alert listener is enabled in config. Never raises."""
-    try:
-        from config.repl_config import ReplConfig
-
-        return ReplConfig.load(apply_active_theme=False).alert_listener_enabled
-    except Exception:
-        return False
+def load_launch_status() -> LaunchStatus:
+    """Load the startup-safe status summary without network calls."""
+    return LaunchStatus(
+        skill_count=_count_loaded_skills(),
+        integration_count=_count_configured_integrations(),
+    )
 
 
-def _build_ambient_right_column(session: object = None) -> Text:
-    """Right column for returning users: live integration status and alert listener state."""
-    parts: list[Text] = []
-
-    # Integrations — annotate by offline health so the banner never implies a
-    # half-configured integration (e.g. a hosted MCP record with no API token)
-    # is connected. A "⚠" + dim name marks an integration missing credentials.
-    parts.append(Text("Integrations", style=f"bold {BRAND}"))
-    entries = _load_integration_health()
-    if entries:
-        _MAX_SHOWN = 6
-        shown = entries[:_MAX_SHOWN]
-        overflow = len(entries) - len(shown)
-        name_line = Text(overflow="fold")
-        for idx, (name, status) in enumerate(shown):
-            if idx:
-                name_line.append("  ·  ", style=DIM)
-            if status == "incomplete":
-                name_line.append(f"{name} ⚠", style=DIM)
-            else:
-                name_line.append(name, style=SECONDARY)
-        if overflow:
-            name_line.append(f"  +{overflow}", style=DIM)
-        parts.append(name_line)
-        if any(status == "incomplete" for _name, status in entries):
-            parts.append(Text("⚠ incomplete — run /integrations verify", style=WARNING))
-    else:
-        parts.append(Text("run /onboard to connect tools", style=DIM))
-
-    parts.append(Text("───", style=DIM))
-
-    # Alert listener
-    parts.append(Text("Alert listener", style=f"bold {BRAND}"))
-    if _is_alert_listener_active():
-        listener_line = Text()
-        listener_line.append("● ", style=f"bold {HIGHLIGHT}")
-        listener_line.append("active", style=SECONDARY)
-        parts.append(listener_line)
-    else:
-        parts.append(Text("○  not configured — /alerts for setup", style=DIM))
-
-    parts.append(Text("───", style=DIM))
-
-    # Skills and scheduled tasks.
-    skills_line = Text(overflow="fold")
-    skills_line.append("Skills", style=f"bold {BRAND}")
-    skills_line.append(f" ({_count_loaded_skills()}) loaded into cyberdeck", style=SECONDARY)
-    skills_line.append("  ·  ", style=DIM)
-    skills_line.append("Scheduled tasks", style=f"bold {BRAND}")
-    skills_line.append(f" ({_count_scheduled_tasks()})", style=SECONDARY)
-    parts.append(skills_line)
-
-    # Session summary — only shown when /clear is used mid-session with history
-    if session is not None:
-        history: list[object] = getattr(session, "history", [])
-        if history:
-            parts.append(Text("───", style=DIM))
-            parts.append(Text("This session", style=f"bold {BRAND}"))
-            count = len(history)
-            noun = "interaction" if count == 1 else "interactions"
-            parts.append(Text(f"{count} {noun}", style=SECONDARY))
-
-    return Text("\n").join(parts)
-
-
-__all__ = [
-    "_SERVICE_DISPLAY_NAMES",
-    "integration_display_name",
-    "_build_ambient_right_column",
-    "_count_loaded_skills",
-    "_count_scheduled_tasks",
-    "_is_alert_listener_active",
-    "_load_integration_health",
-]
+__all__ = ["LaunchStatus", "load_launch_status"]

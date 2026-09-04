@@ -1,6 +1,6 @@
 """``opensre sentry digest`` — scheduled Sentry morning digest delivery.
 
-Uses the headless sentry-summary skill path (not the investigation pipeline or
+Uses the headless sentry-summary skill path (not the
 generic ``opensre cron`` kinds). Tasks are stored in the shared scheduler store
 but are created and listed only through this command group.
 """
@@ -159,6 +159,7 @@ def sentry_uptime_watch_add(
     if params:
         _console.print(f"  Project: {params['project_slug']}")
 
+    from bootstrap.adapters import install_scheduled_delivery_adapters
     from infrastructure.scheduling.scheduler.executor import deliver_scheduled_message
     from integrations.sentry.uptime import format_uptime_watch_active_message
 
@@ -168,6 +169,9 @@ def sentry_uptime_watch_add(
         timezone=added.timezone,
         project_slug=params.get("project_slug", ""),
     )
+    # This command boots no scheduler profile, so bind the delivery adapters the
+    # activation notice resolves through before sending it.
+    install_scheduled_delivery_adapters()
     ok, error, _message_id = deliver_scheduled_message(added, active_message)
     if ok:
         _console.print("[green]Activation notice sent to chat.[/green]")
@@ -234,6 +238,7 @@ def sentry_uptime_watch_remove(task_id: str) -> None:
 @click.argument("task_id")
 def sentry_uptime_watch_run(task_id: str) -> None:
     """Run a scheduled Sentry uptime watch task immediately."""
+    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
     from infrastructure.scheduling.scheduler.store import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
@@ -248,7 +253,7 @@ def sentry_uptime_watch_run(task_id: str) -> None:
     require_digest_delivery_provider(task.provider.value)
 
     _console.print(f"Running Sentry uptime watch task {task_id}...")
-    success = run_task_now(task_id)
+    success = run_task_now(task_id, scheduler_runners())
     if success:
         _console.print("[green]Done.[/green]")
     else:
@@ -266,7 +271,7 @@ def sentry_uptime_watch_run(task_id: str) -> None:
 )
 def sentry_digest_run(project_slug: str) -> None:
     """Run the morning digest once and print the report to stdout."""
-    from infrastructure.scheduling.scheduler.agent_runner import invoke_agent_runner
+    from bootstrap.adapters import scheduler_runners
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     payload: dict[str, str] = {
@@ -278,7 +283,7 @@ def sentry_digest_run(project_slug: str) -> None:
         payload["project_slug"] = project_slug.strip()
 
     try:
-        message = invoke_agent_runner(payload)
+        message = scheduler_runners().agent(payload)
     except Exception as exc:
         _console.print(f"[red]Sentry morning digest failed: {exc}[/red]")
         raise SystemExit(1) from exc
@@ -422,6 +427,7 @@ def sentry_digest_schedule_remove(task_id: str) -> None:
 @click.argument("task_id")
 def sentry_digest_schedule_run(task_id: str) -> None:
     """Run a scheduled Sentry digest task immediately."""
+    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
     from infrastructure.scheduling.scheduler.store import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
@@ -436,7 +442,7 @@ def sentry_digest_schedule_run(task_id: str) -> None:
     require_digest_delivery_provider(task.provider.value)
 
     _console.print(f"Running Sentry digest task {task_id}...")
-    success = run_task_now(task_id)
+    success = run_task_now(task_id, scheduler_runners())
     if success:
         _console.print("[green]Done.[/green]")
     else:

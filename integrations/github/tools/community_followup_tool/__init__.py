@@ -7,13 +7,16 @@ from typing import Any
 
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
+)
+from integrations.github.tools.community_followup_tool.mapper import (
+    _map_summarize_community_followups,
 )
 from integrations.github.tools.workflow import summarize_community_followups_from_comments
 
@@ -44,8 +47,9 @@ def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
         "Drafting suggested replies without mutating GitHub or messaging platforms",
     ],
     anti_examples=["Posting replies", "Changing GitHub labels or assignees"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    evidence_mapper=_map_summarize_community_followups,
     input_schema={
         "type": "object",
         "properties": {

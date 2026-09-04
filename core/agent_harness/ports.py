@@ -17,7 +17,7 @@ from typing import Any, Protocol, runtime_checkable
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.turns.gather_observation import GatheredEvidence
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
-from core.llm.types import AgentLLMClient, StreamingReasoningClient
+from core.llm.types import AgentLLMClient
 from core.tool.execution import ToolExecutionHooks
 
 # A tool-loop event callback: ``(kind, data)`` where kind is e.g. "tool_start".
@@ -79,8 +79,6 @@ class SessionState(Protocol):
     def configured_integrations(self) -> Sequence[str]:
         raise NotImplementedError
 
-    last_state: dict[str, Any] | None
-    last_synthetic_observation_path: str | None
     reasoning_effort: ReasoningEffortChoice | None
 
     # --- turn execution state ---
@@ -91,6 +89,8 @@ class SessionState(Protocol):
     # --- gather caches ---
     resolved_integrations_cache: dict[str, Any] | None
     vcs_repo_scopes: dict[str, tuple[str, ...]]
+    active_vcs_repositories: dict[str, str]
+    known_vcs_repo_scopes: dict[str, dict[str, tuple[str, ...]]]
 
     def record(self, kind: str, text: str, *, ok: bool = True) -> None:
         """Append a record of an executed action/turn to the session log."""
@@ -111,6 +111,18 @@ class SessionBindable(Protocol):
 
 
 @runtime_checkable
+class CancelCapableConsole(Protocol):
+    """Console that exposes a cancellation flag and basic print capability."""
+
+    @property
+    def cancel_requested(self) -> bool:
+        """True if the user requested to cancel the current operation."""
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        """Print output to the console."""
+
+
+@runtime_checkable
 class ConsoleBindable(Protocol):
     """Tool port that can retarget the turn console (cancel / TTY observers).
 
@@ -118,7 +130,7 @@ class ConsoleBindable(Protocol):
     the shared ``sink.turn_cancel`` Event for that message.
     """
 
-    def bind_console(self, console: Any) -> None:
+    def bind_console(self, console: CancelCapableConsole) -> None:
         """Point tool UI / cancel probes at ``console`` for this turn."""
 
 
@@ -175,9 +187,9 @@ class ErrorReporter(Protocol):
 class PromptContextProvider(Protocol):
     """Supplies grounding text for the conversational assistant prompt.
 
-    The grounding corpora (CLI reference, repo map, docs, investigation-flow,
-    environment) are surface/repo content; the shell adapter wires its grounding
-    caches, the headless adapter returns empty strings.
+    The grounding corpora (CLI reference, repo map, docs, environment) are
+    surface/repo content; the shell adapter wires its grounding caches, the
+    headless adapter returns empty strings.
     """
 
     def surface(self) -> str:
@@ -191,9 +203,6 @@ class PromptContextProvider(Protocol):
         raise NotImplementedError
 
     def docs(self, query: str) -> str:
-        raise NotImplementedError
-
-    def investigation_flow(self) -> str:
         raise NotImplementedError
 
     def runtime_facts(self) -> Mapping[str, Any]:
@@ -210,67 +219,8 @@ class PromptContextProvider(Protocol):
     def setup_state(self) -> str:
         """The operator's connected integrations and schedules, as a fact block."""
 
-    def suggested_synthetic_prompt(self) -> str:
-        raise NotImplementedError
-
     def log_diagnostics(self, reason: str) -> None:
         raise NotImplementedError
-
-
-@runtime_checkable
-class ReasoningClientProvider(Protocol):
-    """Provides the streaming reasoning LLM client for the assistant answer."""
-
-    def get(self) -> StreamingReasoningClient | None:
-        """Return the reasoning client, or ``None`` when one cannot be built."""
-
-
-@runtime_checkable
-class RunRecordFactory(Protocol):
-    """Builds the opaque per-answer LLM-run record (telemetry) from raw inputs."""
-
-    def build(self, *, client: Any, prompt: str, response_text: str, started: float) -> Any:
-        raise NotImplementedError
-
-
-@dataclass(frozen=True)
-class AnswerRequest:
-    """Per-turn inputs for the direct-answer (no tools) path.
-
-    Surface-bound ports (session, output, prompts, …) live on the caller;
-    only what varies per turn goes here. Confirm/TTY stay on the action path —
-    the direct answer never prompts or branches on them.
-    """
-
-    tool_observation: str | None = None
-    tool_observation_on_screen: bool = True
-    handoff_contents: tuple[str, ...] = ()
-    # ``Any`` rather than ``TurnPlan``: that type imports ``SessionState`` from
-    # here, so naming it — even under ``TYPE_CHECKING`` — closes an import cycle
-    # this repo's check rejects.
-    turn_plan: Any = None
-    # Gather answers defer Want-me-to paint until the harness normalizes the
-    # closer (dual paste/integrations menus must not be what the user sees).
-    defer_want_me_to_closer: bool = False
-
-
-class StreamAnswerFn(Protocol):
-    """Bound direct-answer callable (no tools) handed to ``run_turn``."""
-
-    def __call__(self, text: str, request: AnswerRequest) -> Any:
-        """Stream one grounded answer; return the LLM-run record or None."""
-
-
-class EvidenceGatherer(Protocol):
-    """Bound evidence-gather callable handed to ``run_turn``."""
-
-    def __call__(self, text: str, *, turn_plan: Any = None) -> str | GatheredEvidence | None:
-        """Gather read-only evidence for ``text``, or return None.
-
-        Prefer :class:`~core.agent_harness.turns.gather_observation.GatheredEvidence`
-        (observation text + structured tool payloads). Legacy ``str`` return
-        values are still accepted by the orchestrator.
-        """
 
 
 class ExecuteActions(Protocol):
@@ -314,28 +264,23 @@ class TurnBinding:
     output: OutputSink | None = None
     accounting: TurnAccounting | None = None
     tool_hooks: ToolExecutionHooks | None = None
-    console: Any | None = None
+    console: CancelCapableConsole | None = None
     confirm_fn: ConfirmFn | None = None
     is_tty: bool | None = None
 
 
 __all__ = [
-    "AnswerRequest",
-    "StreamAnswerFn",
+    "CancelCapableConsole",
     "ConfirmFn",
     "ConsoleBindable",
     "ErrorReporter",
-    "EvidenceGatherer",
     "ExecuteActions",
     "GatheredEvidence",
-    "InvestigationPortsFactory",
     "LlmFactory",
     "LlmProviderPortsFactory",
     "OutputBindable",
     "OutputSink",
     "PromptContextProvider",
-    "ReasoningClientProvider",
-    "RunRecordFactory",
     "SessionBindable",
     "SessionState",
     "SlashPortsFactory",
@@ -358,16 +303,15 @@ SubprocessPresenterFactory = Callable[
 
 
 # Host capabilities an action tool calls back into: named commands, LLM-provider
-# switching, task cancellation and investigation launch. Their contracts live in
+# switching, and task cancellation. Their contracts live in
 # ``tools`` beside the tools that call them (see
-# ``tools.interactive_shell.shared.host_ports.ExecutionGate``), and naming those
+# ``tools.interactive_shell.shared.host_contracts.ExecutionGate``), and naming those
 # Protocols here would mean ``core`` importing ``tools``.
 #
 # The return is ``object``, not ``Any``: ``core`` calls the factory and hands the
-# result to ``ActionToolContext`` without reading a single attribute, and
+# result to ``ActionToolScope`` without reading a single attribute, and
 # ``object`` is the type that says so. ``Any`` would silence a typo here as
 # readily as it silences the import ``core`` is avoiding.
-InvestigationPortsFactory = Callable[[], object]
 LlmProviderPortsFactory = Callable[[], object]
 TaskCancelPortsFactory = Callable[[], object]
 SlashPortsFactory = Callable[[], object]

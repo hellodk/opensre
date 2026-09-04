@@ -3,23 +3,25 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.mongodb_atlas import (
     MongoDBAtlasConfig,
     atlas_extract_params,
     atlas_is_available,
     get_cluster_events,
 )
+from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_cluster_events
 
 
 @tool(
     name="get_mongodb_atlas_cluster_events",
     description="Retrieve recent events for a MongoDB Atlas cluster including operational events, configuration changes, and user actions.",
     source="mongodb_atlas",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,
     injected_params=("api_private_key", "api_public_key", "base_url"),
     extract_params=atlas_extract_params,
+    evidence_mapper=map_get_mongodb_atlas_cluster_events,
 )
 def get_mongodb_atlas_cluster_events(
     api_public_key: str,

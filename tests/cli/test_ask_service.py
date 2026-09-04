@@ -16,7 +16,6 @@ from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 def _turn(
     response: str = "answer",
     *,
-    answered: bool = True,
     cancelled: bool = False,
 ) -> TurnResult:
     return TurnResult(
@@ -29,7 +28,6 @@ def _turn(
             handled=False,
         ),
         assistant_response_text=response,
-        llm_run=object() if answered else None,
     )
 
 
@@ -67,29 +65,26 @@ class _FakeSession:
 class _FakeAgentSession:
     session = _FakeSession()
 
-    def __init__(self, _config: object) -> None:
-        self.attached: object | None = None
+    @classmethod
+    def start(cls, _config: object, **kwargs: object) -> _FakeAgentSession:
+        prepare = kwargs.get("prepare_session")
+        if callable(prepare):
+            prepare(cls.session)
+        return cls()
 
-    def startup(self) -> object:
-        return type(
-            "Startup",
-            (),
-            {"session": self.session, "prompts": object()},
-        )()
+    @property
+    def bound_session(self) -> _FakeSession:
+        return type(self).session
 
-    def attach_agent(self, agent: object) -> None:
-        self.attached = agent
-
-    def chat(self, _prompt: str) -> TurnResult:
+    def chat_until_goal(self, _prompt: str) -> object:
         raise RuntimeError("turn failed")
 
 
-class _FakeHeadlessBuild:
-    def __init__(self, **_kwargs: object) -> None:
-        pass
+class _GoalRun:
+    """Stand-in for SessionGoalRunResult: only ``last_result`` is read."""
 
-    def agent(self, **_kwargs: object) -> object:
-        return object()
+    def __init__(self, last_result: TurnResult) -> None:
+        self.last_result = last_result
 
 
 def test_run_ask_returns_success(monkeypatch) -> None:
@@ -103,21 +98,65 @@ def test_run_ask_returns_success(monkeypatch) -> None:
 
 
 def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:
+    # Arrange: the built session fails its turn; the ephemeral session must
+    # still be closed (extract_memory=False) via the finally block.
     manager = _FakeSessionManager()
     _FakeAgentSession.session = _FakeSession()
     monkeypatch.setattr(service, "SessionManager", lambda: manager)
     monkeypatch.setattr(service, "AgentSession", _FakeAgentSession)
-    monkeypatch.setattr(service, "DefaultHeadlessBuild", _FakeHeadlessBuild)
-    monkeypatch.setattr(
-        service,
-        "DefaultToolProvider",
-        lambda *_args, **_kwargs: object(),
-    )
 
+    # Act / Assert
     with pytest.raises(RuntimeError, match="turn failed"):
         service._run_agent_turn("prompt", ToolExecutionHooks())
 
     assert manager.closed == [(_FakeAgentSession.session, False)]
+
+
+def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch) -> None:
+    """The collapse onto AgentSession.start must still bind the approval hooks
+    and strip the one-shot ask agent's forbidden capabilities."""
+    # Arrange: record what ask hands AgentSession.start, and let its
+    # prepare_session run against a session carrying a forbidden capability.
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.available_capabilities = {"slash_commands": ("live",), "shell": ("keep",)}
+    recorded: dict[str, object] = {}
+    hooks = ToolExecutionHooks()
+
+    class _RecordingAgentSession:
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _RecordingAgentSession:
+            recorded.update(kwargs)
+            prepare = kwargs["prepare_session"]
+            assert callable(prepare)
+            prepare(session)
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat_until_goal(self, prompt: str) -> _GoalRun:
+            # chat_until_goal, not chat: ask must run the session-goal loop so a
+            # multi-step turn completes instead of stopping after the first.
+            recorded["prompt"] = prompt
+            return _GoalRun(_turn())
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
+
+    # Act
+    result = service._run_agent_turn("hello", hooks)
+
+    # Assert: hooks bound, forbidden capability zeroed (unrelated kept), one-shot
+    # dispatched, ephemeral session closed without memory extraction.
+    assert recorded["tool_hooks"] is hooks
+    assert recorded["is_tty"] is False
+    assert session.available_capabilities["slash_commands"] == ()
+    assert session.available_capabilities["shell"] == ("keep",)
+    assert recorded["prompt"] == "hello"
+    assert result.primary_response_text == "answer"
+    assert manager.closed == [(session, False)]
 
 
 def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
@@ -135,13 +174,40 @@ def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
     assert outcome.denied_tools == ("shell_run",)
     assert outcome.exit_code is AskExitCode.APPROVAL_DENIED
     assert "downstream detail" not in outcome.response
+    # The denial is actionable: it names the exact flags that unblock the run.
+    assert "--allowed-tool shell_run" in outcome.response
+    assert "--dangerously-bypass-approvals" in outcome.response
+
+
+def test_run_ask_maps_hosted_credit_exhaustion_to_nonzero_upgrade_error(
+    monkeypatch,
+) -> None:
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+
+    upgrade_url = "https://app.opensre.test/usage"
+
+    def exhaust_credits(_prompt: str, _hooks: ToolExecutionHooks) -> TurnResult:
+        raise OpenSRECreditsExhaustedError(
+            "OpenSRE hosted credits are exhausted.",
+            upgrade_url=upgrade_url,
+        )
+
+    monkeypatch.setattr(service, "_run_agent_turn", exhaust_credits)
+
+    outcome = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.exit_code is AskExitCode.ERROR
+    assert outcome.error is not None
+    assert outcome.error.suggestion is not None
+    assert upgrade_url in outcome.error.suggestion
 
 
 def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "_run_agent_turn",
-        lambda _prompt, _hooks: _turn("", answered=False),
+        lambda _prompt, _hooks: _turn(""),
     )
     incomplete = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 

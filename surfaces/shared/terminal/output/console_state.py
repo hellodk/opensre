@@ -10,7 +10,7 @@ _live_console: Console | None = None
 _active_display: Any | None = None
 _completed_footer_snapshot: tuple[str, float, str, str] | None = None
 _tracker_toggle_stop_fn: Callable[[], None] | None = None
-_investigation_spinner: Any | None = None
+_turn_spinner: Any | None = None
 
 
 def set_tracker_toggle_stop_fn(fn: Callable[[], None] | None) -> None:
@@ -19,20 +19,18 @@ def set_tracker_toggle_stop_fn(fn: Callable[[], None] | None) -> None:
     _tracker_toggle_stop_fn = fn
 
 
-def set_investigation_spinner(spinner: Any | None) -> None:
-    """Register the prompt spinner the investigation display animates.
+def set_turn_spinner(spinner: Any | None) -> None:
+    """Register the active turn's prompt spinner so displays can animate it.
 
-    ``/investigate`` dispatches as a literal slash command, so the turn-level
-    "thinking" spinner never starts. Registering the active turn's spinner here
-    lets ``_ReplEventLogDisplay`` drive it with per-stage phase labels
-    (``set_phase``) and stop it (``stop``) as the pipeline runs.
+    Lets rendering helpers drive the spinner with phase labels (``set_phase``)
+    and stop it (``stop``) while the turn runs.
     """
-    global _investigation_spinner
-    _investigation_spinner = spinner
+    global _turn_spinner
+    _turn_spinner = spinner
 
 
-def get_investigation_spinner() -> Any | None:
-    return _investigation_spinner
+def get_turn_spinner() -> Any | None:
+    return _turn_spinner
 
 
 def _capture_footer_snapshot(display: Any) -> None:

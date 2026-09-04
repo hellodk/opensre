@@ -50,13 +50,13 @@ class _Backend:
 class TestRegistration:
     def test_both_tools_are_discoverable(self) -> None:
         """Tools stay invisible until their package is listed for discovery."""
-        registered = get_registered_tool_map("investigation")
+        registered = get_registered_tool_map("action")
 
         assert "execute_yc_operation" in registered
         assert "find_yc_api" in registered
 
     def test_credentials_are_hidden_from_the_model(self) -> None:
-        tool = get_registered_tool_map("investigation")["execute_yc_operation"]
+        tool = get_registered_tool_map("action")["execute_yc_operation"]
         properties = set(tool.public_input_schema.get("properties", {}))
 
         assert properties == {"service", "path", "params", "page_token"}
@@ -243,7 +243,7 @@ class TestItNamesOnlyToolsThatExist:
     def test_no_shipped_text_names_a_missing_tool(self) -> None:
         from tools.registry import get_registered_tool_map
 
-        registered = set(get_registered_tool_map("investigation"))
+        registered = set(get_registered_tool_map("action"))
         tool = get_registered_tool_map()["execute_yc_operation"]
         named = {
             word.strip(".,'\"")
@@ -273,6 +273,48 @@ class TestTheIndexIsTheAllowlist:
 
         assert result["success"] is False
         assert "find_yc_api" in result["error"]
+        assert "not a documented read" in result["error"]
+
+    def test_the_gate_holds_for_a_name_only_the_tools_use(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The load-balancer tool says "alb"; the index says "apploadbalancer"."""
+
+        def _never(*_a: object, **_k: object) -> None:
+            raise AssertionError("no request should be made")
+
+        monkeypatch.setattr("integrations.yandex_cloud.rest_client.send_request", _never)
+        result = execute_yc_operation(
+            service="alb",
+            path="/apploadbalancer/v1/notARealCollection",
+            **_CREDENTIALS,
+        )
+
+        assert result["success"] is False
+        assert "not a documented read" in result["error"]
+
+    @pytest.mark.parametrize("service", ["COMPUTE", "Compute", " compute "])
+    def test_the_gate_holds_however_the_service_is_spelled(
+        self, service: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Host resolution case-folds the service, so the allowlist must too.
+
+        Otherwise the same string reads as an unknown service to the gate - which
+        skips the check - and as a real host to the client, and an undocumented
+        path reaches the network.
+        """
+
+        def _never(*_a: object, **_k: object) -> None:
+            raise AssertionError("no request should be made")
+
+        monkeypatch.setattr("integrations.yandex_cloud.rest_client.send_request", _never)
+        result = execute_yc_operation(
+            service=service,
+            path="/compute/v1/notARealCollection",
+            **_CREDENTIALS,
+        )
+
+        assert result["success"] is False
         assert "not a documented read" in result["error"]
 
     def test_a_concrete_resource_path_is_sent(self, monkeypatch: pytest.MonkeyPatch) -> None:

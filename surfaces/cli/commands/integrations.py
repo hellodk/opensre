@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from infrastructure.analytics.cli import (
+from infrastructure.analytics.capture import (
     capture_integration_removed,
     capture_integration_setup_completed,
     capture_integration_setup_started,
@@ -86,7 +86,7 @@ def list_integrations() -> None:
 
 
 @integrations.command(name="show")
-@click.argument("service", type=IntegrationServiceChoice("MANAGED_INTEGRATION_SERVICES"))
+@click.argument("service")
 def show_integration(service: str) -> None:
     """Show details for a configured integration."""
     from integrations.cli import cmd_show
@@ -95,7 +95,7 @@ def show_integration(service: str) -> None:
 
 
 @integrations.command(name="remove")
-@click.argument("service", type=IntegrationServiceChoice("MANAGED_INTEGRATION_SERVICES"))
+@click.argument("service")
 def remove_integration(service: str) -> None:
     """Remove a configured integration."""
     from integrations.cli import cmd_remove

@@ -3,23 +3,25 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from integrations.mongodb_atlas import (
     MongoDBAtlasConfig,
     atlas_extract_params,
     atlas_is_available,
     get_cluster_metrics,
 )
+from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_cluster_metrics
 
 
 @tool(
     name="get_mongodb_atlas_cluster_metrics",
     description="Retrieve key process-level metrics for a MongoDB Atlas cluster including connections, opcounters, CPU, memory, cache, and disk IOPS.",
     source="mongodb_atlas",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,
     injected_params=("api_private_key", "api_public_key", "base_url"),
     extract_params=atlas_extract_params,
+    evidence_mapper=map_get_mongodb_atlas_cluster_metrics,
 )
 def get_mongodb_atlas_cluster_metrics(
     api_public_key: str,

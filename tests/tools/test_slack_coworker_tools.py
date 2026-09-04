@@ -70,8 +70,8 @@ def test_search_messages_maps_matches(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     }
     _install_fake_client(monkeypatch, lambda **_kw: _FakeResponse(payload))
-    matches, error = web_client.search_messages(
-        web_client.SlackBotTarget(bot_token="xoxb-x"), query="boom"
+    matches, error, _truncated = web_client.search_messages(
+        web_client.SlackBotTarget(bot_token="xoxp-user"), query="boom"
     )
     assert error == ""
     assert matches is not None

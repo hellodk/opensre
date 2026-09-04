@@ -35,10 +35,10 @@ if TYPE_CHECKING:
 
 from integrations.registry import SUPPORTED_SETUP_SERVICES, resolve_management_service
 from integrations.store import (
-    STORE_PATH,
     get_integration,
     list_integrations,
     remove_integration,
+    resolve_store_path,
 )
 from integrations.verify import (
     SUPPORTED_VERIFY_SERVICES,
@@ -680,14 +680,6 @@ def _setup_twilio() -> None:
     _run_spec_setup(TWILIO_SETUP)
 
 
-def _setup_openclaw() -> None:
-    from integrations.openclaw.setup import OPENCLAW_SETUP
-
-    _run_spec_setup(OPENCLAW_SETUP)
-    print("    - uv run opensre investigate -i tests/fixtures/openclaw_test_alert.json")
-    print("    - for accurate RCA, also configure Grafana/Datadog and GitHub")
-
-
 def _setup_posthog_mcp() -> None:
     from integrations.posthog_mcp.setup import POSTHOG_MCP_SETUP
 
@@ -778,6 +770,12 @@ def _setup_kubernetes() -> None:
     _run_spec_setup(KUBERNETES_SETUP)
 
 
+def _setup_google_docs() -> None:
+    from integrations.google_docs import GOOGLE_DOCS_SETUP
+
+    _run_spec_setup(GOOGLE_DOCS_SETUP)
+
+
 def _setup_yandex_cloud() -> None:
     from integrations.yandex_cloud.setup import setup_spec_for_this_host
 
@@ -818,7 +816,6 @@ _HANDLERS: dict[str, Any] = {
     "smtp": _setup_smtp,
     "whatsapp": _setup_whatsapp,
     "twilio": _setup_twilio,
-    "openclaw": _setup_openclaw,
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
     "x_mcp": _setup_x_mcp,
@@ -833,6 +830,7 @@ _HANDLERS: dict[str, Any] = {
     "kubernetes": _setup_kubernetes,
     "servicenow": _setup_servicenow,
     "new_relic": _setup_new_relic,
+    "google_docs": _setup_google_docs,
     "yandex_cloud": _setup_yandex_cloud,
 }
 
@@ -902,7 +900,7 @@ def cmd_setup(service: str | None) -> str:
         _die(f"Usage: setup <service>. Supported: {', '.join(available)}")
     print(f"\n  Setting up {_B}{service}{_R}\n")
     _HANDLERS[service]()
-    print(f"\n  {GLYPH_SUCCESS} Saved → {STORE_PATH}\n")
+    print(f"\n  {GLYPH_SUCCESS} Saved → {resolve_store_path()}\n")
     return service
 
 

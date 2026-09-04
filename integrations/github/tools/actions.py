@@ -7,14 +7,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    normalize_github_tool_result,
     resolve_github_mcp_config,
 )
 from integrations.github.mcp import call_github_mcp_tool
@@ -358,6 +359,21 @@ def _github_actions_run_params(sources: dict[str, dict]) -> dict[str, Any]:
     return params
 
 
+def _map_list_github_actions_workflow_runs(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    runs = output.get("workflow_runs", [])
+    if runs:
+        count = len(runs)
+        word = "run" if count == 1 else "runs"
+        record_evidence_entry(
+            evidence,
+            source="list_github_actions_workflow_runs",
+            label="GitHub Workflow Runs",
+            summary=f"{count} {word}",
+        )
+
+
 @tool(
     name="list_github_actions_workflow_runs",
     source="github",
@@ -368,7 +384,7 @@ def _github_actions_run_params(sources: dict[str, dict]) -> dict[str, Any]:
         "Finding a run that matches an outage window or rollback event",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT, ToolSurface.ACTION),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     input_schema={
         "type": "object",
         "properties": {
@@ -400,6 +416,7 @@ def _github_actions_run_params(sources: dict[str, dict]) -> dict[str, Any]:
     is_available=_github_actions_is_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_actions_workflow_runs,
 )
 def list_github_actions_workflow_runs(
     owner: str,
@@ -477,6 +494,21 @@ def list_github_actions_workflow_runs(
     return payload
 
 
+def _map_list_github_actions_active_runs(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    runs = output.get("workflow_runs", [])
+    if runs:
+        count = len(runs)
+        word = "run" if count == 1 else "runs"
+        record_evidence_entry(
+            evidence,
+            source="list_github_actions_active_runs",
+            label="GitHub Active Runs",
+            summary=f"{count} {word}",
+        )
+
+
 @tool(
     name="list_github_actions_active_runs",
     source="github",
@@ -486,7 +518,7 @@ def list_github_actions_workflow_runs(
         "Spotting queued deploys that may be waiting on a shared runner or lock",
     ],
     requires=["owner", "repo"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -502,6 +534,7 @@ def list_github_actions_workflow_runs(
     is_available=_github_actions_is_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_actions_active_runs,
 )
 def list_github_actions_active_runs(
     owner: str,
@@ -590,6 +623,21 @@ def list_github_actions_active_runs(
     }
 
 
+def _map_list_github_actions_run_jobs(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    jobs = output.get("jobs", [])
+    if jobs:
+        count = len(jobs)
+        word = "job" if count == 1 else "jobs"
+        record_evidence_entry(
+            evidence,
+            source="list_github_actions_run_jobs",
+            label="GitHub Run Jobs",
+            summary=f"{count} {word}",
+        )
+
+
 @tool(
     name="list_github_actions_run_jobs",
     source="github",
@@ -599,7 +647,7 @@ def list_github_actions_active_runs(
         "Checking step-by-step status for test, build, and deploy jobs",
     ],
     requires=["owner", "repo", "run_id"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -615,6 +663,7 @@ def list_github_actions_active_runs(
     is_available=_github_actions_is_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_list_github_actions_run_jobs,
 )
 def list_github_actions_run_jobs(
     owner: str,
@@ -709,6 +758,20 @@ def _fetch_job_log(
     return text, original_lines, None
 
 
+def _map_get_github_actions_step_log(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    if output.get("log_text"):
+        lines_count = output.get("returned_lines", 0)
+        word = "line" if lines_count == 1 else "lines"
+        record_evidence_entry(
+            evidence,
+            source="get_github_actions_step_log",
+            label="GitHub Actions Step Log",
+            summary=f"{lines_count} {word}",
+        )
+
+
 @tool(
     name="get_github_actions_step_log",
     source="github",
@@ -718,7 +781,7 @@ def _fetch_job_log(
         "Checking the exact log snippet for a flaky test or secret-related failure",
     ],
     requires=["owner", "repo", "run_id", "job_id"],
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     input_schema={
         "type": "object",
         "properties": {
@@ -738,6 +801,7 @@ def _fetch_job_log(
     is_available=_github_actions_is_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_get_github_actions_step_log,
 )
 def get_github_actions_step_log(
     owner: str,

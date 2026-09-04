@@ -1,0 +1,217 @@
+"""CLI commands for the GitHub-backed personal OpenSRE account."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+
+import click
+
+from config.constants.account import OPENSRE_APP_URL_DEV
+from config.constants.github import GITHUB_CLI_REQUIRED_SCOPES
+from surfaces.cli.account_auth import (
+    AccountAuthError,
+    AccountStatus,
+    account_status,
+    login_account,
+    logout_account,
+)
+from surfaces.cli.account_ui import (
+    AccountLoginPresenter,
+    render_account_logout,
+    render_account_status,
+)
+
+
+def _json_enabled(ctx: click.Context) -> bool:
+    return bool(ctx.find_root().obj.get("json", False))
+
+
+def _dev_enabled(ctx: click.Context, dev: bool) -> bool:
+    return bool(dev or ctx.find_root().obj.get("account_dev", False))
+
+
+def _optional_app_url(*, app_url: str | None, dev: bool) -> str | None:
+    if app_url:
+        return app_url
+    if dev:
+        return OPENSRE_APP_URL_DEV
+    return None
+
+
+def _render_status(status: AccountStatus, *, json_output: bool) -> None:
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "authenticated": status.authenticated,
+                    "detail": status.detail,
+                    "account": asdict(status.record) if status.record else None,
+                },
+                indent=2,
+            )
+        )
+        return
+    render_account_status(status)
+
+
+def _already_active_json(status: AccountStatus) -> str:
+    record = status.record
+    missing_scopes = (
+        sorted(GITHUB_CLI_REQUIRED_SCOPES.difference(record.github_scopes)) if record else []
+    )
+    return json.dumps(
+        {
+            "authenticated": True,
+            "already_active": True,
+            "account": asdict(record) if record else None,
+            "missing_required_github_scopes": missing_scopes,
+            "warning": None,
+            "detail": "A valid OpenSRE session is already active.",
+        },
+        indent=2,
+    )
+
+
+@click.group(name="account", invoke_without_command=True)
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.pass_context
+def account_command(ctx: click.Context, dev: bool) -> None:
+    """Sign in to OpenSRE with GitHub and inspect the local account."""
+    ctx.ensure_object(dict)
+    ctx.find_root().obj["account_dev"] = dev
+    if ctx.invoked_subcommand is None:
+        _render_status(
+            account_status(app_url=_optional_app_url(app_url=None, dev=dev)),
+            json_output=_json_enabled(ctx),
+        )
+
+
+@account_command.command(name="login")
+@click.option(
+    "--app-url",
+    default=None,
+    metavar="URL",
+    help="OpenSRE webapp origin (or set OPENSRE_APP_URL).",
+)
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.option(
+    "--browser/--no-browser",
+    default=True,
+    show_default=True,
+    help="Open the GitHub sign-in page automatically.",
+)
+@click.option(
+    "--timeout",
+    "timeout_seconds",
+    default=300.0,
+    show_default=True,
+    type=click.FloatRange(min=1.0, max=1800.0),
+    help="Seconds to wait for the browser callback.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Replace a valid existing session without prompting.",
+)
+@click.pass_context
+def account_login(
+    ctx: click.Context,
+    app_url: str | None,
+    dev: bool,
+    browser: bool,
+    timeout_seconds: float,
+    force: bool,
+) -> None:
+    """Sign in or create a personal account using GitHub only."""
+    json_output = _json_enabled(ctx)
+    presenter = AccountLoginPresenter()
+    resolved_app_url = _optional_app_url(app_url=app_url, dev=_dev_enabled(ctx, dev))
+    status = account_status(app_url=resolved_app_url)
+    if status.authenticated and not force:
+        if json_output:
+            click.echo(_already_active_json(status))
+            return
+        presenter.warn_active_session(status)
+        if not presenter.confirm_replace():
+            presenter.session_kept()
+            return
+    elif status.authenticated and force and not json_output:
+        presenter.replacing_session(status)
+
+    try:
+        result = login_account(
+            app_url=resolved_app_url,
+            open_browser=browser,
+            timeout_seconds=timeout_seconds,
+            progress=None if json_output else presenter,
+        )
+    except AccountAuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    record = result.record
+    missing_scopes = sorted(GITHUB_CLI_REQUIRED_SCOPES.difference(record.github_scopes))
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "authenticated": True,
+                    "account": asdict(record),
+                    "missing_required_github_scopes": missing_scopes,
+                    "warning": result.warning or None,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    presenter.success(result, missing_scopes=missing_scopes)
+
+
+@account_command.command(name="status")
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.pass_context
+def account_status_command(ctx: click.Context, dev: bool) -> None:
+    """Validate and display the current personal account."""
+    _render_status(
+        account_status(app_url=_optional_app_url(app_url=None, dev=_dev_enabled(ctx, dev))),
+        json_output=_json_enabled(ctx),
+    )
+
+
+@account_command.command(name="logout")
+@click.pass_context
+def account_logout(ctx: click.Context) -> None:
+    """Revoke the OpenSRE token and clear account-managed GitHub credentials."""
+    try:
+        result = logout_account()
+    except AccountAuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if _json_enabled(ctx):
+        click.echo(
+            json.dumps(
+                {
+                    "signed_out": True,
+                    "remote_revoked": result.remote_revoked,
+                    "detail": result.detail,
+                },
+                indent=2,
+            )
+        )
+        return
+    render_account_logout(result)
+
+
+__all__ = ["account_command"]

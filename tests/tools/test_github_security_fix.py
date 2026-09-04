@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
-    ActionToolContext,
+    ActionToolScope,
 )
 from core.tool.contracts import AgentToolContext, RegisteredTool
 from integrations.coding_agent import CodingResult
@@ -120,7 +120,9 @@ def test_parse_security_alert_url_supports_common_github_urls() -> None:
 
 
 def test_available_when_github_token_present(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
     assert _github_security_fix_available({}) is False
 
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
@@ -540,7 +542,7 @@ def test_run_fix_without_local_support_names_the_coding_agent_requirement() -> N
     assert "No built-in local fixer supports" in result.error
     # The error is actionable: it names the coding agent CLIs that would let
     # OpenSRE fix the finding automatically, in one line.
-    assert "coding agent CLI (Pi, Claude Code, or Codex)" in result.error
+    assert "coding agent CLI (Pi, Claude Code, Codex, or Cursor)" in result.error
     assert "\n" not in result.error
 
 
@@ -772,7 +774,7 @@ def test_tool_passes_repl_confirmation_function() -> None:
     agent_context = AgentToolContext(
         resolved_integrations={},
         resources={
-            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolContext(
+            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolScope(
                 session=object(),
                 console=SimpleNamespace(),
                 confirm_fn=confirm,
@@ -793,14 +795,12 @@ def test_tool_passes_repl_confirmation_function() -> None:
 def test_registry_discovers_security_fix_on_action_surface() -> None:
     clear_tool_registry_cache()
     action = get_registered_tool_map("action")
-    investigation = get_registered_tool_map("investigation")
     chat = get_registered_tool_map("chat")
 
     tool = action["fix_github_security_alert"]
     assert tool.surfaces == ("action",)
     assert tool.requires_approval is True
     assert tool.side_effect_level == "mutating"
-    assert "fix_github_security_alert" not in investigation
     assert "fix_github_security_alert" not in chat
 
 

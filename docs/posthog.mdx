@@ -5,14 +5,14 @@ description: "Connect PostHog REST credentials so OpenSRE can verify access to y
 
 ## Overview
 
-OpenSRE stores **your** PostHog project credentials for REST API access (project metadata and correlation during investigations). Configure with `opensre integrations setup posthog` or `POSTHOG_*` environment variables.
+OpenSRE stores **your** PostHog project credentials for REST API access (project metadata and correlation). Configure with `opensre integrations setup posthog` or `POSTHOG_*` environment variables.
 
-This REST integration does **not** register investigation tools. For agent tools during investigations (analytics, feature flags, HogQL), use [PostHog (MCP)](/posthog-mcp).
+This REST integration does **not** register agent tools. For agent tools (analytics, feature flags, HogQL), use [PostHog (MCP)](/posthog-mcp).
 
 | What you want | Use | Setup |
 | --- | --- | --- |
 | Store PostHog REST credentials for your project | **PostHog** (this page) | `opensre integrations setup posthog` or env vars below |
-| Let the agent explore PostHog during incidents | [PostHog (MCP)](/posthog-mcp) | `opensre integrations setup posthog_mcp` or onboarding wizard |
+| Let the agent explore PostHog during incidents | [PostHog (MCP)](/posthog-mcp) | `opensre integrations setup posthog_mcp` |
 | OpenSRE’s own product usage telemetry | Built-in analytics | Controlled by `OPENSRE_NO_TELEMETRY` — not your PostHog project |
 
 ## Prerequisites
@@ -28,8 +28,6 @@ This REST integration does **not** register investigation tools. For agent tools
 ```bash
 opensre integrations setup posthog
 ```
-
-Or run the onboarding wizard and select **PostHog** under Observability.
 
 You will be prompted for:
 
@@ -59,9 +57,9 @@ POSTHOG_TIMEOUT_SECONDS=15.0                        # optional
 
 Get the **project ID** from PostHog project settings. Create a **personal API key** (`phx_...`) with read access — see [PostHog personal API keys](https://posthog.com/docs/api/personal-api-keys).
 
-## Investigation tools
+## Tools
 
-This REST integration does **not** register investigation tools. For agent tools during investigations (analytics, feature flags, HogQL), use [PostHog (MCP)](/posthog-mcp).
+This REST integration does **not** register agent tools. For agent tools (analytics, feature flags, HogQL), use [PostHog (MCP)](/posthog-mcp).
 
 ## Verify
 

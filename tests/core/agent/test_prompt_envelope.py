@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from core.agent_harness.prompts import (
@@ -21,8 +23,6 @@ def _ctx() -> TurnSnapshot:
         conversation_messages=(("user", "hello"),),
         configured_integrations=("github",),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
     )
 
@@ -55,13 +55,18 @@ def test_prompt_envelope_renders_ordered_blocks_with_optional_titles() -> None:
         envelope.require_block("missing")
 
 
-def test_action_system_prompt_envelope_matches_legacy_rendering() -> None:
+def test_action_system_prompt_envelope_matches_legacy_rendering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config.constants import OPENSRE_MEMORY_DISABLED_ENV
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DISABLED_ENV, "1")
     ctx = _ctx()
     envelope = build_action_system_prompt_envelope(ctx)
 
     # ACTION_VENDOR_FRAGMENTS carries integration-owned prompt recipes
     # (e.g. Slack/GitHub action routing) registered via
-    # infrastructure.harness_ports.register_action_prompt_fragment — see
+    # infrastructure.harness_providers.register_action_prompt_fragment — see
     # integrations/harness_adapters.py. It renders empty (and is absent from
     # this id list) when no fragments are registered.
     assert [block.id for block in envelope.blocks] == [
@@ -70,6 +75,7 @@ def test_action_system_prompt_envelope_matches_legacy_rendering() -> None:
         PromptBlockId.ACTION_RUNTIME_FACTS,
         PromptBlockId.ACTION_SKILLS,
         PromptBlockId.CONNECTED_INTEGRATIONS,
+        PromptBlockId.TURN_INTERACTION,
         PromptBlockId.RECENT_CONVERSATION,
     ]
     assert (
@@ -91,6 +97,19 @@ def test_action_system_prompt_envelope_matches_legacy_rendering() -> None:
     assert envelope.render() == build_action_system_prompt(ctx)
 
 
+def test_repository_context_is_a_named_context_block() -> None:
+    ctx = replace(
+        _ctx(),
+        active_vcs_repositories={"github": "acme/payments"},
+        known_vcs_repositories={"github": ("Tracer-Cloud/opensre", "acme/payments")},
+    )
+
+    block = build_action_system_prompt_envelope(ctx).require_block(PromptBlockId.REPOSITORY_CONTEXT)
+    assert block.kind == PromptBlockKind.CONTEXT
+    assert block.tier == PromptTier.CONTEXT
+    assert "active=acme/payments" in block.content
+
+
 def _turn(messages: list[tuple[str, str]]) -> TurnSnapshot:
     """A snapshot differing from another only in conversation history."""
     return TurnSnapshot(
@@ -98,8 +117,6 @@ def _turn(messages: list[tuple[str, str]]) -> TurnSnapshot:
         conversation_messages=tuple(messages),
         configured_integrations=("github",),
         configured_integrations_known=True,
-        last_state=None,
-        last_synthetic_observation_path=None,
         reasoning_effort=None,
     )
 
@@ -162,8 +179,13 @@ def test_the_split_halves_reassemble_into_the_unchanged_render() -> None:
     assert rejoined == envelope.render()
 
 
-def test_every_block_declares_which_tier_it_belongs_to() -> None:
+def test_every_block_declares_which_tier_it_belongs_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A block with no tier would silently land in the cached prefix."""
+    from config.constants import OPENSRE_MEMORY_DISABLED_ENV
+
+    monkeypatch.setenv(OPENSRE_MEMORY_DISABLED_ENV, "1")
     # Arrange
     envelope = build_action_system_prompt_envelope(_turn([("user", "hello")]))
 
@@ -177,6 +199,7 @@ def test_every_block_declares_which_tier_it_belongs_to() -> None:
         PromptBlockId.ACTION_RUNTIME_FACTS: PromptTier.STABLE,
         PromptBlockId.ACTION_SKILLS: PromptTier.STABLE,
         PromptBlockId.CONNECTED_INTEGRATIONS: PromptTier.CONTEXT,
+        PromptBlockId.TURN_INTERACTION: PromptTier.EPHEMERAL,
         PromptBlockId.RECENT_CONVERSATION: PromptTier.EPHEMERAL,
     }
 
@@ -366,11 +389,11 @@ def test_every_tier_lands_in_exactly_one_half() -> None:
 def test_layers_are_emitted_in_tier_order_however_blocks_were_added() -> None:
     """The three layers must hold by construction, not by authoring discipline.
 
-    Hermes joins the prompt ``stable → context → volatile``. Today that order
-    survives only because the builder happens to append in that sequence — a
-    volatile block added after an ephemeral one would silently break the layer
-    contract and land inside the churn. Rendering sorts by tier so the layout is
-    a property of the envelope, not of the order someone typed.
+    Prompt blocks join the prompt ``stable → context → volatile``. Today that
+    order survives only because the builder happens to append in that sequence —
+    a volatile block added after an ephemeral one would silently break the layer
+    contract and land inside the churn. Rendering sorts by tier so the layout is a
+    property of the envelope, not of the order someone typed.
     """
     # Arrange — deliberately scrambled
     from core.agent_harness.prompts import PromptTier
@@ -407,58 +430,3 @@ def test_blocks_sharing_a_tier_keep_the_order_they_were_added() -> None:
 
     # Act / Assert
     assert envelope.render() == "BASE|SKILLS"
-
-
-def test_the_assistant_cached_half_is_byte_identical_across_turns() -> None:
-    """The action path had this pinned; the assistant path only claimed it.
-
-    ``build_cli_agent_turn_prompt`` sends ``system`` and the user turn as
-    separate messages, so the system half must not move between turns or the
-    provider's cache marker never hits — the same defect the action path was
-    fixed for.
-    """
-    # Arrange
-    from core.agent_harness.prompts.assistant import (
-        build_assistant_system_prompt_envelope,
-    )
-
-    shared = {
-        "reference": "opensre --help" * 40,
-        "agents_md": "repo map" * 20,
-        "investigation_flow": "flow" * 30,
-        "environment": "env block",
-        "long_term_memory": "remembered facts",
-    }
-
-    # Act — differ only in per-turn content
-    first, _ = build_assistant_system_prompt_envelope(
-        history="user: hello", docs="docs for question one" * 10, **shared
-    ).render_split()
-    second, _ = build_assistant_system_prompt_envelope(
-        history="user: hello\nassistant: hi\nuser: and now?",
-        docs="docs for a different question" * 10,
-        prior_action_facts="fact from turn 1",
-        **shared,
-    ).render_split()
-
-    # Assert
-    assert first == second
-
-
-def test_per_question_docs_never_reach_the_assistant_cached_half() -> None:
-    """Docs are retrieved per message, so caching them would invalidate every turn."""
-    # Arrange
-    from core.agent_harness.prompts.assistant import (
-        build_assistant_system_prompt_envelope,
-    )
-
-    marker = "zzmarker-docs-retrieved-for-this-question"
-
-    # Act
-    cached, ephemeral = build_assistant_system_prompt_envelope(
-        reference="ref", history="user: hi", docs=marker
-    ).render_split()
-
-    # Assert
-    assert marker not in cached
-    assert marker in ephemeral

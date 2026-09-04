@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from infrastructure.terminal.theme import SECONDARY, WARNING
-from surfaces.cli.wizard._ui import _choose, _console, _step
+from surfaces.cli.wizard.components import choose, console, step
 from surfaces.cli.wizard.configurators.alerting import (
     _configure_alertmanager,
     _configure_betterstack,
@@ -38,12 +38,10 @@ from surfaces.cli.wizard.configurators.observability import (
     _configure_splunk,
     _configure_tempo,
 )
-from surfaces.cli.wizard.configurators.openclaw import _configure_openclaw
 from surfaces.cli.wizard.configurators.posthog import _configure_posthog, _configure_posthog_mcp
 from surfaces.cli.wizard.configurators.productivity import (
     _configure_google_docs,
     _configure_jira,
-    _configure_notion,
     _configure_servicenow,
 )
 from surfaces.cli.wizard.configurators.sentry import _configure_sentry, _configure_sentry_mcp
@@ -66,12 +64,12 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
     configured: list[str] = []
     last_env_path: str | None = None
 
-    _console.print(
+    console.print(
         f"[{SECONDARY}]Pick one integration to wire up now, or skip this step "
         f"and come back later.[/]"
     )
     integration_choices = list(ONBOARD_INTEGRATION_CHOICES)
-    selected_service = _choose(
+    selected_service = choose(
         "Choose an integration to configure",
         integration_choices,
         default="grafana_local",
@@ -108,8 +106,6 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "opsgenie": _configure_opsgenie,
         "pagerduty": _configure_pagerduty,
         "incident_io": _configure_incident_io,
-        "notion": _configure_notion,
-        "openclaw": _configure_openclaw,
         "posthog": _configure_posthog,
         "posthog_mcp": _configure_posthog_mcp,
         "sentry_mcp": _configure_sentry_mcp,
@@ -143,8 +139,6 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "opsgenie": "opsgenie",
         "pagerduty": "pagerduty",
         "incident_io": "incident.io",
-        "notion": "notion",
-        "openclaw": "openclaw",
         "posthog": "posthog",
         "posthog_mcp": "posthog mcp",
         "sentry_mcp": "sentry mcp",
@@ -152,9 +146,9 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         "tempo": "grafana tempo",
     }
 
-    _step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
+    step(f"Service · {_SERVICE_LABELS.get(selected_service, selected_service)}")
     if selected_service == "vercel":
-        _console.print(
+        console.print(
             f"[{SECONDARY}]Note: Vercel's runtime-log API may omit or delay lines compared to the "
             "dashboard. Deployment and build checks still apply; there is no CLI incident browser.[/]"
         )
@@ -163,7 +157,7 @@ def _configure_selected_integrations() -> tuple[list[str], str | None]:
         configured.append(label)
         last_env_path = env_path
     except KeyboardInterrupt:
-        _console.print(
+        console.print(
             f"[{WARNING}]{_SERVICE_LABELS.get(selected_service, selected_service)} setup skipped.[/]"
         )
 

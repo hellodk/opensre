@@ -176,6 +176,16 @@ def repl_reset_ctrl_c_gate() -> None:
     _last_ctrl_c[0] = None
 
 
+def repl_prompt_ctrl_c_should_exit() -> bool:
+    """Arm the REPL Ctrl-C gate or consume a second press as an exit."""
+    now = time.monotonic()
+    if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+        _last_ctrl_c[0] = None
+        return True
+    _last_ctrl_c[0] = now
+    return False
+
+
 def cli_invocation_name() -> str:
     """Return the basename of the current CLI launcher (for example ``opensre`` or ``o``)."""
     argv0 = sys.argv[0].strip() if sys.argv else ""
@@ -186,23 +196,24 @@ def cli_invocation_name() -> str:
 
 
 def print_session_resume_hint(console: Console, session_id: str) -> None:
-    """Print REPL and CLI commands that restore ``session_id``."""
+    """Print REPL and CLI commands that restore ``session_id``.
+
+    Caption stays dim; the copy-pasteable commands use the active theme accent
+    so ``/exit`` farewell keeps the same chrome as the rest of the shell.
+    """
     cli_name = cli_invocation_name()
     console.print(f"[{DIM}]Resume this session with:[/]")
-    console.print(f"[{DIM}]/resume {session_id}[/]")
-    console.print(f"[{DIM}]{cli_name} --resume {session_id}[/]")
+    console.print(f"[{HIGHLIGHT}]/resume {session_id}[/]")
+    console.print(f"[{HIGHLIGHT}]{cli_name} --resume {session_id}[/]")
 
 
 def repl_prompt_note_ctrl_c(console: Console, session_id: str | None = None) -> bool:
-    now = time.monotonic()
-    if _last_ctrl_c[0] is not None and now - _last_ctrl_c[0] <= _CTRL_C_EXIT_WINDOW:
+    if repl_prompt_ctrl_c_should_exit():
         console.print()
         if session_id:
             print_session_resume_hint(console, session_id)
-        console.print(f"[{DIM}]Goodbye![/]")
-        _last_ctrl_c[0] = None
+        console.print(f"[{HIGHLIGHT}]Goodbye![/]")
         return True
-    _last_ctrl_c[0] = now
     console.print(f"[{DIM}](Press Ctrl+C again to exit)[/]")
     return False
 

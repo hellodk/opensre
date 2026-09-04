@@ -9,15 +9,14 @@ from rich.console import Console
 from rich.text import Text
 
 from infrastructure.terminal.theme import BRAND, DIM, TEXT
-from surfaces.shared.terminal.banner import build_ready_panel
+from surfaces.shared.terminal.banner import build_launch_banner
 
 #: First-run actions only. Everything else is discoverable via ``opensre --help``;
 #: a landing page that lists every command reads as "here is everything" rather
 #: than "start here".
 _LANDING_EXAMPLES: tuple[tuple[str, str], ...] = (
-    ("opensre onboard", "Configure your LLM provider and integrations (start here)"),
+    ("opensre setup", "Sign in with GitHub, add an LLM key, then open the shell"),
     ('opensre ask "why is checkout-api slow?"', "Ask the agent a question directly"),
-    ("opensre investigate -i alert.json", "Run a root-cause investigation on an alert"),
     ("opensre doctor", "Check this machine is set up correctly"),
     ("opensre --help", "See every command"),
 )
@@ -25,7 +24,13 @@ _LANDING_EXAMPLES: tuple[tuple[str, str], ...] = (
 
 #: Commands a new user needs, in the order they need them. Anything not listed
 #: falls through to "More commands", so a newly added command is never hidden.
-_GETTING_STARTED: tuple[str, ...] = ("onboard", "ask", "doctor", "health", "investigate")
+_GETTING_STARTED: tuple[str, ...] = (
+    "setup",
+    "onboard",
+    "ask",
+    "doctor",
+    "health",
+)
 
 #: Day-to-day operation once configured.
 _EVERYDAY: tuple[str, ...] = (
@@ -137,11 +142,11 @@ def render_landing(group: click.Group) -> None:
     console = Console(highlight=False)
     options = _options_from_command(group)
     console.print()
-    console.print(build_ready_panel(console))
+    console.print(build_launch_banner(console))
     console.print(
         Text.assemble(
             ("  ", ""),
-            "open-source SRE agent for automated incident investigation and root cause analysis",
+            "open-source SRE agent",
         )
     )
     console.print()

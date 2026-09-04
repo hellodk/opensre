@@ -18,13 +18,21 @@ from infrastructure.scheduling.scheduler.runner import (
     resync_scheduler_jobs,
     run_task_now,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import (
+    DeliveryOutcome,
+    Provider,
+    ScheduledTask,
+    TaskKind,
+    TaskRun,
+    TaskStatus,
+)
+from tests.scheduler._bundle import real_runners
 
 
 class TestMakeTrigger:
     def test_valid_cron(self) -> None:
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * 1-5",
             timezone="UTC",
             provider=Provider.TELEGRAM,
@@ -34,7 +42,7 @@ class TestMakeTrigger:
 
     def test_invalid_cron_too_few_fields(self) -> None:
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 9 *",
             timezone="UTC",
             provider=Provider.TELEGRAM,
@@ -44,7 +52,7 @@ class TestMakeTrigger:
 
     def test_invalid_cron_bad_values(self) -> None:
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="61 25 * * *",
             timezone="UTC",
             provider=Provider.TELEGRAM,
@@ -54,7 +62,7 @@ class TestMakeTrigger:
 
     def test_invalid_timezone(self) -> None:
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * *",
             timezone="Invalid/Timezone",
             provider=Provider.TELEGRAM,
@@ -64,7 +72,7 @@ class TestMakeTrigger:
 
     def test_valid_timezone(self) -> None:
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * 1-5",
             timezone="Europe/London",
             provider=Provider.TELEGRAM,
@@ -116,7 +124,7 @@ class TestComputeNextRun:
         from datetime import UTC, datetime
 
         task = ScheduledTask(
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 8 * * 1-5",
             timezone="UTC",
             provider=Provider.SLACK,
@@ -152,7 +160,7 @@ class TestRegisterJobs:
         add_task(
             ScheduledTask(
                 id="prompt-loop",
-                kind=TaskKind.CUSTOM_INVESTIGATION,
+                kind=TaskKind.MANUAL_LOOP,
                 cron="* * * * *",
                 provider=Provider.INTERACTIVE_SHELL,
                 params={LOOP_PROMPT_PARAM: "Report stars"},
@@ -162,7 +170,7 @@ class TestRegisterJobs:
         add_task(
             ScheduledTask(
                 id="digest",
-                kind=TaskKind.DAILY_SUMMARY,
+                kind=TaskKind.SENTRY_MORNING_DIGEST,
                 cron="0 9 * * *",
                 provider=Provider.TELEGRAM,
             ),
@@ -172,6 +180,7 @@ class TestRegisterJobs:
         scheduler = _FakeScheduler()
         count = _register_jobs(
             scheduler,
+            real_runners(),
             task_filter=lambda task: bool(task.params.get(LOOP_PROMPT_PARAM)),
         )
 
@@ -213,7 +222,7 @@ class TestRegisterJobs:
         add_task(
             ScheduledTask(
                 id="keep",
-                kind=TaskKind.DAILY_SUMMARY,
+                kind=TaskKind.MANUAL_LOOP,
                 cron="0 9 * * *",
                 provider=Provider.TELEGRAM,
             ),
@@ -221,7 +230,7 @@ class TestRegisterJobs:
         )
 
         scheduler = _FakeScheduler()
-        count = resync_scheduler_jobs(scheduler)
+        count = resync_scheduler_jobs(scheduler, real_runners())
 
         assert count == 1
         assert set(scheduler.jobs) == {"keep"}
@@ -232,7 +241,7 @@ class TestRegisterJobs:
     ) -> None:
         sentinel = object()
 
-        def _start_background_scheduler(*, task_filter=None):
+        def _start_background_scheduler(_runners, *, task_filter=None):
             _ = task_filter
             return sentinel, 2
 
@@ -240,7 +249,7 @@ class TestRegisterJobs:
             "infrastructure.scheduling.scheduler.runner.start_background_scheduler",
             _start_background_scheduler,
         )
-        scheduler, count = refresh_background_scheduler(None)
+        scheduler, count = refresh_background_scheduler(None, real_runners())
         assert scheduler is sentinel
         assert count == 2
 
@@ -251,12 +260,12 @@ class TestRunTaskNow:
             "infrastructure.scheduling.scheduler.runner.get_task",
             lambda _task_id: None,
         )
-        assert run_task_now("nonexistent") is False
+        assert run_task_now("nonexistent", real_runners()) is False
 
     def test_runs_existing_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
         task = ScheduledTask(
             id="run_now_test",
-            kind=TaskKind.DAILY_SUMMARY,
+            kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * *",
             provider=Provider.TELEGRAM,
             chat_id="-100",
@@ -267,7 +276,7 @@ class TestRunTaskNow:
 
         with patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec:
             mock_exec.return_value = True
-            result = run_task_now("run_now_test")
+            result = run_task_now("run_now_test", real_runners())
 
         assert result is True
         mock_exec.assert_called_once()
@@ -278,3 +287,128 @@ class TestRunTaskNow:
         assert "T" in fire_time
         # Ad-hoc runs use second-precision to avoid colliding with scheduled runs
         assert len(fire_time.split("T")[1].rstrip("Z").split(":")) == 3
+
+    def test_only_failed_with_no_prior_run_refuses_rather_than_widening(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unknown history must never become "deliver to everyone"."""
+        task = ScheduledTask(
+            id="run_now_no_history",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            lambda _task_id: None,
+        )
+
+        with patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec:
+            mock_exec.return_value = True
+            result = run_task_now("run_now_no_history", real_runners(), only_failed=True)
+
+        assert result is False
+        mock_exec.assert_not_called()
+
+    def test_only_failed_narrows_to_the_failed_destinations(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        task = ScheduledTask(
+            id="run_now_partial",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        last_run = TaskRun(
+            task_id="run_now_partial",
+            fire_time="2026-01-01T09:00",
+            status=TaskStatus.SUCCESS,
+            targets=(
+                DeliveryOutcome(provider=Provider.INTERACTIVE_SHELL, ok=True, message_id="local:1"),
+                DeliveryOutcome(
+                    provider=Provider.SLACK, chat_id="C1", ok=False, error="webhook missing"
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            lambda _task_id: last_run,
+        )
+
+        with patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec:
+            mock_exec.return_value = True
+            run_task_now("run_now_partial", real_runners(), only_failed=True)
+
+        assert mock_exec.call_args.kwargs["target_filter"] == frozenset({(Provider.SLACK, "C1")})
+
+    def test_only_failed_with_a_fully_successful_prior_run_retries_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        task = ScheduledTask(
+            id="run_now_all_ok",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+        )
+        last_run = TaskRun(
+            task_id="run_now_all_ok",
+            fire_time="2026-01-01T09:00",
+            status=TaskStatus.SUCCESS,
+            targets=(DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="-100", ok=True),),
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            lambda _task_id: last_run,
+        )
+
+        with patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec:
+            mock_exec.return_value = True
+            run_task_now("run_now_all_ok", real_runners(), only_failed=True)
+
+        assert mock_exec.call_args.kwargs["target_filter"] == frozenset()
+
+
+class TestStartSchedulerIdle:
+    """start_scheduler exits on empty for the CLI, idles for a dedicated service."""
+
+    def test_empty_exits_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from infrastructure.scheduling.scheduler import runner
+
+        monkeypatch.setattr(runner, "_register_jobs", lambda _scheduler, _runners, **_kw: 0)
+        monkeypatch.setattr(runner, "record_scheduler_service_operation", lambda *_a, **_k: None)
+        with pytest.raises(SystemExit):
+            runner.start_scheduler(real_runners())
+
+    def test_empty_idles_when_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import apscheduler.schedulers.blocking as blocking
+
+        from infrastructure.scheduling.scheduler import runner
+
+        started: list[bool] = []
+
+        class _FakeScheduler:
+            def start(self) -> None:
+                started.append(True)  # no-op instead of blocking forever
+
+            def shutdown(self, wait: bool = False) -> None:
+                pass
+
+        monkeypatch.setattr(blocking, "BlockingScheduler", _FakeScheduler)
+        monkeypatch.setattr(runner, "_register_jobs", lambda _scheduler, _runners, **_kw: 0)
+        monkeypatch.setattr(runner, "record_scheduler_service_operation", lambda *_a, **_k: None)
+        monkeypatch.setattr(runner.signal, "signal", lambda *_a, **_k: None)
+
+        # Must not raise the "no tasks" SystemExit; reaches the (mocked) start.
+        runner.start_scheduler(real_runners(), idle_when_empty=True)
+        assert started == [True]
