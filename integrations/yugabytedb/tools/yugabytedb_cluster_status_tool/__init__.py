@@ -3,7 +3,7 @@
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool_framework.tool_decorator import tool
+from core.tool_framework import tool
 from core.tool_framework.utils import call_db_tool_with_default_db_warning
 from integrations.yugabytedb import (
     get_cluster_status,
@@ -21,7 +21,7 @@ from integrations.yugabytedb import (
         "yb-admin/cluster-internal access this integration does not have."
     ),
     source="yugabytedb",
-    surfaces=(ToolSurface.INVESTIGATION, ToolSurface.CHAT),
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Discovering live YugabyteDB YB-TServer nodes and their cloud/region/zone placement",
         "Checking whether separate tool calls in an investigation landed on the same node",

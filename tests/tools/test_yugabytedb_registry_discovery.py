@@ -2,7 +2,7 @@
 
 Guards against the integration package existing but never being registered:
 ``integrations.yugabytedb.tools`` must appear in ``INTEGRATION_TOOL_PACKAGES``
-so investigation and chat surfaces actually see the tools.
+so the chat surface actually sees the tools.
 """
 
 from __future__ import annotations
@@ -19,11 +19,6 @@ _YUGABYTEDB_TOOLS = (
 
 
 class TestYugabyteDBRegistryDiscovery:
-    def test_all_tools_registered_for_investigations(self):
-        names = {tool.name for tool in get_registered_tools("investigation")}
-        missing = [name for name in _YUGABYTEDB_TOOLS if name not in names]
-        assert missing == [], f"Tools not discovered by the registry: {missing}"
-
     def test_all_tools_registered_for_chat(self):
         names = {tool.name for tool in get_registered_tools("chat")}
         missing = [name for name in _YUGABYTEDB_TOOLS if name not in names]
