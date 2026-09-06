@@ -238,6 +238,7 @@
                 "group": "Databases",
                 "expanded": false,
                 "pages": [
+                  "aerospike",
                   "azure-sql",
                   "clickhouse",
                   "elasticsearch",
