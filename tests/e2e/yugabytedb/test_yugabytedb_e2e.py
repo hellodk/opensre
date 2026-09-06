@@ -17,7 +17,7 @@ import pytest
 
 from integrations.catalog import classify_integrations as _classify_integrations
 from integrations.verify import verify_integrations
-from tests.e2e.source_helpers import resolve_available_tool_sources
+from integrations.yugabytedb import yugabytedb_extract_params, yugabytedb_is_available
 
 
 class TestYugabyteDBIntegrationResolution:
@@ -101,11 +101,10 @@ class TestYugabyteDBToolSourceAvailability:
             }
         }
 
-        sources = resolve_available_tool_sources(resolved_integrations)
-
-        assert "yugabytedb" in sources
-        assert sources["yugabytedb"]["host"] == "localhost"
-        assert sources["yugabytedb"]["database"] == "application_db"
+        assert yugabytedb_is_available(resolved_integrations)
+        params = yugabytedb_extract_params(resolved_integrations)
+        assert params["host"] == "localhost"
+        assert params["database"] == "application_db"
 
     def test_yugabytedb_tool_source_uses_configured_database(self):
         """YugabyteDB tool params come from the resolved integration config."""
@@ -120,18 +119,12 @@ class TestYugabyteDBToolSourceAvailability:
             }
         }
 
-        sources = resolve_available_tool_sources(resolved_integrations)
-
-        assert "yugabytedb" in sources
-        assert sources["yugabytedb"]["database"] == "default_db"
+        params = yugabytedb_extract_params(resolved_integrations)
+        assert params["database"] == "default_db"
 
     def test_yugabytedb_tool_source_unavailable_if_unconfigured(self):
         """YugabyteDB source is not included if not configured."""
-        resolved_integrations = {}
-
-        sources = resolve_available_tool_sources(resolved_integrations)
-
-        assert "yugabytedb" not in sources
+        assert not yugabytedb_is_available({})
 
 
 class TestYugabyteDBVerification:
