@@ -249,6 +249,14 @@ from config.constants.yandex_cloud import (
     YC_TOKEN_ENV,
     YC_USE_METADATA_ENV,
 )
+from config.constants.yugabytedb import (
+    YUGABYTEDB_DATABASE_ENV,
+    YUGABYTEDB_HOST_ENV,
+    YUGABYTEDB_PASSWORD_ENV,
+    YUGABYTEDB_PORT_ENV,
+    YUGABYTEDB_SSL_MODE_ENV,
+    YUGABYTEDB_USERNAME_ENV,
+)
 from config.llm_credentials import resolve_env_credential
 from config.tracer_urls import get_tracer_base_url
 from infrastructure.observability.errors.boundary import report_exception
@@ -383,6 +391,8 @@ from integrations.x_mcp import build_x_mcp_config
 from integrations.x_mcp import classify as _classify_x_mcp
 from integrations.yandex_cloud import classify as _classify_yandex_cloud
 from integrations.yandex_cloud.config import YandexCloudIntegrationConfig
+from integrations.yugabytedb import build_yugabytedb_config
+from integrations.yugabytedb import classify as _classify_yugabytedb
 
 logger = logging.getLogger(__name__)
 
@@ -510,6 +520,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "redis": _classify_redis,
     "aerospike": _classify_aerospike,
     "postgresql": _classify_postgresql,
+    "yugabytedb": _classify_yugabytedb,
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
@@ -1151,6 +1162,28 @@ def load_env_integrations() -> list[dict[str, Any]]:
             _active_env_record(
                 "postgresql",
                 postgresql_config.model_dump(exclude={"integration_id"}),
+            )
+        )
+
+    yugabytedb_host = os.getenv(YUGABYTEDB_HOST_ENV, "").strip()
+    yugabytedb_database = os.getenv(YUGABYTEDB_DATABASE_ENV, "").strip()
+    if yugabytedb_host and yugabytedb_database:
+        yugabytedb_config = build_yugabytedb_config(
+            {
+                "host": yugabytedb_host,
+                "port": int(_yb_port)
+                if (_yb_port := os.getenv(YUGABYTEDB_PORT_ENV, "").strip()) and _yb_port.isdigit()
+                else 5433,
+                "database": yugabytedb_database,
+                "username": os.getenv(YUGABYTEDB_USERNAME_ENV, "yugabyte").strip() or "yugabyte",
+                "password": resolve_env_credential(YUGABYTEDB_PASSWORD_ENV),
+                "ssl_mode": os.getenv(YUGABYTEDB_SSL_MODE_ENV, "prefer").strip() or "prefer",
+            }
+        )
+        integrations.append(
+            _active_env_record(
+                "yugabytedb",
+                yugabytedb_config.model_dump(exclude={"integration_id"}),
             )
         )
 

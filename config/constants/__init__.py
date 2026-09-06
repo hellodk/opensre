@@ -465,6 +465,14 @@ from config.constants.yandex_cloud import (
     YC_TOKEN_ENV,
     YC_USE_METADATA_ENV,
 )
+from config.constants.yugabytedb import (
+    YUGABYTEDB_DATABASE_ENV,
+    YUGABYTEDB_HOST_ENV,
+    YUGABYTEDB_PASSWORD_ENV,
+    YUGABYTEDB_PORT_ENV,
+    YUGABYTEDB_SSL_MODE_ENV,
+    YUGABYTEDB_USERNAME_ENV,
+)
 
 __all__ = [
     "OPENSRE_ACCOUNT_FILENAME",
@@ -807,6 +815,12 @@ __all__ = [
     "WHATSAPP_DEFAULT_TO_ENV",
     "X_MCP_AUTH_TOKEN_ENV",
     "X_MCP_URL_ENV",
+    "YUGABYTEDB_DATABASE_ENV",
+    "YUGABYTEDB_HOST_ENV",
+    "YUGABYTEDB_PASSWORD_ENV",
+    "YUGABYTEDB_PORT_ENV",
+    "YUGABYTEDB_SSL_MODE_ENV",
+    "YUGABYTEDB_USERNAME_ENV",
     "ensure_opensre_tmp_dir",
     "get_memory_dir",
     "get_store_path",

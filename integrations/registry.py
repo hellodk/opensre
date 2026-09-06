@@ -124,6 +124,14 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=13,
     ),
     IntegrationSpec(
+        service="yugabytedb",
+        aliases=("yugabyte", "ysql"),
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=45,
+        verify_order=60,
+    ),
+    IntegrationSpec(
         service="mongodb_atlas",
         aliases=("atlas",),
         has_verifier=True,

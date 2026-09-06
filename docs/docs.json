@@ -251,7 +251,8 @@
                   "rds",
                   "redis",
                   "snowflake",
-                  "supabase"
+                  "supabase",
+                  "yugabytedb"
                 ]
               },
               {

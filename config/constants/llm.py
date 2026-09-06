@@ -31,6 +31,12 @@ AZURE_OPENAI_API_KEY_ENV: Final[str] = "AZURE_OPENAI_API_KEY"
 #: has verified the request shape — silent fallback would double-invoke.
 OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV: Final[str] = "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT"
 
+#: Per-call completion cap for the local-LLM (ollama) path. The default keeps
+#: small local models from runaway generations; structured stages (diagnose /
+#: report) may need a higher ceiling so their JSON payloads are not truncated.
+OLLAMA_MAX_TOKENS_ENV: Final[str] = "OLLAMA_MAX_TOKENS"
+DEFAULT_OLLAMA_MAX_TOKENS: Final[int] = 1024
+
 # Custom OpenAI-/Anthropic-compatible gateways (LiteLLM proxy, vLLM, LocalAI,
 # internal model gateways). The base URL is user-supplied, not hard-coded.
 CUSTOM_OPENAI_BASE_URL_ENV: Final[str] = "CUSTOM_OPENAI_BASE_URL"
