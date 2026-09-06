@@ -9,7 +9,7 @@ Tests:
 - Aerospike config resolution from store and env
 - Aerospike verification (status check)
 - Aerospike source availability for query execution
-- Aerospike tools are discoverable on the investigation/chat surfaces
+- Aerospike tools are discoverable on the chat surface
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from unittest.mock import patch
 
 import pytest
 
+from integrations.aerospike import aerospike_extract_params, aerospike_is_available
 from integrations.catalog import classify_integrations as _classify_integrations
 from integrations.verify import verify_integrations
-from tests.e2e.source_helpers import resolve_available_tool_sources
 
 
 class TestAerospikeIntegrationResolution:
@@ -74,15 +74,13 @@ class TestAerospikeToolSourceAvailability:
             }
         }
 
-        sources = resolve_available_tool_sources(resolved_integrations)
-
-        assert "aerospike" in sources
-        assert sources["aerospike"]["host"] == "localhost"
-        assert sources["aerospike"]["port"] == 3000
+        assert aerospike_is_available(resolved_integrations)
+        params = aerospike_extract_params(resolved_integrations)
+        assert params["host"] == "localhost"
+        assert params["port"] == 3000
 
     def test_aerospike_tool_source_unavailable_if_unconfigured(self):
-        sources = resolve_available_tool_sources({})
-        assert "aerospike" not in sources
+        assert not aerospike_is_available({})
 
 
 class TestAerospikeVerification:
@@ -143,7 +141,7 @@ class TestAerospikeToolsAvailability:
         except ImportError as e:
             pytest.fail(f"Failed to import Aerospike tool modules: {e}")
 
-    def test_aerospike_tools_registered_on_investigation_and_chat_surfaces(self):
+    def test_aerospike_tools_registered_on_chat_surface(self):
         from tools.registry import get_registered_tools
 
         expected_tools = {
@@ -151,11 +149,10 @@ class TestAerospikeToolsAvailability:
             "get_aerospike_namespace_stats",
             "get_aerospike_latency",
         }
-        for surface in ("investigation", "chat"):
-            names = {t.name for t in get_registered_tools(surface) if t.source == "aerospike"}
-            assert expected_tools <= names, (
-                f"missing aerospike tools on {surface} surface: {expected_tools - names}"
-            )
+        names = {t.name for t in get_registered_tools("chat") if t.source == "aerospike"}
+        assert expected_tools <= names, (
+            f"missing aerospike tools on chat surface: {expected_tools - names}"
+        )
 
     def test_aerospike_integration_config_has_required_fields(self):
         from integrations.config_models import AerospikeIntegrationConfig
