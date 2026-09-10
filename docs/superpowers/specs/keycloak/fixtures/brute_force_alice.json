@@ -1,0 +1,9 @@
+{
+  "failedLoginNotBefore": 0,
+  "numFailures": 0,
+  "numTemporaryLockouts": 0,
+  "disabled": false,
+  "numSecondaryAuthFailures": 0,
+  "lastIPFailure": "n/a",
+  "lastFailure": 0
+}

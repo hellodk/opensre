@@ -1,0 +1,15 @@
+[
+  {
+    "id": "jJ81xmdndgGmcD3KEaGURgGD",
+    "username": "alice",
+    "userId": "cf7afc15-ddf3-47da-b371-1732dc2a3200",
+    "ipAddress": "172.17.0.1",
+    "start": 1789063901000,
+    "lastAccess": 1789063901000,
+    "rememberMe": false,
+    "clients": {
+      "5c4cf4bb-cd1a-4e18-b048-d8bb888d9ce5": "demo-app"
+    },
+    "transientUser": false
+  }
+]

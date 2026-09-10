@@ -1,0 +1,9 @@
+{
+  "failedLoginNotBefore": 1789063964,
+  "numFailures": 3,
+  "numTemporaryLockouts": 1,
+  "disabled": true,
+  "numSecondaryAuthFailures": 0,
+  "lastIPFailure": "172.17.0.1",
+  "lastFailure": 1789063904504
+}
