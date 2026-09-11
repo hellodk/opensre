@@ -338,6 +338,8 @@ from integrations.nats import classify as _classify_nats
 from integrations.nats import nats_config_from_env
 from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
+from integrations.nginx import classify as _classify_nginx
+from integrations.nginx import nginx_config_from_env
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
 from integrations.opsgenie import classify as _classify_opsgenie
@@ -549,6 +551,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
     "nats": _classify_nats,
+    "nginx": _classify_nginx,
     "rds": _classify_rds,
     "airflow": _classify_airflow,
     "betterstack": _classify_betterstack,
@@ -1155,6 +1158,15 @@ def load_env_integrations() -> list[dict[str, Any]]:
             _active_env_record(
                 "keycloak",
                 keycloak_config.model_dump(exclude={"integration_id"}),
+            )
+        )
+
+    nginx_config = nginx_config_from_env()
+    if nginx_config:
+        integrations.append(
+            _active_env_record(
+                "nginx",
+                nginx_config.model_dump(exclude={"integration_id"}),
             )
         )
 

@@ -286,6 +286,21 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/nginx/",
+        (
+            "tests/integrations/test_nginx.py",
+            "tests/integrations/nginx/test_logs.py",
+            "tests/tools/test_nginx_access_log_summary_tool.py",
+            "tests/tools/test_nginx_cache_status_tool.py",
+            "tests/tools/test_nginx_error_log_tool.py",
+            "tests/tools/test_nginx_server_status_tool.py",
+            "tests/tools/test_nginx_server_zones_tool.py",
+            "tests/tools/test_nginx_tools_port_injection.py",
+            "tests/tools/test_nginx_upstream_health_tool.py",
+            "tests/tools/test_telemetry.py",
+        ),
+    ),
+    PathRule(
         "integrations/posthog_mcp/",
         (
             "tests/integrations/test_posthog_mcp.py",

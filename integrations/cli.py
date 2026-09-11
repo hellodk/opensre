@@ -570,6 +570,12 @@ def _setup_keycloak() -> None:
     _run_spec_setup(KEYCLOAK_SETUP)
 
 
+def _setup_nginx() -> None:
+    from integrations.nginx.setup import NGINX_SETUP
+
+    _run_spec_setup(NGINX_SETUP)
+
+
 def _setup_discord() -> None:
     from integrations.discord.setup import DISCORD_SETUP
 
@@ -843,6 +849,7 @@ _HANDLERS: dict[str, Any] = {
     "nats": _setup_nats,
     "redis": _setup_redis,
     "aerospike": _setup_aerospike,
+    "nginx": _setup_nginx,
     "signoz": _setup_signoz,
     "jenkins": _setup_jenkins,
     "tempo": _setup_tempo,

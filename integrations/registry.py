@@ -183,6 +183,13 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=62,
     ),
     IntegrationSpec(
+        service="nginx",
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=46,
+        verify_order=61,
+    ),
+    IntegrationSpec(
         service="betterstack",
         aliases=("better stack",),
         has_verifier=True,

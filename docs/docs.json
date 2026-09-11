@@ -187,6 +187,7 @@
                   "elb",
                   "helm",
                   "kubernetes",
+                  "nginx",
                   "yandex-cloud",
                   "railway",
                   "s3",
