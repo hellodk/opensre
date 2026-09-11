@@ -1,0 +1,24 @@
+2026/09/09 20:10:53 [notice] 1#1: using the "epoll" event method
+2026/09/09 20:10:53 [notice] 1#1: nginx/1.27.5
+2026/09/09 20:10:53 [notice] 1#1: OS: Linux 6.8.0-40-generic
+2026/09/09 20:10:53 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 1048576:1048576
+2026/09/09 20:10:53 [notice] 1#1: start worker processes
+2026/09/09 20:10:53 [notice] 1#1: start worker process 21
+2026/09/09 20:10:53 [notice] 1#1: start worker process 22
+2026/09/09 20:10:53 [notice] 1#1: start cache manager process 23
+2026/09/09 20:10:53 [notice] 1#1: start cache loader process 24
+2026/09/09 20:10:53 [notice] 21#21: *1 "^~/.well-known/acme-challenge" matches "^~/.well-known/acme-challenge" pattern
+2026/09/09 20:10:53 [notice] 21#21: *1 malloc: 0000555B2F3A1000:8192
+2026/09/09 20:10:53 [notice] 22#22: *2 "^/api/" matches "^/api/" pattern
+2026/09/09 20:10:53 [notice] 22#22: *2 malloc: 0000555B2F3A2000:8192
+2026/09/09 20:10:54 [notice] 1#1: signal 1 (SIGHUP) received from 30, reconfiguring
+2026/09/09 20:10:54 [notice] 1#1: reconfiguring
+2026/09/09 20:10:54 [notice] 1#1: using the "epoll" event method
+2026/09/09 20:10:54 [notice] 1#1: start worker processes
+2026/09/09 20:10:54 [notice] 1#1: start worker process 31
+2026/09/09 20:10:54 [notice] 1#1: start worker process 32
+2026/09/09 20:10:54 [notice] 1#1: gracefully shutting down
+2026/09/09 20:10:54 [notice] 1#1: exiting
+2026/09/09 20:10:54 [notice] 1#1: exit
+2026/09/09 20:10:55 [error] 25#25: *5 connect() failed (111: Connection refused) while connecting to upstream, client: 172.17.0.1, server: , request: "GET /api/orders HTTP/1.1", upstream: "http://127.0.0.1:9/api/orders", host: "127.0.0.1:18080"
+2026/09/09 20:10:56 [error] 25#25: *7 connect() failed (111: Connection refused) while connecting to upstream, client: 172.17.0.1, server: , request: "POST /api/orders HTTP/1.1", upstream: "http://127.0.0.1:9/api/orders", host: "127.0.0.1:18080"
