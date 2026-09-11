@@ -1,0 +1,160 @@
+{
+  "profileInfo": {
+    "name": "default",
+    "disabledFeatures": [
+      "IDENTITY_ASSERTION_JWT",
+      "PARAMETERIZED_SCOPES",
+      "CLUSTERLESS",
+      "AUTHZEN",
+      "OID4VC_VCI_REST_CREDENTIAL_OFFER",
+      "INSTAGRAM_BROKER",
+      "SCIM_API",
+      "CLIENT_SECRET_ROTATION",
+      "DECLARATIVE_UI",
+      "TOKEN_EXCHANGE",
+      "TOKEN_EXCHANGE_DELEGATION",
+      "LOGOUT_ALL_SESSIONS_V1",
+      "RESOURCE_INDICATORS",
+      "IDENTITY_BROKERING_API_V2",
+      "OPENTELEMETRY_METRICS",
+      "CIMD",
+      "STATELESS",
+      "IPA_TUURA_FEDERATION",
+      "HTTP_OPTIMIZED_SERIALIZERS",
+      "OPENTELEMETRY_LOGS",
+      "DOCKER",
+      "ROLLING_UPDATES_V1",
+      "SSF",
+      "SCRIPTS",
+      "OID4VC_VCI",
+      "CLIENT_TYPES",
+      "FIPS",
+      "MULTI_SITE",
+      "QUICK_THEME",
+      "OID4VC_VCI_PREAUTH_CODE",
+      "CLIENT_ADMIN_API_V2",
+      "LOGIN_V1",
+      "SPIFFE",
+      "PASSKEYS_CONDITIONAL_UI_AUTHENTICATOR",
+      "CLIENT_AUTH_ABCA",
+      "TRANSIENT_USERS",
+      "ADMIN_FINE_GRAINED_AUTHZ",
+      "OPENAPI",
+      "DB_TIDB"
+    ],
+    "previewFeatures": [
+      "SCRIPTS",
+      "SPIFFE",
+      "STATELESS",
+      "SCIM_API",
+      "CLIENT_SECRET_ROTATION",
+      "HTTP_OPTIMIZED_SERIALIZERS",
+      "OPENTELEMETRY_LOGS",
+      "TOKEN_EXCHANGE"
+    ],
+    "experimentalFeatures": [
+      "SSF",
+      "IDENTITY_ASSERTION_JWT",
+      "OID4VC_VCI",
+      "PARAMETERIZED_SCOPES",
+      "CLUSTERLESS",
+      "CLIENT_TYPES",
+      "AUTHZEN",
+      "OID4VC_VCI_REST_CREDENTIAL_OFFER",
+      "QUICK_THEME",
+      "OID4VC_VCI_PREAUTH_CODE",
+      "CLIENT_ADMIN_API_V2",
+      "DECLARATIVE_UI",
+      "TOKEN_EXCHANGE_DELEGATION",
+      "RESOURCE_INDICATORS",
+      "CLIENT_AUTH_ABCA",
+      "TRANSIENT_USERS",
+      "OPENTELEMETRY_METRICS",
+      "CIMD",
+      "IPA_TUURA_FEDERATION",
+      "OPENAPI",
+      "DB_TIDB"
+    ]
+  },
+  "features": [
+    {
+      "name": "PASSKEYS",
+      "label": "Passkeys",
+      "type": "DEFAULT",
+      "dependencies": [
+        "WEB_AUTHN"
+      ],
+      "enabled": true
+    },
+    {
+      "name": "OID4VC_VCI_PREAUTH_CODE",
+      "label": "Support for credential offers with `pre-authorized_code` grant.",
+      "type": "EXPERIMENTAL",
+      "dependencies": [
+        "OID4VC_VCI"
+      ],
+      "enabled": false
+    },
+    {
+      "name": "HTTP_OPTIMIZED_SERIALIZERS",
+      "label": "Optimized JSON serializers for better performance of the HTTP layer",
+      "type": "PREVIEW",
+      "dependencies": [],
+      "enabled": false
+    },
+    {
+      "name": "IMPERSONATION",
+      "label": "Ability for admins to impersonate users",
+      "type": "DEFAULT",
+      "dependencies": [],
+      "enabled": true
+    },
+    {
+      "name": "RESOURCE_INDICATORS",
+      "label": "Resource Indicators for OAuth 2.0",
+      "type": "EXPERIMENTAL",
+      "dependencies": [],
+      "enabled": false
+    },
+    {
+      "name": "SSF",
+      "label": "Shared Signals Framework",
+      "type": "EXPERIMENTAL",
+      "dependencies": [],
+      "enabled": false
+    }
+  ],
+  "systemInfo": {
+    "version": "26.7.3",
+    "serverTime": "Thu Sep 10 18:11:50 GMT 2026",
+    "uptime": "0 days, 0 hours, 0 minutes, 21 seconds",
+    "uptimeMillis": 21844,
+    "javaVersion": "21.0.12.1",
+    "javaVendor": "Red Hat, Inc.",
+    "javaVm": "OpenJDK 64-Bit Server VM",
+    "javaVmVersion": "21.0.12.1+1-LTS",
+    "javaRuntime": "OpenJDK Runtime Environment",
+    "javaHome": "/usr/lib/jvm/java-21-openjdk-21.0.12.1.1-1.2.el9.x86_64",
+    "osName": "Linux",
+    "osArchitecture": "amd64",
+    "osVersion": "7.0.0-31-generic",
+    "fileEncoding": "UTF-8",
+    "userName": "keycloak",
+    "userDir": "/",
+    "userTimezone": "GMT",
+    "userLocale": "en_US"
+  },
+  "memoryInfo": {
+    "total": 46942650368,
+    "totalFormated": "44768 MB",
+    "used": 279484104,
+    "usedFormated": "266 MB",
+    "free": 46663166264,
+    "freePercentage": 99,
+    "freeFormated": "44501 MB"
+  },
+  "cpuInfo": {
+    "processorCount": 20
+  },
+  "_note": "Trimmed from a 460 KB live payload: only profileInfo, the first 6 of 73 features, and systemInfo, memoryInfo, cpuInfo are kept verbatim."
+}

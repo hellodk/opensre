@@ -48,6 +48,7 @@ class EffectiveIntegrations(StrictConfigModel):
     betterstack: EffectiveIntegrationEntry | None = None
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
+    keycloak: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
     railway: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None

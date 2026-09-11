@@ -1,0 +1,25 @@
+{
+  "id": "d1779eaf-716f-4430-8d6b-7ef2d06e1701",
+  "username": "dave",
+  "firstName": "Dave",
+  "lastName": "Pending",
+  "email": "dave@example.com",
+  "emailVerified": false,
+  "enabled": true,
+  "createdTimestamp": 1789063901016,
+  "totp": false,
+  "disableableCredentialTypes": [],
+  "requiredActions": [
+    "VERIFY_EMAIL",
+    "UPDATE_PASSWORD"
+  ],
+  "notBefore": 0,
+  "access": {
+    "manageGroupMembership": false,
+    "resetPassword": false,
+    "view": true,
+    "mapRoles": false,
+    "impersonate": false,
+    "manage": false
+  }
+}

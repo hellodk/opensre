@@ -254,6 +254,22 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/keycloak/",
+        (
+            "tests/integrations/test_keycloak.py",
+            "tests/integrations/keycloak/test_diagnostics.py",
+            "tests/integrations/keycloak/test_metrics.py",
+            "tests/tools/test_keycloak_admin_events_tool.py",
+            "tests/tools/test_keycloak_client_sessions_tool.py",
+            "tests/tools/test_keycloak_login_failures_tool.py",
+            "tests/tools/test_keycloak_realm_overview_tool.py",
+            "tests/tools/test_keycloak_server_status_tool.py",
+            "tests/tools/test_keycloak_tools_port_injection.py",
+            "tests/tools/test_keycloak_user_status_tool.py",
+            "tests/tools/test_telemetry.py",
+        ),
+    ),
+    PathRule(
         "integrations/posthog_mcp/",
         (
             "tests/integrations/test_posthog_mcp.py",

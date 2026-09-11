@@ -1,0 +1,146 @@
+---
+title: "Keycloak"
+description: "Connect Keycloak so OpenSRE can check server health, realm settings, login failures, lockouts and admin changes during investigations"
+---
+
+OpenSRE uses Keycloak diagnostics to investigate authentication alerts — checking server health and login counters, realm settings, recent login failures and brute-force lockouts, and who changed what in a realm. This integration is read-only: it calls the Admin REST API with a confidential service-account client plus the management health/metrics interface. Keycloak 25 or newer is required.
+
+## Prerequisites
+
+- Keycloak 25 or newer (the `:9000` management interface and `KC_BOOTSTRAP_ADMIN_*` bootstrap exist only from 25)
+- A confidential client with service accounts enabled. In the target realm: Clients > Create client > Client ID `opensre`, Client authentication **On**, Service accounts roles **On**
+- Assign roles to the service-account user: Clients > opensre > Service accounts roles > Assign role > filter by clients > `realm-management` > tick `view-realm`, `view-users`, `view-clients`, `view-events`
+- Copy the secret from Clients > opensre > Credentials into `KEYCLOAK_CLIENT_SECRET`
+- A client in the `master` realm with the same roles for the target realm works too (`KEYCLOAK_AUTH_REALM=master`)
+- Management interface for health/metrics: start Keycloak with `KC_HEALTH_ENABLED=true`, `KC_METRICS_ENABLED=true` (and `KC_EVENT_METRICS_USER_ENABLED=true` for per-realm login counters), reachable on port 9000 by default; the main port answers 404 on `/health`
+- Events: Realm settings > Events > enable user events and admin events, or the two event tools report them disabled
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup keycloak
+```
+
+Answer the prompts for the server URL, realm, client ID and secret.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+KEYCLOAK_URL=https://sso.example.net
+KEYCLOAK_REALM=myapp
+KEYCLOAK_CLIENT_ID=opensre
+KEYCLOAK_CLIENT_SECRET=
+KEYCLOAK_AUTH_REALM=
+KEYCLOAK_MANAGEMENT_URL=http://sso.example.net:9000
+KEYCLOAK_VERIFY_SSL=true
+KEYCLOAK_TIMEOUT_SECONDS=10
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `KEYCLOAK_URL` | — | **Required.** Keycloak base URL |
+| `KEYCLOAK_REALM` | — | **Required.** Realm to diagnose |
+| `KEYCLOAK_CLIENT_ID` | — | **Required.** Confidential client with service accounts enabled |
+| `KEYCLOAK_CLIENT_SECRET` | — | **Required.** Client secret (Clients > opensre > Credentials) |
+| `KEYCLOAK_AUTH_REALM` | _(empty)_ | Realm the client lives in; leave blank when it is the same realm |
+| `KEYCLOAK_MANAGEMENT_URL` | _(empty)_ | Management interface URL for health/metrics; leave blank to skip |
+| `KEYCLOAK_VERIFY_SSL` | `true` | Verify the TLS certificate |
+| `KEYCLOAK_TIMEOUT_SECONDS` | `10` | HTTP timeout in seconds |
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "keycloak-prod",
+      "service": "keycloak",
+      "status": "active",
+      "credentials": {
+        "url": "https://sso.example.net",
+        "realm": "myapp",
+        "client_id": "opensre",
+        "client_secret": "…"
+      }
+    }
+  ]
+}
+```
+
+## Tools
+
+Six read-only diagnostic tools are available when OpenSRE investigates a Keycloak-related alert:
+
+### Server status
+
+Returns readiness and liveness checks including the database check, JVM heap and GC, database connection pool usage, HTTP request counts by status class with the top 5xx endpoints, cluster size, and per-realm login success/failure counters from the metrics endpoint.
+
+### Realm overview
+
+Returns a realm's operational settings and counts: enabled flag, SSL requirement, brute-force protection parameters, user and admin event settings, token and session lifespans, total users, client mix and active/offline session totals.
+
+### Login failures
+
+Returns recent login failure events with per-error, per-user, per-IP and per-client counts plus lockout and unknown-user tallies, optionally scoped to one username.
+
+### Admin events
+
+Returns recent admin events (operation type, resource type and path, acting user/client IDs, IP) with counts by operation, resource type and actor, filterable by resource type or operation type.
+
+### Client sessions
+
+Returns every client with its enabled flag, client type, enabled flows and current active and offline session counts, optionally filtered to one client id.
+
+### User status
+
+Looks up one user by username or email and returns account state, brute-force lockout state, active sessions and recent login events, plus a short diagnosis list explaining why the user cannot log in.
+
+<Info>
+Version is shown only when the service account is a master-realm admin; a realm-scoped client gets `version: null` with `version_visible: false`. Session counts come from `client-session-stats` and exclude clients with zero sessions until merged with the client list.
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify keycloak
+```
+
+Expected output (one line):
+
+```
+Detail: Keycloak realm 'myapp' reachable at https://sso.example.net as client 'opensre' (realm enabled=True, brute-force protection=on, user events=on, admin events=on); management health UP at http://sso.example.net:9000
+```
+
+## Known limitations
+
+- Read-only: no session logout, no user unlock, no configuration changes
+- One realm per configured integration
+- Admin-event filters apply to the fetched page only (`fetched` vs `summary.total` makes that visible)
+- No LDAP/federation diagnostics
+- Keycloak 24 and older are unsupported
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **`Invalid client or Invalid client credentials`** | Wrong client ID or secret; check `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET`. |
+| **`Public client not allowed to retrieve service account`** | Enable Client authentication and Service accounts roles on the client. |
+| **`HTTP 403 Forbidden`** | Assign the four roles (`view-realm`, `view-users`, `view-clients`, `view-events`) to the service-account user. |
+| **`Realm does not exist`** | `KEYCLOAK_AUTH_REALM` is wrong — the client lives in a different realm. |
+| **`Realm not found.`** | `KEYCLOAK_REALM` is wrong. |
+| **Health/metrics "not reachable"** | Check the management URL and `KC_HEALTH_ENABLED` / `KC_METRICS_ENABLED`. |
+| **Events empty** | Events are disabled on the realm, or older than `eventsExpiration`. |
+
+## Security best practices
+
+- Grant only the four view roles (`view-realm`, `view-users`, `view-clients`, `view-events`) — never `realm-admin`.
+- Rotate the client secret periodically.
+- The secret lives in the keyring tier, never in code or logs.
+- Restrict the management port (9000) to the OpenSRE host.

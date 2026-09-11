@@ -564,6 +564,12 @@ def _setup_aerospike() -> None:
     _run_spec_setup(AEROSPIKE_SETUP)
 
 
+def _setup_keycloak() -> None:
+    from integrations.keycloak.setup import KEYCLOAK_SETUP
+
+    _run_spec_setup(KEYCLOAK_SETUP)
+
+
 def _setup_discord() -> None:
     from integrations.discord.setup import DISCORD_SETUP
 
@@ -834,6 +840,7 @@ _HANDLERS: dict[str, Any] = {
     "jenkins": _setup_jenkins,
     "tempo": _setup_tempo,
     "pagerduty": _setup_pagerduty,
+    "keycloak": _setup_keycloak,
     "kubernetes": _setup_kubernetes,
     "servicenow": _setup_servicenow,
     "new_relic": _setup_new_relic,

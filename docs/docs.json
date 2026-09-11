@@ -266,6 +266,13 @@
                   "rabbitmq",
                   "temporal"
                 ]
+              },
+              {
+                "group": "Identity",
+                "expanded": false,
+                "pages": [
+                  "keycloak"
+                ]
               }
             ]
           }

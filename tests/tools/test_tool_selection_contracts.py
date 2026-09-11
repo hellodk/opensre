@@ -65,6 +65,9 @@ MODEL_SUPPLIED_CREDENTIAL_PARAMS = frozenset(
         # CloudTrail filters events by an IAM principal name; ``username`` here is
         # the forensic search target, not an auth credential.
         ("lookup_cloudtrail_events", "username"),
+        # Keycloak looks up one realm user by name; ``username`` here is the
+        # lookup target, not an auth credential.
+        ("get_keycloak_user_status", "username"),
     }
 )
 

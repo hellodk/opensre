@@ -56,6 +56,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.jenkins.tools",
     "integrations.jira.tools",
     "integrations.kafka.tools",
+    "integrations.keycloak.tools",
     "integrations.kubernetes.tools",
     "integrations.mariadb.tools",
     "integrations.mongodb.tools",
