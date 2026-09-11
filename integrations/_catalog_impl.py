@@ -334,6 +334,8 @@ from integrations.mongodb_atlas import build_mongodb_atlas_config
 from integrations.mongodb_atlas import classify as _classify_mongodb_atlas
 from integrations.mysql import build_mysql_config
 from integrations.mysql import classify as _classify_mysql
+from integrations.nats import classify as _classify_nats
+from integrations.nats import nats_config_from_env
 from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.openobserve import classify as _classify_openobserve
@@ -546,6 +548,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
+    "nats": _classify_nats,
     "rds": _classify_rds,
     "airflow": _classify_airflow,
     "betterstack": _classify_betterstack,
@@ -1787,6 +1790,15 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         except Exception as exc:
             _report_env_loader_failure(exc, integration="rabbitmq")
+
+    nats_config = nats_config_from_env()
+    if nats_config:
+        integrations.append(
+            _active_env_record(
+                "nats",
+                nats_config.model_dump(exclude={"integration_id"}),
+            )
+        )
 
     try:
         rds_config = rds_config_from_env()

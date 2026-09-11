@@ -76,6 +76,7 @@ class EffectiveIntegrations(StrictConfigModel):
     sentry_mcp: EffectiveIntegrationEntry | None = None
     x_mcp: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
+    nats: EffectiveIntegrationEntry | None = None
     snowflake: EffectiveIntegrationEntry | None = None
     azure: EffectiveIntegrationEntry | None = None
     openobserve: EffectiveIntegrationEntry | None = None

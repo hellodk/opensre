@@ -1,0 +1,34 @@
+{
+  "server_id": "ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+  "now": "2026-09-11T15:56:58.055246761Z",
+  "num_connections": 1,
+  "total": 1,
+  "offset": 0,
+  "limit": 1024,
+  "connections": [
+    {
+      "cid": 51,
+      "kind": "Client",
+      "type": "nats",
+      "ip": "172.20.0.6",
+      "port": 34282,
+      "start": "2026-09-11T15:55:12.312291279Z",
+      "last_activity": "2026-09-11T15:56:57.502143969Z",
+      "rtt": "133\u00b5s",
+      "uptime": "1m45s",
+      "idle": "0s",
+      "pending_bytes": 0,
+      "in_msgs": 0,
+      "out_msgs": 16000,
+      "in_bytes": 0,
+      "out_bytes": 39360,
+      "subscriptions": 1,
+      "name": "NATS CLI Version 0.4.0",
+      "lang": "go",
+      "version": "1.51.0",
+      "subscriptions_list": [
+        "telemetry.>"
+      ]
+    }
+  ]
+}

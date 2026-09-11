@@ -270,6 +270,22 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/nats/",
+        (
+            "tests/integrations/test_nats.py",
+            "tests/integrations/nats/test_diagnostics.py",
+            "tests/integrations/nats/test_monitoring.py",
+            "tests/tools/test_nats_cluster_status_tool.py",
+            "tests/tools/test_nats_connections_tool.py",
+            "tests/tools/test_nats_jetstream_consumers_tool.py",
+            "tests/tools/test_nats_jetstream_streams_tool.py",
+            "tests/tools/test_nats_server_status_tool.py",
+            "tests/tools/test_nats_subscriptions_tool.py",
+            "tests/tools/test_nats_tools_port_injection.py",
+            "tests/tools/test_telemetry.py",
+        ),
+    ),
+    PathRule(
         "integrations/posthog_mcp/",
         (
             "tests/integrations/test_posthog_mcp.py",

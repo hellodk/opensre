@@ -1,0 +1,15 @@
+{
+  "server_id": "NCTS5LTCXFIRHR6I2LYPMYDKJVWGX6PRRGIUP4T5YXRUIDG5QWMUFBSP",
+  "now": "2026-09-11T15:56:58.062795498Z",
+  "num_subscriptions": 311,
+  "num_cache": 68,
+  "num_inserts": 400,
+  "num_removes": 89,
+  "num_matches": 186,
+  "cache_hit_rate": 0.6075268817204301,
+  "max_fanout": 3,
+  "avg_fanout": 2.264705882352941,
+  "total": 0,
+  "offset": 0,
+  "limit": 1024
+}

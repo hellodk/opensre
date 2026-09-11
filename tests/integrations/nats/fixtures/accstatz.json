@@ -1,0 +1,47 @@
+{
+  "server_id": "ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+  "now": "2026-09-11T15:56:58.080578631Z",
+  "account_statz": [
+    {
+      "acc": "$G",
+      "name": "$G",
+      "conns": 1,
+      "leafnodes": 0,
+      "total_conns": 1,
+      "num_subscriptions": 38,
+      "sent": {
+        "msgs": 16781,
+        "bytes": 75799,
+        "gateways": {
+          "msgs": 0,
+          "bytes": 0
+        },
+        "routes": {
+          "msgs": 675,
+          "bytes": 6216
+        },
+        "leafs": {
+          "msgs": 0,
+          "bytes": 0
+        }
+      },
+      "received": {
+        "msgs": 16831,
+        "bytes": 50306,
+        "gateways": {
+          "msgs": 0,
+          "bytes": 0
+        },
+        "routes": {
+          "msgs": 16005,
+          "bytes": 39385
+        },
+        "leafs": {
+          "msgs": 0,
+          "bytes": 0
+        }
+      },
+      "slow_consumers": 0
+    }
+  ]
+}

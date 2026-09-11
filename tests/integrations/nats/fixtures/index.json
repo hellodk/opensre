@@ -1,0 +1,290 @@
+{
+  "varz": {
+    "url": "http://127.0.0.1:18222/varz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "varz.json"
+  },
+  "varz_n2": {
+    "url": "http://127.0.0.1:18223/varz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "varz_n2.json"
+  },
+  "varz_solo": {
+    "url": "http://127.0.0.1:18225/varz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "varz_solo.json"
+  },
+  "healthz": {
+    "url": "http://127.0.0.1:18222/healthz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "healthz.json"
+  },
+  "healthz_js_enabled_only": {
+    "url": "http://127.0.0.1:18222/healthz?js-enabled-only=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "healthz_js_enabled_only.json"
+  },
+  "healthz_js_server_only": {
+    "url": "http://127.0.0.1:18222/healthz?js-server-only=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "healthz_js_server_only.json"
+  },
+  "healthz_solo": {
+    "url": "http://127.0.0.1:18225/healthz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "healthz_solo.json"
+  },
+  "healthz_solo_js_enabled_only": {
+    "url": "http://127.0.0.1:18225/healthz?js-enabled-only=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "healthz_solo_js_enabled_only.json"
+  },
+  "connz": {
+    "url": "http://127.0.0.1:18222/connz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz.json"
+  },
+  "connz_sort_pending": {
+    "url": "http://127.0.0.1:18222/connz?sort=pending",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_sort_pending.json"
+  },
+  "connz_sort_subs_detail": {
+    "url": "http://127.0.0.1:18222/connz?sort=subs&subs=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_sort_subs_detail.json"
+  },
+  "connz_sort_msgs_from_limit": {
+    "url": "http://127.0.0.1:18222/connz?sort=msgs_from&limit=2",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_sort_msgs_from_limit.json"
+  },
+  "connz_state_closed": {
+    "url": "http://127.0.0.1:18222/connz?state=closed",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_state_closed.json"
+  },
+  "connz_state_all": {
+    "url": "http://127.0.0.1:18222/connz?state=all",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_state_all.json"
+  },
+  "connz_bad_sort": {
+    "url": "http://127.0.0.1:18222/connz?sort=bogus",
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "file": "connz_bad_sort.txt"
+  },
+  "connz_bad_state": {
+    "url": "http://127.0.0.1:18222/connz?state=bogus",
+    "status": 400,
+    "content_type": "text/plain; charset=utf-8",
+    "file": "connz_bad_state.txt"
+  },
+  "connz_n2": {
+    "url": "http://127.0.0.1:18223/connz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_n2.json"
+  },
+  "connz_solo": {
+    "url": "http://127.0.0.1:18225/connz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "connz_solo.json"
+  },
+  "subsz": {
+    "url": "http://127.0.0.1:18222/subsz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "subsz.json"
+  },
+  "subsz_detail": {
+    "url": "http://127.0.0.1:18222/subsz?subs=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "subsz_detail.json"
+  },
+  "subsz_test_match": {
+    "url": "http://127.0.0.1:18222/subsz?subs=true&test=telemetry.cpu",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "subsz_test_match.json"
+  },
+  "subsz_test_nomatch": {
+    "url": "http://127.0.0.1:18222/subsz?subs=true&test=nothing.here",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "subsz_test_nomatch.json"
+  },
+  "subsz_n2": {
+    "url": "http://127.0.0.1:18223/subsz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "subsz_n2.json"
+  },
+  "jsz": {
+    "url": "http://127.0.0.1:18222/jsz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz.json"
+  },
+  "jsz_streams": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_streams.json"
+  },
+  "jsz_streams_consumers": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true&consumers=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_streams_consumers.json"
+  },
+  "jsz_streams_consumers_config": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true&consumers=true&config=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_streams_consumers_config.json"
+  },
+  "jsz_stream_filter": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true&consumers=true&stream=ORDERS",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_stream_filter.json"
+  },
+  "jsz_stream_filter_unknown": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true&consumers=true&stream=NOPE",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_stream_filter_unknown.json"
+  },
+  "jsz_consumer_filter": {
+    "url": "http://127.0.0.1:18222/jsz?streams=true&consumers=true&stream=ORDERS&consumer=billing",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_consumer_filter.json"
+  },
+  "jsz_leader_only": {
+    "url": "http://127.0.0.1:18222/jsz?leader-only=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_leader_only.json"
+  },
+  "jsz_n2": {
+    "url": "http://127.0.0.1:18223/jsz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_n2.json"
+  },
+  "jsz_n3_streams_consumers": {
+    "url": "http://127.0.0.1:18224/jsz?streams=true&consumers=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_n3_streams_consumers.json"
+  },
+  "jsz_solo": {
+    "url": "http://127.0.0.1:18225/jsz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_solo.json"
+  },
+  "jsz_solo_streams": {
+    "url": "http://127.0.0.1:18225/jsz?streams=true&consumers=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "jsz_solo_streams.json"
+  },
+  "routez": {
+    "url": "http://127.0.0.1:18222/routez",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "routez.json"
+  },
+  "routez_subs": {
+    "url": "http://127.0.0.1:18222/routez?subs=true",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "routez_subs.json"
+  },
+  "routez_n3": {
+    "url": "http://127.0.0.1:18224/routez",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "routez_n3.json"
+  },
+  "routez_solo": {
+    "url": "http://127.0.0.1:18225/routez",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "routez_solo.json"
+  },
+  "gatewayz": {
+    "url": "http://127.0.0.1:18222/gatewayz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "gatewayz.json"
+  },
+  "gatewayz_solo": {
+    "url": "http://127.0.0.1:18225/gatewayz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "gatewayz_solo.json"
+  },
+  "leafz": {
+    "url": "http://127.0.0.1:18222/leafz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "leafz.json"
+  },
+  "leafz_solo": {
+    "url": "http://127.0.0.1:18225/leafz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "leafz_solo.json"
+  },
+  "accountz": {
+    "url": "http://127.0.0.1:18222/accountz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "accountz.json"
+  },
+  "accstatz": {
+    "url": "http://127.0.0.1:18222/accstatz",
+    "status": 200,
+    "content_type": "application/json",
+    "file": "accstatz.json"
+  },
+  "not_found": {
+    "url": "http://127.0.0.1:18222/nonexistent",
+    "status": 404,
+    "content_type": "text/plain; charset=utf-8",
+    "file": "not_found.txt"
+  },
+  "root": {
+    "url": "http://127.0.0.1:18222/",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "file": "root.txt"
+  },
+  "wrong_port_client_4222": {
+    "url": "http://127.0.0.1:14222/varz",
+    "status": null,
+    "content_type": "",
+    "file": "wrong_port_client_4222.txt"
+  }
+}
