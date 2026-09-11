@@ -1,0 +1,271 @@
+{
+  "memory": 0,
+  "storage": 33150,
+  "reserved_memory": 0,
+  "reserved_storage": 10485760,
+  "accounts": 1,
+  "ha_assets": 6,
+  "api": {
+    "level": 4,
+    "total": 14,
+    "errors": 4
+  },
+  "server_id": "ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+  "now": "2026-09-11T15:56:58.069047183Z",
+  "config": {
+    "max_memory": 50264146944,
+    "max_storage": 120282688512,
+    "store_dir": "/tmp/js/jetstream",
+    "sync_interval": 120000000000,
+    "strict": true
+  },
+  "limits": {},
+  "streams": 2,
+  "consumers": 3,
+  "messages": 625,
+  "bytes": 33150,
+  "meta_cluster": {
+    "name": "opensre-demo",
+    "leader": "n1",
+    "peer": "fjFyEjc1",
+    "replicas": [
+      {
+        "name": "n2",
+        "current": true,
+        "active": 932609079,
+        "peer": "44jzkV9D"
+      },
+      {
+        "name": "n3",
+        "current": true,
+        "active": 932804891,
+        "peer": "BXScrY9i"
+      }
+    ],
+    "cluster_size": 3,
+    "pending": 0,
+    "pending_requests": 0,
+    "pending_infos": 0,
+    "snapshot": {
+      "pending_entries": 0,
+      "pending_size": 0,
+      "last_time": "2026-09-11T15:56:05.629337348Z",
+      "last_duration": 87032
+    }
+  },
+  "account_details": [
+    {
+      "name": "$G",
+      "id": "$G",
+      "memory": 1431,
+      "storage": 99450,
+      "reserved_memory": 18446744073709551615,
+      "reserved_storage": 18446744073709551615,
+      "accounts": 0,
+      "ha_assets": 0,
+      "api": {
+        "level": 0,
+        "total": 31,
+        "errors": 4
+      },
+      "stream_detail": [
+        {
+          "name": "ORDERS",
+          "created": "2026-09-11T15:55:07.251899391Z",
+          "cluster": {
+            "name": "opensre-demo",
+            "raft_group": "S-R3F-VJA9dCiS",
+            "leader": "n3",
+            "system_account": true,
+            "traffic_account": "$SYS",
+            "replicas": [
+              {
+                "name": "n2",
+                "current": false,
+                "active": 0,
+                "peer": "44jzkV9D"
+              },
+              {
+                "name": "n3",
+                "current": true,
+                "active": 750434826,
+                "peer": "BXScrY9i"
+              }
+            ]
+          },
+          "state": {
+            "messages": 600,
+            "bytes": 31984,
+            "first_seq": 1,
+            "first_ts": "2026-09-11T15:55:09.301353821Z",
+            "last_seq": 600,
+            "last_ts": "2026-09-11T15:55:09.909806874Z",
+            "num_subjects": 2,
+            "consumer_count": 2
+          },
+          "consumer_detail": [
+            {
+              "stream_name": "ORDERS",
+              "name": "billing",
+              "created": "2026-09-11T15:55:08.113061269Z",
+              "delivered": {
+                "consumer_seq": 70,
+                "stream_seq": 70,
+                "last_active": "2026-09-11T15:55:11.846495325Z"
+              },
+              "ack_floor": {
+                "consumer_seq": 50,
+                "stream_seq": 50,
+                "last_active": "2026-09-11T15:55:11.599452413Z"
+              },
+              "num_ack_pending": 20,
+              "num_redelivered": 0,
+              "num_waiting": 0,
+              "num_pending": 330,
+              "cluster": {
+                "name": "opensre-demo",
+                "raft_group": "C-R3F-UDfxZC1Y",
+                "leader": "n1",
+                "leader_since": "2026-09-11T15:55:08.181287965Z",
+                "system_account": true,
+                "traffic_account": "$SYS",
+                "replicas": [
+                  {
+                    "name": "n2",
+                    "current": true,
+                    "active": 887026115,
+                    "peer": "44jzkV9D"
+                  },
+                  {
+                    "name": "n3",
+                    "current": true,
+                    "active": 887048533,
+                    "peer": "BXScrY9i"
+                  }
+                ]
+              },
+              "ts": "2026-09-11T15:56:58.069057262Z"
+            },
+            {
+              "stream_name": "ORDERS",
+              "name": "audit",
+              "created": "2026-09-11T15:55:08.427762188Z",
+              "delivered": {
+                "consumer_seq": 0,
+                "stream_seq": 0
+              },
+              "ack_floor": {
+                "consumer_seq": 0,
+                "stream_seq": 0
+              },
+              "num_ack_pending": 0,
+              "num_redelivered": 0,
+              "num_waiting": 0,
+              "num_pending": 0,
+              "cluster": {
+                "name": "opensre-demo",
+                "raft_group": "C-R3F-YLS6UVQ8",
+                "leader": "n3",
+                "system_account": true,
+                "traffic_account": "$SYS",
+                "replicas": [
+                  {
+                    "name": "n2",
+                    "current": false,
+                    "active": 0,
+                    "peer": "44jzkV9D"
+                  },
+                  {
+                    "name": "n3",
+                    "current": true,
+                    "active": 575881739,
+                    "peer": "BXScrY9i"
+                  }
+                ]
+              },
+              "ts": "2026-09-11T15:56:58.069058851Z"
+            }
+          ]
+        },
+        {
+          "name": "JOBS",
+          "created": "2026-09-11T15:55:07.792590937Z",
+          "cluster": {
+            "name": "opensre-demo",
+            "raft_group": "S-R3F-4Atj5A5o",
+            "leader": "n3",
+            "system_account": true,
+            "traffic_account": "$SYS",
+            "replicas": [
+              {
+                "name": "n2",
+                "current": false,
+                "active": 0,
+                "peer": "44jzkV9D"
+              },
+              {
+                "name": "n3",
+                "current": true,
+                "active": 210201634,
+                "peer": "BXScrY9i"
+              }
+            ]
+          },
+          "state": {
+            "messages": 25,
+            "bytes": 1166,
+            "first_seq": 1,
+            "first_ts": "2026-09-11T15:55:11.012632752Z",
+            "last_seq": 25,
+            "last_ts": "2026-09-11T15:55:11.014827464Z",
+            "num_subjects": 1,
+            "consumer_count": 1
+          },
+          "consumer_detail": [
+            {
+              "stream_name": "JOBS",
+              "name": "worker",
+              "created": "2026-09-11T15:55:08.74173831Z",
+              "delivered": {
+                "consumer_seq": 5,
+                "stream_seq": 2,
+                "last_active": "2026-09-11T15:55:12.077441337Z"
+              },
+              "ack_floor": {
+                "consumer_seq": 0,
+                "stream_seq": 0
+              },
+              "num_ack_pending": 1,
+              "num_redelivered": 2,
+              "num_waiting": 0,
+              "num_pending": 0,
+              "cluster": {
+                "name": "opensre-demo",
+                "raft_group": "C-R3F-PMCEI4Uh",
+                "leader": "n2",
+                "system_account": true,
+                "traffic_account": "$SYS",
+                "replicas": [
+                  {
+                    "name": "n2",
+                    "current": true,
+                    "active": 260656448,
+                    "peer": "44jzkV9D"
+                  },
+                  {
+                    "name": "n3",
+                    "current": false,
+                    "active": 0,
+                    "peer": "BXScrY9i"
+                  }
+                ]
+              },
+              "ts": "2026-09-11T15:56:58.069073098Z"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "total": 1
+}

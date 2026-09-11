@@ -1,0 +1,57 @@
+{
+  "memory": 0,
+  "storage": 33150,
+  "reserved_memory": 0,
+  "reserved_storage": 10485760,
+  "accounts": 1,
+  "ha_assets": 6,
+  "api": {
+    "level": 4,
+    "total": 14,
+    "errors": 4
+  },
+  "server_id": "ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+  "now": "2026-09-11T15:56:58.063531533Z",
+  "config": {
+    "max_memory": 50264146944,
+    "max_storage": 120282688512,
+    "store_dir": "/tmp/js/jetstream",
+    "sync_interval": 120000000000,
+    "strict": true
+  },
+  "limits": {},
+  "streams": 2,
+  "consumers": 3,
+  "messages": 625,
+  "bytes": 33150,
+  "meta_cluster": {
+    "name": "opensre-demo",
+    "leader": "n1",
+    "peer": "fjFyEjc1",
+    "replicas": [
+      {
+        "name": "n2",
+        "current": true,
+        "active": 927101289,
+        "peer": "44jzkV9D"
+      },
+      {
+        "name": "n3",
+        "current": true,
+        "active": 927297101,
+        "peer": "BXScrY9i"
+      }
+    ],
+    "cluster_size": 3,
+    "pending": 0,
+    "pending_requests": 0,
+    "pending_infos": 0,
+    "snapshot": {
+      "pending_entries": 0,
+      "pending_size": 0,
+      "last_time": "2026-09-11T15:56:05.629337348Z",
+      "last_duration": 87032
+    }
+  },
+  "total": 1
+}

@@ -1,0 +1,2 @@
+INFO {"server_id":"ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G","server_name":"n1","version":"2.14.6","proto":1,"git_commit":"1aa10f9","go":"go1.26.7","host":"0.0.0.0","port":4222,"headers":true,"max_payload":1048576,"jetstream":true,"client_id":57,"client_ip":"172.20.0.1","cluster":"opensre-demo","connect_urls":["172.20.0.2:4222","172.20.0.3:4222","172.20.0.4:4222"],"api_lvl":4,"xkey":"XBKG5EDGGKWFZPJG2N3253PXNBBKULWBOKEDH6S7WWNNAMVKO25SHYBA"} 
+-ERR 'Unknown Protocol Operation'
