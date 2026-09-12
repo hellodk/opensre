@@ -1,0 +1,47 @@
+[
+  {
+    "id": "a0949a49-c4df-4577-adaf-6b0a43039a80",
+    "time": 1789063901044,
+    "realmId": "64084eb3-16e0-43cd-bc42-8994a7bc1406",
+    "authDetails": {
+      "realmId": "6b3818ed-e34f-4b54-8538-b8c252933454",
+      "clientId": "c04a73b5-ba7d-4a71-94f5-b0c7b9a1a6a9",
+      "userId": "669210bc-f1c0-4e8b-acce-08dea5173e26",
+      "ipAddress": "172.17.0.1"
+    },
+    "operationType": "CREATE",
+    "resourceType": "USER",
+    "resourcePath": "users/d1779eaf-716f-4430-8d6b-7ef2d06e1701",
+    "representation": "{\"username\":\"dave\",\"firstName\":\"Dave\",\"lastName\":\"Pending\",\"email\":\"dave@example.com\",\"emailVerified\":false,\"enabled\":true,\"requiredActions\":[\"VERIFY_EMAIL\",\"UPDATE_PASSWORD\"]}"
+  },
+  {
+    "id": "6a6ddbb0-b948-4b0f-9839-ec380bb8b178",
+    "time": 1789063901007,
+    "realmId": "64084eb3-16e0-43cd-bc42-8994a7bc1406",
+    "authDetails": {
+      "realmId": "6b3818ed-e34f-4b54-8538-b8c252933454",
+      "clientId": "c04a73b5-ba7d-4a71-94f5-b0c7b9a1a6a9",
+      "userId": "669210bc-f1c0-4e8b-acce-08dea5173e26",
+      "ipAddress": "172.17.0.1"
+    },
+    "operationType": "CREATE",
+    "resourceType": "USER",
+    "resourcePath": "users/ab876504-edd5-4107-80a7-94701a603429",
+    "representation": "{\"username\":\"carol\",\"firstName\":\"Carol\",\"lastName\":\"Locked\",\"email\":\"carol@example.com\",\"emailVerified\":false,\"enabled\":true}"
+  },
+  {
+    "id": "6715188a-ba66-47f5-949b-05a34592634d",
+    "time": 1789063900967,
+    "realmId": "64084eb3-16e0-43cd-bc42-8994a7bc1406",
+    "authDetails": {
+      "realmId": "6b3818ed-e34f-4b54-8538-b8c252933454",
+      "clientId": "c04a73b5-ba7d-4a71-94f5-b0c7b9a1a6a9",
+      "userId": "669210bc-f1c0-4e8b-acce-08dea5173e26",
+      "ipAddress": "172.17.0.1"
+    },
+    "operationType": "CREATE",
+    "resourceType": "USER",
+    "resourcePath": "users/fa38fa10-f4e7-4043-8f92-a6854d2663b3",
+    "representation": "{\"username\":\"bob\",\"firstName\":\"Bob\",\"lastName\":\"Disabled\",\"email\":\"bob@example.com\",\"emailVerified\":true,\"enabled\":false}"
+  }
+]

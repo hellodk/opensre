@@ -1,0 +1,33 @@
+[
+  {
+    "id": "5b4a6d62-bfd1-4ad0-88ec-156a439b8832",
+    "time": 1789063906790,
+    "type": "LOGIN_ERROR",
+    "realmId": "64084eb3-16e0-43cd-bc42-8994a7bc1406",
+    "clientId": "demo-app",
+    "ipAddress": "172.17.0.1",
+    "error": "user_not_found",
+    "details": {
+      "auth_method": "openid-connect",
+      "grant_type": "password",
+      "client_auth_method": "client-secret",
+      "username": "mallory"
+    }
+  },
+  {
+    "id": "a520ecc3-552f-493f-92ab-ac74ee82dc88",
+    "time": 1789063905661,
+    "type": "LOGIN_ERROR",
+    "realmId": "64084eb3-16e0-43cd-bc42-8994a7bc1406",
+    "clientId": "demo-app",
+    "userId": "ab876504-edd5-4107-80a7-94701a603429",
+    "ipAddress": "172.17.0.1",
+    "error": "user_temporarily_disabled",
+    "details": {
+      "auth_method": "openid-connect",
+      "grant_type": "password",
+      "client_auth_method": "client-secret",
+      "username": "carol"
+    }
+  }
+]

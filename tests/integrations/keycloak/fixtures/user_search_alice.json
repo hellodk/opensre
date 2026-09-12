@@ -1,0 +1,19 @@
+[
+  {
+    "id": "cf7afc15-ddf3-47da-b371-1732dc2a3200",
+    "username": "alice",
+    "firstName": "Alice",
+    "lastName": "Example",
+    "email": "alice@example.com",
+    "emailVerified": true,
+    "enabled": true,
+    "createdTimestamp": 1789063900895,
+    "totp": false,
+    "disableableCredentialTypes": [],
+    "requiredActions": [],
+    "notBefore": 0,
+    "access": {
+      "manage": false
+    }
+  }
+]

@@ -1,0 +1,254 @@
+{
+  "token_client_credentials.json": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18080/realms/opensre-demo/protocol/openid-connect/token",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "token_error_bad_secret.json": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18080/realms/opensre-demo/protocol/openid-connect/token",
+    "status": 401,
+    "content_type": "application/json"
+  },
+  "token_error_unknown_client.json": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18080/realms/opensre-demo/protocol/openid-connect/token",
+    "status": 401,
+    "content_type": "application/json"
+  },
+  "token_error_unknown_realm.json": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18080/realms/no-such-realm/protocol/openid-connect/token",
+    "status": 404,
+    "content_type": "application/json"
+  },
+  "token_error_public_client.json": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18080/realms/opensre-demo/protocol/openid-connect/token",
+    "status": 401,
+    "content_type": "application/json"
+  },
+  "serverinfo_sa.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/serverinfo",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "serverinfo_admin.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/serverinfo",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "realm.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "users_count.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users/count",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "clients_brief.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/clients?briefRepresentation=true",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "client_session_stats.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/client-session-stats",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_config.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events/config",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_all.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events?max=100",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_login_error.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events?type=LOGIN_ERROR&max=100",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_login_error_paged.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events?type=LOGIN_ERROR&first=2&max=2",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_for_carol.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events?user=ab876504-edd5-4107-80a7-94701a603429&max=20",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "events_bad_type.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/events?type=NOT_A_TYPE&max=5",
+    "status": 500,
+    "content_type": "application/json"
+  },
+  "admin_events.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/admin-events?max=100",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "admin_events_paged.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/admin-events?first=0&max=3",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_search_alice.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users?username=alice&exact=true",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_search_by_email.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users?email=carol%40example.com&exact=true",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_search_nobody.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users?username=nobody&exact=true",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_search_prefix.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users?search=a&max=10",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_get_dave.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users/d1779eaf-716f-4430-8d6b-7ef2d06e1701",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_get_bogus_id.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users/00000000-0000-0000-0000-000000000000",
+    "status": 404,
+    "content_type": "application/json"
+  },
+  "brute_force_carol.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/attack-detection/brute-force/users/ab876504-edd5-4107-80a7-94701a603429",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "brute_force_alice.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/attack-detection/brute-force/users/cf7afc15-ddf3-47da-b371-1732dc2a3200",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_sessions_alice.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users/cf7afc15-ddf3-47da-b371-1732dc2a3200/sessions",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "user_sessions_carol.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo/users/ab876504-edd5-4107-80a7-94701a603429/sessions",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "realm_forbidden_master.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/master",
+    "status": 403,
+    "content_type": "application/json"
+  },
+  "realm_not_found.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/no-such-realm",
+    "status": 404,
+    "content_type": "application/json"
+  },
+  "realm_unauthorized.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo",
+    "status": 401,
+    "content_type": "application/json"
+  },
+  "master_events_config.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/master/events/config",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "master_events.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/admin/realms/master/events?max=5",
+    "status": 200,
+    "content_type": "application/json;charset=UTF-8"
+  },
+  "sa_write_forbidden.json": {
+    "method": "PUT",
+    "url": "http://127.0.0.1:18080/admin/realms/opensre-demo",
+    "status": 403,
+    "content_type": "application/json"
+  },
+  "mgmt_health.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:19000/health",
+    "status": 200,
+    "content_type": "application/json; charset=UTF-8"
+  },
+  "mgmt_health_ready.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:19000/health/ready",
+    "status": 200,
+    "content_type": "application/json; charset=UTF-8"
+  },
+  "mgmt_health_live.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:19000/health/live",
+    "status": 200,
+    "content_type": "application/json; charset=UTF-8"
+  },
+  "mgmt_health_started.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:19000/health/started",
+    "status": 200,
+    "content_type": "application/json; charset=UTF-8"
+  },
+  "mgmt_metrics.txt": {
+    "method": "GET",
+    "url": "http://127.0.0.1:19000/metrics",
+    "status": 200,
+    "content_type": "application/openmetrics-text; version=1.0.0; charset=utf-8"
+  },
+  "mgmt_health_on_main_port.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/health",
+    "status": 404,
+    "content_type": "application/json"
+  },
+  "openid_configuration_missing_realm.json": {
+    "method": "GET",
+    "url": "http://127.0.0.1:18080/realms/no-such-realm/.well-known/openid-configuration",
+    "status": 404,
+    "content_type": "application/json"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "error": "unauthorized_client",
+  "error_description": "Public client not allowed to retrieve service account"
+}

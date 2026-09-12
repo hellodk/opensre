@@ -1,0 +1,1351 @@
+# TYPE jvm_gc_memory_promoted_bytes counter
+# HELP jvm_gc_memory_promoted_bytes Count of positive increases in the size of the old generation memory pool before GC to after GC
+jvm_gc_memory_promoted_bytes_total 9.2010392E7
+# TYPE vendor_cache_container_stats_off_heap_memory_used gauge
+# HELP vendor_cache_container_stats_off_heap_memory_used Amount in bytes of off-heap memory used by this cache container
+vendor_cache_container_stats_off_heap_memory_used{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE netty_allocator_memory_used gauge
+# HELP netty_allocator_memory_used  
+netty_allocator_memory_used{allocator_type="UnpooledByteBufAllocator",memory_type="direct",name="vertx-unpooled"} 0.0
+netty_allocator_memory_used{allocator_type="PooledByteBufAllocator",memory_type="heap",name="pooled"} 0.0
+netty_allocator_memory_used{allocator_type="UnpooledByteBufAllocator",memory_type="direct",name="unpooled"} 31.0
+netty_allocator_memory_used{allocator_type="PooledByteBufAllocator",memory_type="heap",name="vertx-pooled"} 0.0
+netty_allocator_memory_used{allocator_type="PooledByteBufAllocator",memory_type="direct",name="pooled"} 1245184.0
+netty_allocator_memory_used{allocator_type="UnpooledByteBufAllocator",memory_type="heap",name="unpooled"} 2176.0
+netty_allocator_memory_used{allocator_type="UnpooledByteBufAllocator",memory_type="heap",name="vertx-unpooled"} 0.0
+netty_allocator_memory_used{allocator_type="PooledByteBufAllocator",memory_type="direct",name="vertx-pooled"} 0.0
+# TYPE jvm_memory_committed_bytes gauge
+# HELP jvm_memory_committed_bytes The amount of memory in bytes that is committed for the Java virtual machine to use
+jvm_memory_committed_bytes{area="nonheap",id="CodeHeap 'profiled nmethods'"} 4.6727168E7
+jvm_memory_committed_bytes{area="heap",id="G1 Survivor Space"} 3.3554432E7
+jvm_memory_committed_bytes{area="heap",id="G1 Old Gen"} 1.6777216E8
+jvm_memory_committed_bytes{area="nonheap",id="Metaspace"} 1.6187392E8
+jvm_memory_committed_bytes{area="nonheap",id="CodeHeap 'non-nmethods'"} 3997696.0
+jvm_memory_committed_bytes{area="heap",id="G1 Eden Space"} 2.68435456E8
+jvm_memory_committed_bytes{area="nonheap",id="Compressed Class Space"} 2.0774912E7
+jvm_memory_committed_bytes{area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6187392E7
+# TYPE worker_pool_idle gauge
+# HELP worker_pool_idle The number of resources from the pool currently idle
+worker_pool_idle{pool_name="vert.x-internal-blocking",pool_type="worker"} 20.0
+worker_pool_idle{pool_name="vert.x-worker-thread",pool_type="worker"} 79.0
+# TYPE agroal_invalid_count counter
+# HELP agroal_invalid_count Number of connections removed from the pool for being invalid.
+agroal_invalid_count_total{datasource="default"} 0.0
+# TYPE vendor_local_container_stats_memory_used gauge
+# HELP vendor_local_container_stats_memory_used The amount of memory used by the local JVM in bytes
+vendor_local_container_stats_memory_used{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.23331E8
+# TYPE vendor_transactions_rollbacks gauge
+# HELP vendor_transactions_rollbacks Number of transaction rollbacks performed since last reset
+vendor_transactions_rollbacks{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollbacks{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollbacks{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE agroal_leak_detection_count counter
+# HELP agroal_leak_detection_count Number of times a leak was detected. A single connection can be detected multiple times.
+agroal_leak_detection_count_total{datasource="default"} 0.0
+# TYPE jvm_threads_daemon_threads gauge
+# HELP jvm_threads_daemon_threads The current number of live daemon threads
+jvm_threads_daemon_threads 25.0
+# TYPE agroal_creation_time_average_milliseconds gauge
+# HELP agroal_creation_time_average_milliseconds Average time for a connection to be created.
+agroal_creation_time_average_milliseconds{datasource="default"} 33.0
+# TYPE vendor_statistics_average_read_time_nanos gauge
+# HELP vendor_statistics_average_read_time_nanos Average number of nanoseconds for a read operation on the cache
+vendor_statistics_average_read_time_nanos{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time_nanos{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time_nanos{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time_nanos{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3841.0
+vendor_statistics_average_read_time_nanos{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 21542.0
+vendor_statistics_average_read_time_nanos{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time_nanos{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 7180.0
+vendor_statistics_average_read_time_nanos{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 979662.0
+vendor_statistics_average_read_time_nanos{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 907.0
+vendor_statistics_average_read_time_nanos{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 5666.0
+vendor_statistics_average_read_time_nanos{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1429.0
+vendor_statistics_average_read_time_nanos{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8341.0
+vendor_statistics_average_read_time_nanos{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 28890.0
+vendor_statistics_average_read_time_nanos{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time_nanos{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 94327.0
+vendor_statistics_average_read_time_nanos{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1824.0
+# TYPE netty_eventexecutor_tasks_pending gauge
+# HELP netty_eventexecutor_tasks_pending  
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-12"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-13"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-10"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-11"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-8"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-7"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-9"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-4"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-3"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-6"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-18"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-5"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-19"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-0"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-16"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-17"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-2"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-14"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-1"} 0.0
+netty_eventexecutor_tasks_pending{executor="eventLoop",name="vert.x-eventloop-thread-15"} 0.0
+netty_eventexecutor_tasks_pending{executor="acceptor",name="vert.x-acceptor-thread-0"} 0.0
+# TYPE vendor_number_of_running_caches gauge
+# HELP vendor_number_of_running_caches The total number of running caches, including the default cache.
+vendor_number_of_running_caches{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+# TYPE jvm_gc_pause_seconds summary
+# HELP jvm_gc_pause_seconds Time spent in GC pause
+jvm_gc_pause_seconds_count{action="end of minor GC",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 6.0
+jvm_gc_pause_seconds_sum{action="end of minor GC",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.055
+jvm_gc_pause_seconds_count{action="end of minor GC",cause="CodeCache GC Threshold",gc="G1 Young Generation"} 2.0
+jvm_gc_pause_seconds_sum{action="end of minor GC",cause="CodeCache GC Threshold",gc="G1 Young Generation"} 0.024
+# TYPE jvm_gc_pause_seconds_max gauge
+# HELP jvm_gc_pause_seconds_max Time spent in GC pause
+jvm_gc_pause_seconds_max{action="end of minor GC",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.014
+jvm_gc_pause_seconds_max{action="end of minor GC",cause="CodeCache GC Threshold",gc="G1 Young Generation"} 0.016
+# TYPE vendor_statistics_miss_times_seconds summary
+# HELP vendor_statistics_miss_times_seconds The read misses times
+vendor_statistics_miss_times_seconds_count{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_sum{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_count{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_sum{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_count{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_sum{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_miss_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.85199E-4
+vendor_statistics_miss_times_seconds_count{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_miss_times_seconds_sum{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.4923E-5
+vendor_statistics_miss_times_seconds_count{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_sum{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 18.0
+vendor_statistics_miss_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.22155E-4
+vendor_statistics_miss_times_seconds_count{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_miss_times_seconds_sum{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 9.79662E-4
+vendor_statistics_miss_times_seconds_count{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_miss_times_seconds_sum{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.6361E-5
+vendor_statistics_miss_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 311.0
+vendor_statistics_miss_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.003738833
+vendor_statistics_miss_times_seconds_count{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 493.0
+vendor_statistics_miss_times_seconds_sum{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.001007289
+vendor_statistics_miss_times_seconds_count{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 46.0
+vendor_statistics_miss_times_seconds_sum{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.83705E-4
+vendor_statistics_miss_times_seconds_count{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 33.0
+vendor_statistics_miss_times_seconds_sum{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.73064E-4
+vendor_statistics_miss_times_seconds_count{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_sum{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_miss_times_seconds_count{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 7.0
+vendor_statistics_miss_times_seconds_sum{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 5.42715E-4
+vendor_statistics_miss_times_seconds_count{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 31.0
+vendor_statistics_miss_times_seconds_sum{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.7626E-5
+# TYPE jvm_memory_used_bytes gauge
+# HELP jvm_memory_used_bytes The amount of used memory
+jvm_memory_used_bytes{area="nonheap",id="CodeHeap 'profiled nmethods'"} 4.5486208E7
+jvm_memory_used_bytes{area="heap",id="G1 Survivor Space"} 2.395592E7
+jvm_memory_used_bytes{area="heap",id="G1 Old Gen"} 9.3513592E7
+jvm_memory_used_bytes{area="nonheap",id="Metaspace"} 1.60616944E8
+jvm_memory_used_bytes{area="nonheap",id="CodeHeap 'non-nmethods'"} 3818880.0
+jvm_memory_used_bytes{area="heap",id="G1 Eden Space"} 0.0
+jvm_memory_used_bytes{area="nonheap",id="Compressed Class Space"} 2.017004E7
+jvm_memory_used_bytes{area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6182144E7
+# TYPE agroal_reap_count counter
+# HELP agroal_reap_count Number of connections removed from the pool for being idle.
+agroal_reap_count_total{datasource="default"} 0.0
+# TYPE jvm_memory_usage_after_gc gauge
+# HELP jvm_memory_usage_after_gc The percentage of long-lived heap pool used after the last GC event, in the range [0..1]
+jvm_memory_usage_after_gc{area="heap",pool="long-lived"} 0.001992081641469196
+# TYPE agroal_acquire_count counter
+# HELP agroal_acquire_count Number of times an acquire operation succeeded.
+agroal_acquire_count_total{datasource="default"} 80.0
+# TYPE vendor_statistics_average_read_time gauge
+# HELP vendor_statistics_average_read_time Average number of milliseconds for a read operation on the cache
+vendor_statistics_average_read_time{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_read_time{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE vendor_statistics_time_since_reset gauge
+# HELP vendor_statistics_time_since_reset Number of seconds since the cache statistics were last reset
+vendor_statistics_time_since_reset{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_reset{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_reset{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_reset{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_reset{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_reset{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+# TYPE vendor_transactions_commit_times_seconds summary
+# HELP vendor_transactions_commit_times_seconds The commit command times
+vendor_transactions_commit_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commit_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commit_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commit_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commit_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commit_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE netty_allocator_pooled_threadlocal_caches gauge
+# HELP netty_allocator_pooled_threadlocal_caches  
+netty_allocator_pooled_threadlocal_caches{allocator_type="PooledByteBufAllocator",name="vertx-pooled"} 0.0
+netty_allocator_pooled_threadlocal_caches{allocator_type="PooledByteBufAllocator",name="pooled"} 3.0
+# TYPE vendor_transactions_prepare_times_seconds summary
+# HELP vendor_transactions_prepare_times_seconds The prepare command times
+vendor_transactions_prepare_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 486.0
+vendor_transactions_prepare_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.021356938
+vendor_transactions_prepare_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_transactions_prepare_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.19826E-4
+vendor_transactions_prepare_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 42.0
+vendor_transactions_prepare_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.001934572
+# TYPE vendor_transactions_prepares gauge
+# HELP vendor_transactions_prepares Number of transaction prepares performed since last reset
+vendor_transactions_prepares{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 486.0
+vendor_transactions_prepares{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_transactions_prepares{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 42.0
+# TYPE vendor_local_container_stats_memory_total gauge
+# HELP vendor_local_container_stats_memory_total The total amount of memory in the local JVM in bytes
+vendor_local_container_stats_memory_total{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 4.69762048E8
+# TYPE agroal_creation_time_total_milliseconds gauge
+# HELP agroal_creation_time_total_milliseconds Total time waiting for connections to be created.
+agroal_creation_time_total_milliseconds{datasource="default"} 100.0
+# TYPE vendor_passivation_passivations gauge
+# HELP vendor_passivation_passivations Number of passivation events
+vendor_passivation_passivations{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_passivation_passivations{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE jvm_threads_states_threads gauge
+# HELP jvm_threads_states_threads The current number of threads
+jvm_threads_states_threads{state="runnable"} 25.0
+jvm_threads_states_threads{state="blocked"} 0.0
+jvm_threads_states_threads{state="waiting"} 11.0
+jvm_threads_states_threads{state="timed-waiting"} 12.0
+jvm_threads_states_threads{state="new"} 0.0
+jvm_threads_states_threads{state="terminated"} 0.0
+# TYPE vendor_statistics_remove_miss_times_seconds summary
+# HELP vendor_statistics_remove_miss_times_seconds The remove misses times
+vendor_statistics_remove_miss_times_seconds_count{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 287.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.002684065
+vendor_statistics_remove_miss_times_seconds_count{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_miss_times_seconds_count{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 24.0
+vendor_statistics_remove_miss_times_seconds_sum{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.2848E-4
+# TYPE jvm_buffer_count_buffers gauge
+# HELP jvm_buffer_count_buffers An estimate of the number of buffers in the pool
+jvm_buffer_count_buffers{id="mapped - 'non-volatile memory'"} 0.0
+jvm_buffer_count_buffers{id="mapped"} 0.0
+jvm_buffer_count_buffers{id="direct"} 26.0
+# TYPE jvm_memory_max_bytes gauge
+# HELP jvm_memory_max_bytes The maximum amount of memory in bytes that can be used for memory management
+jvm_memory_max_bytes{area="nonheap",id="CodeHeap 'profiled nmethods'"} 1.22023936E8
+jvm_memory_max_bytes{area="heap",id="G1 Survivor Space"} -1.0
+jvm_memory_max_bytes{area="heap",id="G1 Old Gen"} 4.6942650368E10
+jvm_memory_max_bytes{area="nonheap",id="Metaspace"} 2.68435456E8
+jvm_memory_max_bytes{area="nonheap",id="CodeHeap 'non-nmethods'"} 7606272.0
+jvm_memory_max_bytes{area="heap",id="G1 Eden Space"} -1.0
+jvm_memory_max_bytes{area="nonheap",id="Compressed Class Space"} 2.18103808E8
+jvm_memory_max_bytes{area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.22028032E8
+# TYPE vendor_statistics_off_heap_memory_used gauge
+# HELP vendor_statistics_off_heap_memory_used Amount off-heap memory used by this cache (bytes)
+vendor_statistics_off_heap_memory_used{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_off_heap_memory_used{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE agroal_active_count gauge
+# HELP agroal_active_count Number of active connections. These connections are in use and not available to be acquired.
+agroal_active_count{datasource="default"} 0.0
+# TYPE vendor_local_container_stats_memory_max gauge
+# HELP vendor_local_container_stats_memory_max The maximum amount of memory in local JVM will attempt to utilise in bytes
+vendor_local_container_stats_memory_max{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 4.6942650368E10
+# TYPE vendor_cache_container_health_number_of_nodes gauge
+# HELP vendor_cache_container_health_number_of_nodes Total nodes in the cluster
+vendor_cache_container_health_number_of_nodes{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE vendor_statistics_data_memory_used gauge
+# HELP vendor_statistics_data_memory_used Amount of memory in bytes allocated for use in eviction for data in the cache
+vendor_statistics_data_memory_used{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_data_memory_used{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+# TYPE vendor_cluster_size gauge
+# HELP vendor_cluster_size Size of the cluster in number of nodes
+vendor_cluster_size{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+# TYPE vendor_statistics_hit_times_seconds summary
+# HELP vendor_statistics_hit_times_seconds The read hits times
+vendor_statistics_hit_times_seconds_count{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 104.0
+vendor_statistics_hit_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.75819E-4
+vendor_statistics_hit_times_seconds_count{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_hit_times_seconds_sum{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.72847E-4
+vendor_statistics_hit_times_seconds_count{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 132.0
+vendor_statistics_hit_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.54979E-4
+vendor_statistics_hit_times_seconds_count{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 64.0
+vendor_statistics_hit_times_seconds_sum{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 4.6224E-5
+vendor_statistics_hit_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3344.0
+vendor_statistics_hit_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.016973796
+vendor_statistics_hit_times_seconds_count{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2828.0
+vendor_statistics_hit_times_seconds_sum{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.003739515
+vendor_statistics_hit_times_seconds_count{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_hit_times_seconds_sum{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 7.42589E-4
+vendor_statistics_hit_times_seconds_count{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_sum{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_times_seconds_count{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.0
+vendor_statistics_hit_times_seconds_sum{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.83536E-4
+vendor_statistics_hit_times_seconds_count{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 96.0
+vendor_statistics_hit_times_seconds_sum{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.64121E-4
+# TYPE worker_pool_rejected counter
+# HELP worker_pool_rejected Number of times submissions to the pool have been rejected
+worker_pool_rejected_total{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_rejected_total{pool_name="vert.x-worker-thread",pool_type="worker"} 0.0
+# TYPE vendor_transactions_rollback_times_seconds summary
+# HELP vendor_transactions_rollback_times_seconds The rollback command times
+vendor_transactions_rollback_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollback_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollback_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollback_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollback_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_rollback_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE vendor_statistics_remove_misses gauge
+# HELP vendor_statistics_remove_misses Number of cache removals where keys were not found
+vendor_statistics_remove_misses{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 287.0
+vendor_statistics_remove_misses{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_misses{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 24.0
+# TYPE agroal_flush_count counter
+# HELP agroal_flush_count Number of connections removed from the pool, not counting invalid / idle.
+agroal_flush_count_total{datasource="default"} 0.0
+# TYPE http_server_bytes_written_max gauge
+# HELP http_server_bytes_written_max Number of bytes sent by the server
+http_server_bytes_written_max{server_port="8080"} 8192.0
+http_server_bytes_written_max{server_port="9000"} 345.0
+# TYPE http_server_bytes_written summary
+# HELP http_server_bytes_written Number of bytes sent by the server
+http_server_bytes_written_count{server_port="8080"} 133.0
+http_server_bytes_written_sum{server_port="8080"} 649411.0
+http_server_bytes_written_count{server_port="9000"} 5.0
+http_server_bytes_written_sum{server_port="9000"} 1125.0
+# TYPE http_server_active_connections gauge
+# HELP http_server_active_connections Number of opened connections to the HTTP Server
+http_server_active_connections{server_port="8080"} 1.0
+http_server_active_connections{server_port="9000"} 1.0
+# TYPE agroal_blocking_time_total_milliseconds gauge
+# HELP agroal_blocking_time_total_milliseconds Total time applications waited to acquire a connection.
+agroal_blocking_time_total_milliseconds{datasource="default"} 122.0
+# TYPE vendor_statistics_number_of_entries gauge
+# HELP vendor_statistics_number_of_entries Number of entries in the cache including passivated entries
+vendor_statistics_number_of_entries{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_number_of_entries{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_number_of_entries{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_number_of_entries{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180.0
+vendor_statistics_number_of_entries{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 13.0
+# TYPE worker_pool_completed counter
+# HELP worker_pool_completed Number of times resources from the pool have been acquired
+worker_pool_completed_total{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_completed_total{pool_name="vert.x-worker-thread",pool_type="worker"} 3.0
+# TYPE vendor_statistics_approximate_entries_in_memory gauge
+# HELP vendor_statistics_approximate_entries_in_memory Approximate number of entries currently in memory, including expired entries
+vendor_statistics_approximate_entries_in_memory{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_in_memory{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_in_memory{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_in_memory{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries_in_memory{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries_in_memory{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_in_memory{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 25.0
+vendor_statistics_approximate_entries_in_memory{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.0
+vendor_statistics_approximate_entries_in_memory{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries_in_memory{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 299.0
+vendor_statistics_approximate_entries_in_memory{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180.0
+vendor_statistics_approximate_entries_in_memory{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries_in_memory{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries_in_memory{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_in_memory{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries_in_memory{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 13.0
+# TYPE vendor_lock_manager_number_of_locks_held gauge
+# HELP vendor_lock_manager_number_of_locks_held The number of exclusive locks that are held.
+vendor_lock_manager_number_of_locks_held{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_held{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE jvm_gc_max_data_size_bytes gauge
+# HELP jvm_gc_max_data_size_bytes Max size of long-lived heap memory pool
+jvm_gc_max_data_size_bytes 4.6942650368E10
+# TYPE netty_allocator_pooled_chunk_size gauge
+# HELP netty_allocator_pooled_chunk_size  
+netty_allocator_pooled_chunk_size{allocator_type="PooledByteBufAllocator",name="vertx-pooled"} 65536.0
+netty_allocator_pooled_chunk_size{allocator_type="PooledByteBufAllocator",name="pooled"} 65536.0
+# TYPE vendor_cache_container_health_free_memory_kb gauge
+# HELP vendor_cache_container_health_free_memory_kb The amount of free memory (KB) in the host
+vendor_cache_container_health_free_memory_kb{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 338311.0
+# TYPE jvm_gc_memory_allocated_bytes counter
+# HELP jvm_gc_memory_allocated_bytes Incremented for an increase in the size of the (young) heap memory pool after one GC to before the next
+jvm_gc_memory_allocated_bytes_total 3.321888768E9
+# TYPE system_load_average_1m gauge
+# HELP system_load_average_1m The sum of the number of runnable entities queued to available processors and the number of runnable entities running on the available processors averaged over a period of time
+system_load_average_1m 15.51
+# TYPE vendor_cache_container_stats_data_memory_used gauge
+# HELP vendor_cache_container_stats_data_memory_used Amount in bytes of memory used in a given cache container for entries with eviction
+vendor_cache_container_stats_data_memory_used{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE agroal_available_count gauge
+# HELP agroal_available_count Number of idle connections in the pool, available to be acquired.
+agroal_available_count{datasource="default"} 3.0
+# TYPE jvm_gc_concurrent_phase_time_seconds summary
+# HELP jvm_gc_concurrent_phase_time_seconds Time spent in concurrent phase
+jvm_gc_concurrent_phase_time_seconds_count{action="end of concurrent GC pause",cause="No GC",gc="G1 Concurrent GC"} 4.0
+jvm_gc_concurrent_phase_time_seconds_sum{action="end of concurrent GC pause",cause="No GC",gc="G1 Concurrent GC"} 0.021
+# TYPE jvm_gc_concurrent_phase_time_seconds_max gauge
+# HELP jvm_gc_concurrent_phase_time_seconds_max Time spent in concurrent phase
+jvm_gc_concurrent_phase_time_seconds_max{action="end of concurrent GC pause",cause="No GC",gc="G1 Concurrent GC"} 0.015
+# TYPE worker_pool_usage_seconds summary
+# HELP worker_pool_usage_seconds Time spent using resources from the pool
+worker_pool_usage_seconds_count{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_usage_seconds_sum{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_usage_seconds_count{pool_name="vert.x-worker-thread",pool_type="worker"} 3.0
+worker_pool_usage_seconds_sum{pool_name="vert.x-worker-thread",pool_type="worker"} 7.4392E-4
+# TYPE worker_pool_usage_seconds_max gauge
+# HELP worker_pool_usage_seconds_max Time spent using resources from the pool
+worker_pool_usage_seconds_max{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_usage_seconds_max{pool_name="vert.x-worker-thread",pool_type="worker"} 5.10944E-4
+# TYPE vendor_lock_manager_number_of_locks_available gauge
+# HELP vendor_lock_manager_number_of_locks_available The number of exclusive locks that are available.
+vendor_lock_manager_number_of_locks_available{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_lock_manager_number_of_locks_available{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE vendor_statistics_time_since_start gauge
+# HELP vendor_statistics_time_since_start Number of seconds since cache started
+vendor_statistics_time_since_start{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_start{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_start{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_start{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+vendor_statistics_time_since_start{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_time_since_start{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1639.0
+# TYPE system_cpu_count gauge
+# HELP system_cpu_count The number of processors available to the Java virtual machine
+system_cpu_count 20.0
+# TYPE netty_eventexecutor_workers gauge
+# HELP netty_eventexecutor_workers Number of event executor workers
+netty_eventexecutor_workers{executor="acceptor"} 1.0
+netty_eventexecutor_workers{executor="eventLoop"} 20.0
+# TYPE http_server_requests_seconds summary
+# HELP http_server_requests_seconds HTTP server request processing time
+http_server_requests_seconds_count{method="GET",outcome="CLIENT_ERROR",status="401",uri="/admin/realms"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="CLIENT_ERROR",status="401",uri="/admin/realms"} 0.002602979
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/service-account-user"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/service-account-user"} 0.026198254
+http_server_requests_seconds_count{method="PUT",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 1.0
+http_server_requests_seconds_sum{method="PUT",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 0.022921642
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/health/ready"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/health/ready"} 0.040262258
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/serverinfo"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/serverinfo"} 0.362137028
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users"} 4.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users"} 0.04678691
+http_server_requests_seconds_count{method="POST",outcome="CLIENT_ERROR",status="404",uri="/realms/{realm}/protocol/{protocol}"} 1.0
+http_server_requests_seconds_sum{method="POST",outcome="CLIENT_ERROR",status="404",uri="/realms/{realm}/protocol/{protocol}"} 0.005236849
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/credentials"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/credentials"} 0.007834531
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/health/started"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/health/started"} 0.001016138
+http_server_requests_seconds_count{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}"} 0.004282526
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/admin-events"} 3.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/admin-events"} 0.023405836
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/health/live"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/health/live"} 0.00108858
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}"} 0.00873286
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients"} 0.066642103
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/attack-detection/brute-force/users/{userId}"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/attack-detection/brute-force/users/{userId}"} 0.011658457
+http_server_requests_seconds_count{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/users"} 4.0
+http_server_requests_seconds_sum{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/users"} 0.168711887
+http_server_requests_seconds_count{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms"} 1.0
+http_server_requests_seconds_sum{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms"} 0.986431825
+http_server_requests_seconds_count{method="POST",outcome="CLIENT_ERROR",status="400",uri="/realms/{realm}/protocol/{protocol}/token"} 7.0
+http_server_requests_seconds_sum{method="POST",outcome="CLIENT_ERROR",status="400",uri="/realms/{realm}/protocol/{protocol}/token"} 0.193485406
+http_server_requests_seconds_count{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/clients"} 2.0
+http_server_requests_seconds_sum{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/clients"} 0.197025243
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}"} 0.021715424
+http_server_requests_seconds_count{method="POST",outcome="SUCCESS",status="200",uri="/realms/{realm}/protocol/{protocol}/token"} 3.0
+http_server_requests_seconds_sum{method="POST",outcome="SUCCESS",status="200",uri="/realms/{realm}/protocol/{protocol}/token"} 0.422900826
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/realm"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/realm"} 0.008347899
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/federated-identity"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/federated-identity"} 0.016821323
+http_server_requests_seconds_count{method="POST",outcome="SUCCESS",status="204",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/clients/{client-id}"} 1.0
+http_server_requests_seconds_sum{method="POST",outcome="SUCCESS",status="204",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/clients/{client-id}"} 0.053869566
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events/config"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events/config"} 0.013080838
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/count"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/count"} 0.017425653
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/sessions"} 2.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/sessions"} 0.021378919
+http_server_requests_seconds_count{method="GET",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 0.004860228
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/health"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/health"} 0.002772774
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events"} 5.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events"} 0.048588804
+http_server_requests_seconds_count{method="POST",outcome="CLIENT_ERROR",status="401",uri="/realms/{realm}/protocol/{protocol}/token"} 3.0
+http_server_requests_seconds_sum{method="POST",outcome="CLIENT_ERROR",status="401",uri="/realms/{realm}/protocol/{protocol}/token"} 0.022468724
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/offline-sessions/{clientUuid}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/offline-sessions/{clientUuid}"} 0.007514818
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/client-session-stats"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/client-session-stats"} 0.076221997
+http_server_requests_seconds_count{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/roles"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/roles"} 0.027416073
+http_server_requests_seconds_count{method="GET",outcome="SERVER_ERROR",status="500",uri="/admin/realms/{realm}/events"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="SERVER_ERROR",status="500",uri="/admin/realms/{realm}/events"} 0.006306723
+http_server_requests_seconds_count{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}/users/{user-id}"} 1.0
+http_server_requests_seconds_sum{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}/users/{user-id}"} 0.005627013
+# TYPE http_server_requests_seconds_max gauge
+# HELP http_server_requests_seconds_max HTTP server request processing time
+http_server_requests_seconds_max{method="GET",outcome="CLIENT_ERROR",status="401",uri="/admin/realms"} 0.001660516
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/service-account-user"} 0.026198254
+http_server_requests_seconds_max{method="PUT",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 0.022921642
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/health/ready"} 0.038290041
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/serverinfo"} 0.309930062
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users"} 0.015382432
+http_server_requests_seconds_max{method="POST",outcome="CLIENT_ERROR",status="404",uri="/realms/{realm}/protocol/{protocol}"} 0.005236849
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/credentials"} 0.007834531
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/health/started"} 0.001016138
+http_server_requests_seconds_max{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}"} 0.004282526
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/admin-events"} 0.011121816
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/health/live"} 0.00108858
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}"} 0.00873286
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients"} 0.044720008
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/attack-detection/brute-force/users/{userId}"} 0.00684078
+http_server_requests_seconds_max{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/users"} 0.059689598
+http_server_requests_seconds_max{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms"} 0.986431825
+http_server_requests_seconds_max{method="POST",outcome="CLIENT_ERROR",status="400",uri="/realms/{realm}/protocol/{protocol}/token"} 0.029966637
+http_server_requests_seconds_max{method="POST",outcome="SUCCESS",status="201",uri="/admin/realms/{realm}/clients"} 0.179133887
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}"} 0.021715424
+http_server_requests_seconds_max{method="POST",outcome="SUCCESS",status="200",uri="/realms/{realm}/protocol/{protocol}/token"} 0.318094428
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/realm"} 0.008347899
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/federated-identity"} 0.016821323
+http_server_requests_seconds_max{method="POST",outcome="SUCCESS",status="204",uri="/admin/realms/{realm}/users/{user-id}/role-mappings/clients/{client-id}"} 0.053869566
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events/config"} 0.00892179
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/count"} 0.017425653
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/sessions"} 0.016102891
+http_server_requests_seconds_max{method="GET",outcome="CLIENT_ERROR",status="403",uri="/admin/realms/{realm}"} 0.004860228
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/health"} 0.002772774
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/events"} 0.01303873
+http_server_requests_seconds_max{method="POST",outcome="CLIENT_ERROR",status="401",uri="/realms/{realm}/protocol/{protocol}/token"} 0.0103402
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/users/{user-id}/offline-sessions/{clientUuid}"} 0.007514818
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/client-session-stats"} 0.076221997
+http_server_requests_seconds_max{method="GET",outcome="SUCCESS",status="200",uri="/admin/realms/{realm}/clients/{client-uuid}/roles"} 0.027416073
+http_server_requests_seconds_max{method="GET",outcome="SERVER_ERROR",status="500",uri="/admin/realms/{realm}/events"} 0.006306723
+http_server_requests_seconds_max{method="GET",outcome="CLIENT_ERROR",status="404",uri="/admin/realms/{realm}/users/{user-id}"} 0.005627013
+# TYPE vendor_number_of_cache_configurations gauge
+# HELP vendor_number_of_cache_configurations The total number of defined cache configurations.
+vendor_number_of_cache_configurations{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+# TYPE vendor_statistics_average_write_time gauge
+# HELP vendor_statistics_average_write_time Average number of milliseconds for a write operation in the cache
+vendor_statistics_average_write_time{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE cache_gets counter
+# HELP cache_gets The number of times cache lookup methods have returned a cached (hit) or uncached (newly loaded) value (miss).
+cache_gets_total{cache="lookup",result="hit"} 0.0
+cache_gets_total{cache="userAgent",result="miss"} 1.0
+cache_gets_total{cache="userAgent",result="hit"} 66.0
+cache_gets_total{cache="lookup",result="miss"} 0.0
+# TYPE vendor_statistics_approximate_entries_unique gauge
+# HELP vendor_statistics_approximate_entries_unique Approximate number of entries currently in the cache for which the local node is a primary owner, including persisted and expired entries
+vendor_statistics_approximate_entries_unique{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_unique{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_unique{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_unique{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries_unique{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries_unique{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_unique{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 25.0
+vendor_statistics_approximate_entries_unique{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.0
+vendor_statistics_approximate_entries_unique{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries_unique{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 299.0
+vendor_statistics_approximate_entries_unique{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180.0
+vendor_statistics_approximate_entries_unique{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries_unique{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries_unique{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries_unique{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries_unique{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 13.0
+# TYPE vendor_statistics_hits gauge
+# HELP vendor_statistics_hits Number of cache attribute hits
+vendor_statistics_hits{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 104.0
+vendor_statistics_hits{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_hits{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 132.0
+vendor_statistics_hits{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 64.0
+vendor_statistics_hits{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3344.0
+vendor_statistics_hits{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2828.0
+vendor_statistics_hits{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_hits{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hits{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.0
+vendor_statistics_hits{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 96.0
+# TYPE jvm_buffer_total_capacity_bytes gauge
+# HELP jvm_buffer_total_capacity_bytes An estimate of the total capacity of the buffers in this pool
+jvm_buffer_total_capacity_bytes{id="mapped - 'non-volatile memory'"} 0.0
+jvm_buffer_total_capacity_bytes{id="mapped"} 0.0
+jvm_buffer_total_capacity_bytes{id="direct"} 1667291.0
+# TYPE jvm_classes_loaded_classes gauge
+# HELP jvm_classes_loaded_classes The number of classes that are currently loaded in the Java virtual machine
+jvm_classes_loaded_classes 28427.0
+# TYPE vendor_number_of_created_caches gauge
+# HELP vendor_number_of_created_caches The total number of created caches, including the default cache.
+vendor_number_of_created_caches{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+# TYPE vendor_cache_container_health_number_of_cpus gauge
+# HELP vendor_cache_container_health_number_of_cpus Number of CPUs in the host
+vendor_cache_container_health_number_of_cpus{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 20.0
+# TYPE vendor_statistics_hit_ratio gauge
+# HELP vendor_statistics_hit_ratio Percentage hit/(hit+miss) ratio for the cache
+vendor_statistics_hit_ratio{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.8666666666666667
+vendor_statistics_hit_ratio{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.8888888888888888
+vendor_statistics_hit_ratio{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.88
+vendor_statistics_hit_ratio{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.8
+vendor_statistics_hit_ratio{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.9149110807113543
+vendor_statistics_hit_ratio{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.8515507377295995
+vendor_statistics_hit_ratio{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.32653061224489793
+vendor_statistics_hit_ratio{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_hit_ratio{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.46153846153846156
+vendor_statistics_hit_ratio{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.7559055118110236
+# TYPE process_uptime_seconds gauge
+# HELP process_uptime_seconds The uptime of the Java virtual machine
+process_uptime_seconds 23.614
+# TYPE jvm_gc_overhead gauge
+# HELP jvm_gc_overhead An approximation of the percent of CPU time used by GC activities over the last lookback period or since monitoring began, whichever is shorter, in the range [0..1]
+jvm_gc_overhead 0.003914614264589088
+# TYPE agroal_awaiting_count gauge
+# HELP agroal_awaiting_count Approximate number of threads blocked, waiting to acquire a connection.
+agroal_awaiting_count{datasource="default"} 0.0
+# TYPE vendor_statistics_average_remove_time gauge
+# HELP vendor_statistics_average_remove_time Average number of milliseconds for a remove operation in the cache
+vendor_statistics_average_remove_time{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE keycloak_user_events counter
+# HELP keycloak_user_events Keycloak user events
+keycloak_user_events_total{error="user_temporarily_disabled",event="login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="resolve_required_actions",event="login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="invalid_client",event="client_login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="",event="user_disabled_by_temporary_lockout",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="client_not_found",event="client_login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="invalid_client_credentials",event="client_login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="user_disabled",event="login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="",event="login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="user_not_found",event="login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="invalid_user_credentials",event="login",realm="opensre-demo"} 3.0
+keycloak_user_events_total{error="",event="client_login",realm="opensre-demo"} 1.0
+keycloak_user_events_total{error="",event="login",realm="master"} 1.0
+# TYPE jvm_threads_peak_threads gauge
+# HELP jvm_threads_peak_threads The peak live thread count since the Java virtual machine started or peak was reset
+jvm_threads_peak_threads 49.0
+# TYPE jvm_gc_live_data_size_bytes gauge
+# HELP jvm_gc_live_data_size_bytes Size of long-lived heap memory pool after reclamation
+jvm_gc_live_data_size_bytes 0.0
+# TYPE vendor_statistics_read_write_ratio gauge
+# HELP vendor_statistics_read_write_ratio Read/writes ratio for the cache
+vendor_statistics_read_write_ratio{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_read_write_ratio{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_read_write_ratio{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_read_write_ratio{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_read_write_ratio{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 9.0
+vendor_statistics_read_write_ratio{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_read_write_ratio{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 4.411764705882353
+vendor_statistics_read_write_ratio{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.08333333333333333
+vendor_statistics_read_write_ratio{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 10.0
+vendor_statistics_read_write_ratio{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.023026315789474
+vendor_statistics_read_write_ratio{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 18.247252747252748
+vendor_statistics_read_write_ratio{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 46.0
+vendor_statistics_read_write_ratio{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 24.5
+vendor_statistics_read_write_ratio{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_read_write_ratio{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 4.333333333333333
+vendor_statistics_read_write_ratio{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.466666666666667
+# TYPE worker_pool_queue_delay_seconds_max gauge
+# HELP worker_pool_queue_delay_seconds_max Time spent in the waiting queue before being processed
+worker_pool_queue_delay_seconds_max{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_queue_delay_seconds_max{pool_name="vert.x-worker-thread",pool_type="worker"} 7.40204E-4
+# TYPE worker_pool_queue_delay_seconds summary
+# HELP worker_pool_queue_delay_seconds Time spent in the waiting queue before being processed
+worker_pool_queue_delay_seconds_count{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_queue_delay_seconds_sum{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_queue_delay_seconds_count{pool_name="vert.x-worker-thread",pool_type="worker"} 4.0
+worker_pool_queue_delay_seconds_sum{pool_name="vert.x-worker-thread",pool_type="worker"} 9.89445E-4
+# TYPE vendor_statistics_number_of_entries_in_memory gauge
+# HELP vendor_statistics_number_of_entries_in_memory Number of entries currently in-memory excluding expired entries
+vendor_statistics_number_of_entries_in_memory{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_statistics_number_of_entries_in_memory{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+# TYPE worker_pool_active gauge
+# HELP worker_pool_active The number of resources from the pool currently used
+worker_pool_active{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_active{pool_name="vert.x-worker-thread",pool_type="worker"} 1.0
+# TYPE vendor_statistics_remove_hit_times_seconds summary
+# HELP vendor_statistics_remove_hit_times_seconds The remove hits times
+vendor_statistics_remove_hit_times_seconds_count{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.21953E-4
+vendor_statistics_remove_hit_times_seconds_count{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hit_times_seconds_count{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_remove_hit_times_seconds_sum{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.58715E-4
+# TYPE cache_evictions summary
+# HELP cache_evictions The number of times the cache was evicted.
+cache_evictions_count{cache="userAgent",cause="SIZE"} 0.0
+cache_evictions_sum{cache="userAgent",cause="SIZE"} 0.0
+cache_evictions_count{cache="lookup",cause="COLLECTED"} 0.0
+cache_evictions_sum{cache="lookup",cause="COLLECTED"} 0.0
+cache_evictions_count{cache="userAgent",cause="REPLACED"} 0.0
+cache_evictions_sum{cache="userAgent",cause="REPLACED"} 0.0
+cache_evictions_count{cache="lookup",cause="EXPIRED"} 0.0
+cache_evictions_sum{cache="lookup",cause="EXPIRED"} 0.0
+cache_evictions_count{cache="userAgent",cause="EXPLICIT"} 0.0
+cache_evictions_sum{cache="userAgent",cause="EXPLICIT"} 0.0
+cache_evictions_count{cache="lookup",cause="EXPLICIT"} 0.0
+cache_evictions_sum{cache="lookup",cause="EXPLICIT"} 0.0
+cache_evictions_count{cache="lookup",cause="SIZE"} 0.0
+cache_evictions_sum{cache="lookup",cause="SIZE"} 0.0
+cache_evictions_count{cache="userAgent",cause="COLLECTED"} 0.0
+cache_evictions_sum{cache="userAgent",cause="COLLECTED"} 0.0
+cache_evictions_count{cache="lookup",cause="REPLACED"} 0.0
+cache_evictions_sum{cache="lookup",cause="REPLACED"} 0.0
+cache_evictions_count{cache="userAgent",cause="EXPIRED"} 0.0
+cache_evictions_sum{cache="userAgent",cause="EXPIRED"} 0.0
+# TYPE cache_evictions_max gauge
+# HELP cache_evictions_max The number of times the cache was evicted.
+cache_evictions_max{cache="userAgent",cause="SIZE"} 0.0
+cache_evictions_max{cache="lookup",cause="COLLECTED"} 0.0
+cache_evictions_max{cache="userAgent",cause="REPLACED"} 0.0
+cache_evictions_max{cache="lookup",cause="EXPIRED"} 0.0
+cache_evictions_max{cache="userAgent",cause="EXPLICIT"} 0.0
+cache_evictions_max{cache="lookup",cause="EXPLICIT"} 0.0
+cache_evictions_max{cache="lookup",cause="SIZE"} 0.0
+cache_evictions_max{cache="userAgent",cause="COLLECTED"} 0.0
+cache_evictions_max{cache="lookup",cause="REPLACED"} 0.0
+cache_evictions_max{cache="userAgent",cause="EXPIRED"} 0.0
+# TYPE jvm_info counter
+# HELP jvm_info JVM version info
+jvm_info_total{runtime="OpenJDK Runtime Environment",vendor="Red Hat, Inc.",version="21.0.12.1+1-LTS"} 1.0
+# TYPE process_cpu_usage gauge
+# HELP process_cpu_usage The \"recent cpu usage\" for the Java Virtual Machine process
+process_cpu_usage 0.0
+# TYPE agroal_max_used_count gauge
+# HELP agroal_max_used_count Maximum number of connections active simultaneously.
+agroal_max_used_count{datasource="default"} 3.0
+# TYPE cache_size gauge
+# HELP cache_size The approximate number of entries in this cache.
+cache_size{cache="lookup"} 0.0
+cache_size{cache="userAgent"} 1.0
+# TYPE agroal_blocking_time_max_milliseconds gauge
+# HELP agroal_blocking_time_max_milliseconds Maximum time an application waited to acquire a connection.
+agroal_blocking_time_max_milliseconds{datasource="default"} 108.0
+# TYPE http_server_bytes_read summary
+# HELP http_server_bytes_read Number of bytes received by the server
+http_server_bytes_read_count{server_port="8080"} 23.0
+http_server_bytes_read_sum{server_port="8080"} 2787.0
+http_server_bytes_read_count{server_port="9000"} 0.0
+http_server_bytes_read_sum{server_port="9000"} 0.0
+# TYPE http_server_bytes_read_max gauge
+# HELP http_server_bytes_read_max Number of bytes received by the server
+http_server_bytes_read_max{server_port="8080"} 269.0
+http_server_bytes_read_max{server_port="9000"} 0.0
+# TYPE jvm_threads_started_threads counter
+# HELP jvm_threads_started_threads The total number of application threads started in the JVM
+jvm_threads_started_threads_total 53.0
+# TYPE vendor_statistics_approximate_entries gauge
+# HELP vendor_statistics_approximate_entries Approximate number of entries currently in the cache, including persisted and expired entries
+vendor_statistics_approximate_entries{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 25.0
+vendor_statistics_approximate_entries{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.0
+vendor_statistics_approximate_entries{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_approximate_entries{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 299.0
+vendor_statistics_approximate_entries{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180.0
+vendor_statistics_approximate_entries{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_approximate_entries{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_approximate_entries{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_approximate_entries{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 13.0
+# TYPE agroal_blocking_time_average_milliseconds gauge
+# HELP agroal_blocking_time_average_milliseconds Average time an application waited to acquire a connection.
+agroal_blocking_time_average_milliseconds{datasource="default"} 1.0
+# TYPE vendor_statistics_average_remove_time_nanos gauge
+# HELP vendor_statistics_average_remove_time_nanos Average number of nanoseconds for a remove operation in the cache
+vendor_statistics_average_remove_time_nanos{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 310976.0
+vendor_statistics_average_remove_time_nanos{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_remove_time_nanos{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 79357.0
+# TYPE vendor_statistics_stores gauge
+# HELP vendor_statistics_stores Number of cache attribute put operations
+vendor_statistics_stores{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_stores{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_stores{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_stores{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_stores{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_stores{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_stores{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 34.0
+vendor_statistics_stores{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.0
+vendor_statistics_stores{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_stores{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 304.0
+vendor_statistics_stores{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 182.0
+vendor_statistics_stores{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_stores{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_stores{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_stores{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.0
+vendor_statistics_stores{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+# TYPE vendor_configuration_eviction_size gauge
+# HELP vendor_configuration_eviction_size Gets the eviction size for the cache
+vendor_configuration_eviction_size{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 10000.0
+vendor_configuration_eviction_size{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 20000.0
+vendor_configuration_eviction_size{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 20000.0
+vendor_configuration_eviction_size{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 10000.0
+vendor_configuration_eviction_size{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_configuration_eviction_size{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 10000.0
+vendor_configuration_eviction_size{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_configuration_eviction_size{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 10000.0
+vendor_configuration_eviction_size{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 20000.0
+vendor_configuration_eviction_size{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+vendor_configuration_eviction_size{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} -1.0
+# TYPE vendor_cache_container_health_total_memory_kb gauge
+# HELP vendor_cache_container_health_total_memory_kb The amount of total memory (KB) in the host
+vendor_cache_container_health_total_memory_kb{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 458752.0
+# TYPE vendor_statistics_current_number_of_entries_in_memory gauge
+# HELP vendor_statistics_current_number_of_entries_in_memory Number of entries currently in-memory excluding expired entries
+vendor_statistics_current_number_of_entries_in_memory{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_current_number_of_entries_in_memory{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_current_number_of_entries_in_memory{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_current_number_of_entries_in_memory{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180.0
+vendor_statistics_current_number_of_entries_in_memory{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 13.0
+# TYPE vendor_statistics_average_write_time_nanos gauge
+# HELP vendor_statistics_average_write_time_nanos Average number of nanoseconds for a write operation in the cache
+vendor_statistics_average_write_time_nanos{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time_nanos{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time_nanos{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time_nanos{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 85355.0
+vendor_statistics_average_write_time_nanos{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 174586.0
+vendor_statistics_average_write_time_nanos{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time_nanos{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 44442.0
+vendor_statistics_average_write_time_nanos{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 557493.0
+vendor_statistics_average_write_time_nanos{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 26333.0
+vendor_statistics_average_write_time_nanos{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 40570.0
+vendor_statistics_average_write_time_nanos{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 52934.0
+vendor_statistics_average_write_time_nanos{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 180559.0
+vendor_statistics_average_write_time_nanos{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 127370.0
+vendor_statistics_average_write_time_nanos{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_average_write_time_nanos{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 312599.0
+vendor_statistics_average_write_time_nanos{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 33355.0
+# TYPE worker_pool_queue_size gauge
+# HELP worker_pool_queue_size Number of pending elements in the waiting queue
+worker_pool_queue_size{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_queue_size{pool_name="vert.x-worker-thread",pool_type="worker"} 0.0
+# TYPE vendor_local_container_stats_memory_available gauge
+# HELP vendor_local_container_stats_memory_available The maximum amount of free memory in bytes in local JVM
+vendor_local_container_stats_memory_available{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.46431048E8
+# TYPE worker_pool_ratio gauge
+# HELP worker_pool_ratio Pool usage ratio
+worker_pool_ratio{pool_name="vert.x-internal-blocking",pool_type="worker"} 0.0
+worker_pool_ratio{pool_name="vert.x-worker-thread",pool_type="worker"} 0.0125
+# TYPE keycloak_credentials_password_hashing_validations counter
+# HELP keycloak_credentials_password_hashing_validations Password validations
+keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="valid",realm="opensre-demo"} 3.0
+keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="invalid",realm="opensre-demo"} 3.0
+keycloak_credentials_password_hashing_validations_total{algorithm="argon2",hashing_strength="Argon2id-1.3[m=7168,t=5,p=1]",outcome="valid",realm="master"} 1.0
+# TYPE vendor_statistics_evictions gauge
+# HELP vendor_statistics_evictions Number of cache eviction operations
+vendor_statistics_evictions{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_evictions{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE netty_allocator_pooled_arenas gauge
+# HELP netty_allocator_pooled_arenas  
+netty_allocator_pooled_arenas{allocator_type="PooledByteBufAllocator",memory_type="heap",name="pooled"} 40.0
+netty_allocator_pooled_arenas{allocator_type="PooledByteBufAllocator",memory_type="heap",name="vertx-pooled"} 40.0
+netty_allocator_pooled_arenas{allocator_type="PooledByteBufAllocator",memory_type="direct",name="pooled"} 40.0
+netty_allocator_pooled_arenas{allocator_type="PooledByteBufAllocator",memory_type="direct",name="vertx-pooled"} 40.0
+# TYPE agroal_creation_count counter
+# HELP agroal_creation_count Number of created connections.
+agroal_creation_count_total{datasource="default"} 3.0
+# TYPE process_files_open_files gauge
+# HELP process_files_open_files The open file descriptor count
+process_files_open_files 291.0
+# TYPE vendor_cache_container_stats_required_minimum_number_of_nodes gauge
+# HELP vendor_cache_container_stats_required_minimum_number_of_nodes Required minimum number of nodes to hold current cache data
+vendor_cache_container_stats_required_minimum_number_of_nodes{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+# TYPE netty_allocator_memory_pinned gauge
+# HELP netty_allocator_memory_pinned  
+netty_allocator_memory_pinned{allocator_type="PooledByteBufAllocator",memory_type="heap",name="pooled"} 0.0
+netty_allocator_memory_pinned{allocator_type="PooledByteBufAllocator",memory_type="heap",name="vertx-pooled"} 0.0
+netty_allocator_memory_pinned{allocator_type="PooledByteBufAllocator",memory_type="direct",name="pooled"} 0.0
+netty_allocator_memory_pinned{allocator_type="PooledByteBufAllocator",memory_type="direct",name="vertx-pooled"} 0.0
+# TYPE keycloak_session_expiration_task_seconds_max gauge
+# HELP keycloak_session_expiration_task_seconds_max Keycloak User and Client sessions expiration tasks duration.
+keycloak_session_expiration_task_seconds_max 0.0
+# TYPE keycloak_session_expiration_task_seconds histogram
+# HELP keycloak_session_expiration_task_seconds Keycloak User and Client sessions expiration tasks duration.
+keycloak_session_expiration_task_seconds_bucket{le="0.001"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.001048576"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.001398101"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.001747626"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.002097151"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.002446676"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.002796201"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.003145726"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.003495251"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.003844776"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.004194304"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.005592405"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.006990506"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.008388607"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.009786708"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.011184809"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.01258291"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.013981011"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.015379112"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.016777216"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.022369621"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.027962026"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.033554431"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.039146836"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.044739241"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.050331646"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.055924051"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.061516456"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.067108864"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.089478485"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.111848106"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.134217727"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.156587348"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.178956969"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.20132659"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.223696211"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.246065832"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.268435456"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.357913941"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.447392426"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.536870911"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.626349396"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.715827881"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.805306366"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.894784851"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="0.984263336"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="1.073741824"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="1.431655765"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="1.789569706"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="2.147483647"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="2.505397588"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="2.863311529"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="3.22122547"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="3.579139411"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="3.937053352"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="4.294967296"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="5.726623061"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="7.158278826"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="8.589934591"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="10.021590356"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="11.453246121"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="12.884901886"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="14.316557651"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="15.748213416"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="17.179869184"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="22.906492245"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="28.633115306"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="30.0"} 0.0
+keycloak_session_expiration_task_seconds_bucket{le="+Inf"} 0.0
+keycloak_session_expiration_task_seconds_count 0.0
+keycloak_session_expiration_task_seconds_sum 0.0
+# TYPE process_cpu_time_ns counter
+# HELP process_cpu_time_ns The \"cpu time\" used by the Java Virtual Machine process
+process_cpu_time_ns_total 4.636E10
+# TYPE vendor_statistics_misses gauge
+# HELP vendor_statistics_misses Number of cache attribute misses
+vendor_statistics_misses{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_misses{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_misses{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_misses{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_misses{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_misses{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_misses{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 18.0
+vendor_statistics_misses{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_misses{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 16.0
+vendor_statistics_misses{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 311.0
+vendor_statistics_misses{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 493.0
+vendor_statistics_misses{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 46.0
+vendor_statistics_misses{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 33.0
+vendor_statistics_misses{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_misses{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 7.0
+vendor_statistics_misses{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 31.0
+# TYPE cache_loads_seconds_max gauge
+# HELP cache_loads_seconds_max The number of times cache lookup methods have successfully loaded a new value or failed to load a new value, either because no value was found or an exception was thrown while loading
+cache_loads_seconds_max{cache="lookup",result="success"} 0.0
+cache_loads_seconds_max{cache="lookup",result="failure"} 0.0
+cache_loads_seconds_max{cache="userAgent",result="success"} 0.002176615
+cache_loads_seconds_max{cache="userAgent",result="failure"} 0.0
+# TYPE cache_loads_seconds summary
+# HELP cache_loads_seconds The number of times cache lookup methods have successfully loaded a new value or failed to load a new value, either because no value was found or an exception was thrown while loading
+cache_loads_seconds_count{cache="lookup",result="success"} 0.0
+cache_loads_seconds_sum{cache="lookup",result="success"} 0.0
+cache_loads_seconds_count{cache="lookup",result="failure"} 0.0
+cache_loads_seconds_sum{cache="lookup",result="failure"} 0.0
+cache_loads_seconds_count{cache="userAgent",result="success"} 1.0
+cache_loads_seconds_sum{cache="userAgent",result="success"} 0.002176615
+cache_loads_seconds_count{cache="userAgent",result="failure"} 0.0
+cache_loads_seconds_sum{cache="userAgent",result="failure"} 0.0
+# TYPE netty_allocator_pooled_cache_size gauge
+# HELP netty_allocator_pooled_cache_size  
+netty_allocator_pooled_cache_size{allocator_type="PooledByteBufAllocator",cache_type="small",name="pooled"} 256.0
+netty_allocator_pooled_cache_size{allocator_type="PooledByteBufAllocator",cache_type="normal",name="vertx-pooled"} 64.0
+netty_allocator_pooled_cache_size{allocator_type="PooledByteBufAllocator",cache_type="normal",name="pooled"} 64.0
+netty_allocator_pooled_cache_size{allocator_type="PooledByteBufAllocator",cache_type="small",name="vertx-pooled"} 256.0
+# TYPE http_server_connections_seconds_max gauge
+# HELP http_server_connections_seconds_max The duration of the connections
+http_server_connections_seconds_max{server_port="8080"} 11.877745704
+http_server_connections_seconds_max{server_port="9000"} 0.04692657
+# TYPE http_server_connections_seconds summary
+# HELP http_server_connections_seconds The duration of the connections
+http_server_connections_seconds_active_count{server_port="8080"} 1.0
+http_server_connections_seconds_duration_sum{server_port="8080"} 11.877724236
+http_server_connections_seconds_active_count{server_port="9000"} 1.0
+http_server_connections_seconds_duration_sum{server_port="9000"} 0.046918977
+# TYPE jvm_threads_live_threads gauge
+# HELP jvm_threads_live_threads The current number of live threads including both daemon and non-daemon threads
+jvm_threads_live_threads 48.0
+# TYPE jvm_classes_loaded_count_classes counter
+# HELP jvm_classes_loaded_count_classes The number of classes loaded in the Java virtual machine
+jvm_classes_loaded_count_classes_total 28447.0
+# TYPE vendor_transactions_commits gauge
+# HELP vendor_transactions_commits Number of transaction commits performed since last reset
+vendor_transactions_commits{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commits{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_transactions_commits{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+# TYPE vendor_statistics_remove_hits gauge
+# HELP vendor_statistics_remove_hits Number of cache removal hits
+vendor_statistics_remove_hits{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_remove_hits{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_remove_hits{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+# TYPE jvm_classes_unloaded_classes counter
+# HELP jvm_classes_unloaded_classes The number of classes unloaded in the Java virtual machine
+jvm_classes_unloaded_classes_total 0.0
+# TYPE vendor_local_container_stats_time_since_reset gauge
+# HELP vendor_local_container_stats_time_since_reset Number of seconds since the statistics were last reset
+vendor_local_container_stats_time_since_reset{cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+# TYPE agroal_destroy_count counter
+# HELP agroal_destroy_count Number of destroyed connections.
+agroal_destroy_count_total{datasource="default"} 0.0
+# TYPE process_start_time_seconds gauge
+# HELP process_start_time_seconds Start time of the process since unix epoch.
+process_start_time_seconds 1.789063887526E9
+# TYPE process_files_max_files gauge
+# HELP process_files_max_files The maximum file descriptor count
+process_files_max_files 1048576.0
+# TYPE vendor_statistics_required_minimum_number_of_nodes gauge
+# HELP vendor_statistics_required_minimum_number_of_nodes Amount of nodes required to guarantee data consistency
+vendor_statistics_required_minimum_number_of_nodes{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_required_minimum_number_of_nodes{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+# TYPE http_server_active_requests gauge
+# HELP http_server_active_requests  
+http_server_active_requests{server_port="8080",url_scheme="http"} 0.0
+http_server_active_requests{server_port="9000",url_scheme="http"} 1.0
+# TYPE vendor_statistics_store_times_seconds summary
+# HELP vendor_statistics_store_times_seconds The stores times
+vendor_statistics_store_times_seconds_count{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_sum{cache="keys",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_count{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_sum{cache="offlineClientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_count{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_sum{cache="crl",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_count{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_store_times_seconds_sum{cache="authorizationRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 6.82845E-4
+vendor_statistics_store_times_seconds_count{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_store_times_seconds_sum{cache="sessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.49172E-4
+vendor_statistics_store_times_seconds_count{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_sum{cache="offlineSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_count{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 34.0
+vendor_statistics_store_times_seconds_sum{cache="userRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.001511051
+vendor_statistics_store_times_seconds_count{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 12.0
+vendor_statistics_store_times_seconds_sum{cache="work",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.006689924
+vendor_statistics_store_times_seconds_count{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 8.0
+vendor_statistics_store_times_seconds_sum{cache="authorization",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.1067E-4
+vendor_statistics_store_times_seconds_count{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 304.0
+vendor_statistics_store_times_seconds_sum{cache="realmRevisions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.012333366
+vendor_statistics_store_times_seconds_count{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 182.0
+vendor_statistics_store_times_seconds_sum{cache="realms",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.009634163
+vendor_statistics_store_times_seconds_count{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.0
+vendor_statistics_store_times_seconds_sum{cache="actionTokens",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 1.80559E-4
+vendor_statistics_store_times_seconds_count{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.0
+vendor_statistics_store_times_seconds_sum{cache="clientSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 2.54741E-4
+vendor_statistics_store_times_seconds_count{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_sum{cache="authenticationSessions",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 0.0
+vendor_statistics_store_times_seconds_count{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 3.0
+vendor_statistics_store_times_seconds_sum{cache="loginFailures",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 9.37797E-4
+vendor_statistics_store_times_seconds_count{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 15.0
+vendor_statistics_store_times_seconds_sum{cache="users",cache_manager="DefaultCacheManager",node="11ba5445f1d7-41371"} 5.00334E-4
+# TYPE agroal_creation_time_max_milliseconds gauge
+# HELP agroal_creation_time_max_milliseconds Maximum time for a connection to be created.
+agroal_creation_time_max_milliseconds{datasource="default"} 99.0
+# TYPE jvm_buffer_memory_used_bytes gauge
+# HELP jvm_buffer_memory_used_bytes An estimate of the memory that the Java virtual machine is using for this buffer pool
+jvm_buffer_memory_used_bytes{id="mapped - 'non-volatile memory'"} 0.0
+jvm_buffer_memory_used_bytes{id="mapped"} 0.0
+jvm_buffer_memory_used_bytes{id="direct"} 1675484.0
+# TYPE system_cpu_usage gauge
+# HELP system_cpu_usage The \"recent cpu usage\" of the system the application is running in
+system_cpu_usage 0.275
+# EOF

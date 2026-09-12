@@ -323,6 +323,8 @@ from integrations.incident_io import classify as _classify_incident_io
 from integrations.jenkins import classify as _classify_jenkins
 from integrations.jenkins import jenkins_config_from_env
 from integrations.jira import classify as _classify_jira
+from integrations.keycloak import classify as _classify_keycloak
+from integrations.keycloak import keycloak_config_from_env
 from integrations.kubernetes import classify as _classify_kubernetes
 from integrations.mariadb import build_mariadb_config
 from integrations.mariadb import classify as _classify_mariadb
@@ -528,6 +530,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "pagerduty": _classify_pagerduty,
     "incident_io": _classify_incident_io,
     "jira": _classify_jira,
+    "keycloak": _classify_keycloak,
     "servicenow": _classify_servicenow,
     "discord": _classify_discord,
     "telegram": _classify_telegram,
@@ -1140,6 +1143,15 @@ def load_env_integrations() -> list[dict[str, Any]]:
             _active_env_record(
                 "aerospike",
                 aerospike_config.model_dump(exclude={"integration_id"}),
+            )
+        )
+
+    keycloak_config = keycloak_config_from_env()
+    if keycloak_config:
+        integrations.append(
+            _active_env_record(
+                "keycloak",
+                keycloak_config.model_dump(exclude={"integration_id"}),
             )
         )
 

@@ -1,0 +1,17 @@
+{
+  "status": "UP",
+  "checks": [
+    {
+      "name": "Graceful Shutdown",
+      "status": "UP"
+    },
+    {
+      "name": "Keycloak Initialized",
+      "status": "UP"
+    },
+    {
+      "name": "Keycloak database connections async health check",
+      "status": "UP"
+    }
+  ]
+}
