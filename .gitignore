@@ -60,6 +60,8 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
+# nginx test fixtures are committed log samples, not runtime logs
+!tests/integrations/nginx/fixtures/*.log
 .turn-shard-logs/
 
 # Jupyter Notebook
