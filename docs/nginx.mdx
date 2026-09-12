@@ -1,0 +1,151 @@
+---
+title: "nginx"
+description: "Connect nginx or NGINX Plus so OpenSRE can read connection counters, upstream health, and local logs during investigations"
+---
+
+OpenSRE reads nginx diagnostics during reverse-proxy and gateway investigations — live connection and request counters from open-source nginx, upstream health, server-zone traffic and cache status from NGINX Plus, and bounded tails of the local access and error logs. This integration is read-only: it never reloads config, changes upstreams, or writes logs.
+
+## Prerequisites
+
+- **Open-source nginx**: a `stub_status` location on the monitored server:
+  ```nginx
+  location = /nginx_status { stub_status; allow <opensre ip>; deny all; }
+  ```
+- **NGINX Plus**: the `api` directive enabled on the monitored server.
+- Network access from the OpenSRE environment to the status endpoints.
+- Optional HTTP basic auth in front of the status endpoints.
+- Log tools only work when OpenSRE runs on the nginx host or has the log directory mounted — they read local files, never SSH.
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup nginx
+```
+
+Provide your host and port when prompted.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+NGINX_HOST=localhost
+NGINX_PORT=80
+NGINX_SSL=false
+NGINX_VERIFY_SSL=true
+NGINX_USERNAME=
+NGINX_PASSWORD=
+NGINX_STUB_STATUS_PATH=/nginx_status
+NGINX_API_PATH=/api
+NGINX_ACCESS_LOG_PATH=/var/log/nginx/access.log
+NGINX_ERROR_LOG_PATH=/var/log/nginx/error.log
+NGINX_TIMEOUT_SECONDS=10
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NGINX_HOST` | — | **Required.** nginx hostname or IP |
+| `NGINX_PORT` | `80` | Status endpoint port |
+| `NGINX_SSL` | `false` | Use HTTPS to reach nginx |
+| `NGINX_VERIFY_SSL` | `true` | Verify the TLS certificate |
+| `NGINX_USERNAME` | _(empty)_ | Basic-auth username; leave blank if the status endpoints are open |
+| `NGINX_PASSWORD` | _(empty)_ | Basic-auth password; leave blank if the status endpoints are open |
+| `NGINX_STUB_STATUS_PATH` | `/nginx_status` | stub_status location (open-source nginx) |
+| `NGINX_API_PATH` | `/api` | NGINX Plus API location (ignored on open-source nginx) |
+| `NGINX_ACCESS_LOG_PATH` | `/var/log/nginx/access.log` | Local access.log path |
+| `NGINX_ERROR_LOG_PATH` | `/var/log/nginx/error.log` | Local error.log path |
+| `NGINX_TIMEOUT_SECONDS` | `10` | HTTP timeout in seconds |
+
+### Option 3: Persistent store
+
+Integrations are automatically persisted to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "nginx-prod",
+      "service": "nginx",
+      "status": "active",
+      "credentials": {
+        "host": "nginx.example.net",
+        "port": 80,
+        "username": "",
+        "password": ""
+      }
+    }
+  ]
+}
+```
+
+## Tools
+
+Six read-only diagnostic tools are available when OpenSRE investigates an nginx-related alert:
+
+### Server status
+
+Returns the nginx edition (open-source or Plus), version, and live connection/request counters: active, accepted, handled, dropped connections; reading/writing/waiting (stub_status) or idle (Plus); total requests. Works on any nginx exposing stub_status or the NGINX Plus API.
+
+### Upstream health
+
+Returns per-upstream and per-peer state, fails, health-check failures, 5xx counts and response times. Use it first for 502/504 Bad Gateway from a reverse proxy.
+
+### Server zones
+
+Returns per-server-zone traffic: in-flight requests, 1xx–5xx counts, error rate, discarded requests and bytes in/out, sorted by 5xx count.
+
+### Cache status
+
+Returns per-cache-zone size vs max size, cold flag, hit/miss/expired/stale/bypass counts and hit ratio.
+
+### Error log
+
+Tails the local error.log and returns parsed entries with level, pid, client, request, upstream and host context, plus per-level counts and the most repeated messages.
+
+### Access log summary
+
+Tails the local access.log and summarizes status-class distribution, top paths by 5xx/4xx, top client IPs and user agents, bytes sent, and request-time percentiles when the log format includes `$request_time`.
+
+<Info>
+The upstream, server-zone, and cache tools require NGINX Plus and return `available: false` on open-source nginx. The log tools read files on the host running OpenSRE only — for nginx in Kubernetes use `kubernetes_get_pod_logs` instead.
+</Info>
+
+## Verify
+
+```bash
+opensre integrations verify nginx
+```
+
+Expected output against open-source nginx:
+
+```
+Service: nginx
+Status: passed
+Detail: nginx 1.27.5 at http://127.0.0.1:18080; stub_status OK at /nginx_status; NGINX Plus API not found at /api (open-source edition assumed).
+```
+
+## Known limitations
+
+- No SSH: logs must be local files on the OpenSRE host (or a mounted directory).
+- Plus stream, resolver, and limit-req/limit-conn endpoints are not covered.
+- Only the combined access-log format (plus an optional trailing `$request_time`) is parsed; JSON or custom formats count as unparsed lines.
+- On the official Docker image `/var/log/nginx/*.log` are symlinks to stdout/stderr, so the log tools report them as "not a regular file" — use `docker logs` or pod logs there instead.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **404 on the stub_status path** | Add the `stub_status` location block from Prerequisites. |
+| **403 on the status endpoints** | Check `allow`/`deny` rules — allow the OpenSRE host. |
+| **Plus tools return `available: false`** | The target is open-source nginx; use server status and stub_status instead. |
+| **Log tools report "not a regular file"** | The log path is a container stdout symlink; use `docker logs` or pod logs. |
+| **Authentication failed** | Set `NGINX_USERNAME`/`NGINX_PASSWORD` to the basic-auth credentials. |
+
+## Security best practices
+
+- Restrict the status endpoints by IP (`allow`/`deny`) or basic auth — they expose live traffic data.
+- Use a **read-only** monitoring user for basic auth — the tools never write.
+- Store the host and password in `.env`, never in code.

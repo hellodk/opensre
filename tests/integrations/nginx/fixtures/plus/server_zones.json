@@ -1,0 +1,1 @@
+{"hg.nginx.org": {"discarded": 1, "processing": 0, "received": 2904825, "requests": 55331, "responses": {"1xx": 0, "2xx": 55330, "3xx": 0, "4xx": 0, "5xx": 0, "codes": {"200": 55330}, "total": 55330}, "sent": 7176625425, "ssl": {"handshakes": 27666, "handshakes_failed": 0, "session_reuses": 0}}}

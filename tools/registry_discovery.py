@@ -64,6 +64,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.mysql.tools",
     "integrations.nats.tools",
     "integrations.new_relic.tools",
+    "integrations.nginx.tools",
     "integrations.openobserve.tools",
     "integrations.opensearch.tools",
     "integrations.opsgenie.tools",
