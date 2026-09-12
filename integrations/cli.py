@@ -728,6 +728,12 @@ def _setup_mysql() -> None:
     _run_spec_setup(MYSQL_SETUP)
 
 
+def _setup_nats() -> None:
+    from integrations.nats.setup import NATS_SETUP
+
+    _run_spec_setup(NATS_SETUP)
+
+
 def _setup_mongodb_atlas() -> None:
     from integrations.mongodb_atlas.setup import MONGODB_ATLAS_SETUP
 
@@ -834,6 +840,7 @@ _HANDLERS: dict[str, Any] = {
     "postgresql": _setup_postgresql,
     "yugabytedb": _setup_yugabytedb,
     "mysql": _setup_mysql,
+    "nats": _setup_nats,
     "redis": _setup_redis,
     "aerospike": _setup_aerospike,
     "signoz": _setup_signoz,

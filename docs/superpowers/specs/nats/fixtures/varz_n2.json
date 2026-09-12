@@ -1,0 +1,138 @@
+{
+  "server_id": "NCTS5LTCXFIRHR6I2LYPMYDKJVWGX6PRRGIUP4T5YXRUIDG5QWMUFBSP",
+  "server_name": "n2",
+  "version": "2.14.6",
+  "proto": 1,
+  "git_commit": "1aa10f9",
+  "go": "go1.26.7",
+  "host": "0.0.0.0",
+  "port": 4222,
+  "connect_urls": [
+    "172.20.0.3:4222",
+    "172.20.0.2:4222",
+    "172.20.0.4:4222"
+  ],
+  "max_connections": 65536,
+  "ping_interval": 120000000000,
+  "ping_max": 2,
+  "http_host": "0.0.0.0",
+  "http_port": 8222,
+  "http_base_path": "",
+  "https_port": 0,
+  "auth_timeout": 2,
+  "max_control_line": 4096,
+  "max_payload": 1048576,
+  "max_pending": 67108864,
+  "cluster": {
+    "name": "opensre-demo",
+    "addr": "0.0.0.0",
+    "cluster_port": 6222,
+    "auth_timeout": 2,
+    "urls": [
+      "opensre-nats-n1:6222",
+      "opensre-nats-n2:6222",
+      "opensre-nats-n3:6222"
+    ],
+    "tls_timeout": 2,
+    "pool_size": 3
+  },
+  "gateway": {},
+  "leaf": {},
+  "mqtt": {},
+  "websocket": {},
+  "jetstream": {
+    "config": {
+      "max_memory": 50264146944,
+      "max_storage": 120282544128,
+      "store_dir": "/tmp/js/jetstream",
+      "sync_interval": 120000000000,
+      "strict": true
+    },
+    "stats": {
+      "memory": 0,
+      "storage": 33150,
+      "reserved_memory": 0,
+      "reserved_storage": 10485760,
+      "accounts": 1,
+      "ha_assets": 6,
+      "api": {
+        "level": 4,
+        "total": 2,
+        "errors": 0
+      }
+    },
+    "meta": {
+      "name": "opensre-demo",
+      "leader": "n1",
+      "peer": "fjFyEjc1",
+      "cluster_size": 3,
+      "pending": 0,
+      "pending_requests": 0,
+      "pending_infos": 0,
+      "snapshot": {
+        "pending_entries": 0,
+        "pending_size": 0,
+        "last_time": "2026-09-11T15:56:05.791380616Z",
+        "last_duration": 149488
+      }
+    },
+    "limits": {}
+  },
+  "tls_timeout": 2,
+  "write_deadline": 10000000000,
+  "start": "2026-09-11T15:55:05.782353283Z",
+  "now": "2026-09-11T15:56:58.049453258Z",
+  "uptime": "1m52s",
+  "mem": 23302144,
+  "cores": 20,
+  "gomaxprocs": 20,
+  "cpu": 1,
+  "connections": 1,
+  "total_connections": 1,
+  "routes": 8,
+  "remotes": 2,
+  "leafnodes": 0,
+  "in_msgs": 18660,
+  "in_bytes": 279618,
+  "in_client_msgs": 0,
+  "in_client_bytes": 0,
+  "out_msgs": 18619,
+  "out_bytes": 187866,
+  "out_client_msgs": 16000,
+  "out_client_bytes": 39360,
+  "slow_consumers": 0,
+  "stale_connections": 0,
+  "stalled_clients": 0,
+  "subscriptions": 311,
+  "http_req_stats": {
+    "/connz": 1,
+    "/jsz": 1,
+    "/subsz": 1,
+    "/varz": 2
+  },
+  "config_load_time": "2026-09-11T15:55:05.782353283Z",
+  "config_digest": "",
+  "feature_flags": {
+    "js_ack_fc_v2": false,
+    "js_raft_delete_range": false
+  },
+  "system_account": "$SYS",
+  "slow_consumer_stats": {
+    "clients": 0,
+    "routes": 0,
+    "gateways": 0,
+    "leafs": 0
+  },
+  "stale_connection_stats": {
+    "clients": 0,
+    "routes": 0,
+    "gateways": 0,
+    "leafs": 0
+  },
+  "disk_io_wait_stats": {
+    "waiters": 0,
+    "waits": 0,
+    "wait_time": 0,
+    "max_wait_time": 0
+  }
+}

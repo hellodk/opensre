@@ -1,0 +1,909 @@
+{
+  "server_id": "ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+  "now": "2026-09-11T15:56:58.060295681Z",
+  "num_subscriptions": 311,
+  "num_cache": 99,
+  "num_inserts": 400,
+  "num_removes": 89,
+  "num_matches": 526,
+  "cache_hit_rate": 0.4391634980988593,
+  "max_fanout": 3,
+  "avg_fanout": 1.8484848484848484,
+  "total": 111,
+  "offset": 0,
+  "limit": 1024,
+  "subscriptions_list": [
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.ACK.ORDERS.billing.*.*.*.*.*",
+      "sid": "1",
+      "msgs": 50,
+      "cid": 33
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.ACK._.szMpdrwD.ORDERS.billing.*.*.*.*.>",
+      "sid": "2",
+      "msgs": 0,
+      "cid": 33
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.CONSUMER.MSG.NEXT.ORDERS.billing",
+      "sid": "3",
+      "msgs": 70,
+      "cid": 33
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.CONSUMER.RESET.ORDERS.billing",
+      "sid": "4",
+      "msgs": 0,
+      "cid": 33
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.DIRECT.GET.JOBS",
+      "qgroup": "_sys_",
+      "sid": "1",
+      "msgs": 0,
+      "cid": 28
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.DIRECT.GET.JOBS.>",
+      "qgroup": "_sys_",
+      "sid": "2",
+      "msgs": 0,
+      "cid": 28
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.DIRECT.GET.ORDERS",
+      "qgroup": "_sys_",
+      "sid": "1",
+      "msgs": 0,
+      "cid": 22
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.DIRECT.GET.ORDERS.>",
+      "qgroup": "_sys_",
+      "sid": "2",
+      "msgs": 0,
+      "cid": 22
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$JS.API.>",
+      "sid": "5",
+      "msgs": 106,
+      "cid": 3
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "telemetry.>",
+      "sid": "1",
+      "msgs": 16000,
+      "cid": 51
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$SYS.REQ.ACCOUNT.PING.STATZ",
+      "sid": "3",
+      "msgs": 0,
+      "cid": 3
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$SYS.REQ.ACCOUNT.PING.CONNZ",
+      "sid": "1",
+      "msgs": 0,
+      "cid": 3
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$SYS.REQ.SERVER.PING.CONNZ",
+      "sid": "2",
+      "msgs": 0,
+      "cid": 3
+    },
+    {
+      "account": "$G",
+      "account_tag": "$G",
+      "subject": "$SYS.REQ.USER.INFO",
+      "sid": "4",
+      "msgs": 0,
+      "cid": 3
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.DEBUG.SUBSCRIBERS",
+      "sid": "53",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.JSC.STREAM.ASSIGNMENT.RESULT",
+      "sid": "65",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.JSC.CONSUMER.ASSIGNMENT.RESULT",
+      "sid": "66",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.USER.INFO",
+      "sid": "1",
+      "msgs": 0,
+      "cid": 2
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.USER.*.INFO",
+      "sid": "49",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.NSUBS",
+      "sid": "5",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.PING.STATZ",
+      "sid": "50",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.STATZ",
+      "sid": "42",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.CONNS",
+      "sid": "43",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.SUBSZ",
+      "sid": "44",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.CONNZ",
+      "sid": "45",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.LEAFZ",
+      "sid": "46",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.JSZ",
+      "sid": "47",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.INFO",
+      "sid": "48",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.ACCOUNT.*.CLAIMS.UPDATE",
+      "sid": "10",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING",
+      "sid": "11",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.VARZ",
+      "sid": "19",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.CONNZ",
+      "sid": "25",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.EXPVARZ",
+      "sid": "39",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.JSZ",
+      "sid": "15",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.HEALTHZ",
+      "sid": "21",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.RAFTZ",
+      "sid": "23",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.LEAFZ",
+      "sid": "29",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.SUBSZ",
+      "sid": "33",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.ROUTEZ",
+      "sid": "35",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.IDZ",
+      "sid": "13",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.PROFILEZ",
+      "sid": "17",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.GATEWAYZ",
+      "sid": "27",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.STATSZ",
+      "sid": "31",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.ACCOUNTZ",
+      "sid": "37",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.PING.IPQUEUESZ",
+      "sid": "41",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.JSZ",
+      "sid": "14",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.PROFILEZ",
+      "sid": "16",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.CONNZ",
+      "sid": "24",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.ACCOUNTZ",
+      "sid": "36",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.IDZ",
+      "sid": "12",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.VARZ",
+      "sid": "18",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.EXPVARZ",
+      "sid": "38",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.IPQUEUESZ",
+      "sid": "40",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.RAFTZ",
+      "sid": "22",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.GATEWAYZ",
+      "sid": "26",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.LEAFZ",
+      "sid": "28",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.SUBSZ",
+      "sid": "32",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.ROUTEZ",
+      "sid": "34",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.RELOAD",
+      "sid": "54",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.KICK",
+      "sid": "55",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.LDM",
+      "sid": "56",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.HEALTHZ",
+      "sid": "20",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.REQ.SERVER.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G.STATSZ",
+      "sid": "30",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS._INBOX.fjFyEjc1.*",
+      "sid": "2",
+      "msgs": 7,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.SERVER.ACCOUNT.*.CONNS",
+      "sid": "3",
+      "msgs": 22,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.SERVER.*.STATSZ",
+      "sid": "6",
+      "msgs": 29,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.SERVER.*.SHUTDOWN",
+      "sid": "7",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.SERVER.*.LAMEDUCK",
+      "sid": "8",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS._INBOX_.ND3Y24GF3MIAUZ7HYLY3NN673WAO3WIY7ZTS6RNDYFWUUFY2UBEZ5R6G",
+      "sid": "4",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.ACCOUNT.*.LEAFNODE.CONNECT",
+      "sid": "51",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.ACCOUNT.*.CLAIMS.UPDATE",
+      "sid": "9",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$SYS.LATENCY.M2.fjFyEjc1",
+      "sid": "52",
+      "msgs": 0,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.META.LEADER.STEPDOWN",
+      "sid": "67",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.SERVER.REMOVE",
+      "sid": "68",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.ACCOUNT.STREAM.MOVE.*.*",
+      "sid": "69",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.ACCOUNT.STREAM.CANCEL_MOVE.*.*",
+      "sid": "70",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.ACCOUNT.PURGE.*",
+      "sid": "71",
+      "msgs": 0,
+      "cid": 7
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JS.API.>",
+      "sid": "57",
+      "msgs": 31,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JSC.CI.$G.ORDERS.billing",
+      "sid": "88",
+      "msgs": 1,
+      "cid": 34
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JSC.ARU.$G.*",
+      "sid": "58",
+      "msgs": 153,
+      "cid": 1
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JSC.SI.$G.ORDERS",
+      "sid": "76",
+      "msgs": 1,
+      "cid": 23
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$JSC.SI.$G.JOBS",
+      "sid": "81",
+      "msgs": 1,
+      "cid": 29
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.RP._meta_",
+      "sid": "64",
+      "msgs": 0,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.RP.C-R3F-UDfxZC1Y",
+      "sid": "87",
+      "msgs": 0,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.RsQihod8",
+      "sid": "79",
+      "msgs": 0,
+      "cid": 27
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.zfd1ardP",
+      "sid": "82",
+      "msgs": 2,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.WAIB8rhU",
+      "sid": "59",
+      "msgs": 2,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.oTzY3O9C",
+      "sid": "61",
+      "msgs": 256,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.Qe9Y52eo",
+      "sid": "77",
+      "msgs": 0,
+      "cid": 27
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.z5C7FJlK",
+      "sid": "84",
+      "msgs": 962,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.zWsjo5Av",
+      "sid": "95",
+      "msgs": 0,
+      "cid": 40
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.li1YvxaD",
+      "sid": "89",
+      "msgs": 0,
+      "cid": 36
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.p8ZFLdNY",
+      "sid": "74",
+      "msgs": 0,
+      "cid": 21
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.HFele8zj",
+      "sid": "91",
+      "msgs": 0,
+      "cid": 36
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.GKaF5mkO",
+      "sid": "93",
+      "msgs": 0,
+      "cid": 40
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.R.wuGIw6In",
+      "sid": "72",
+      "msgs": 0,
+      "cid": 21
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V.S-R3F-VJA9dCiS",
+      "sid": "73",
+      "msgs": 1,
+      "cid": 21
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V.S-R3F-4Atj5A5o",
+      "sid": "78",
+      "msgs": 1,
+      "cid": 27
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V.C-R3F-UDfxZC1Y",
+      "sid": "83",
+      "msgs": 1,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V.C-R3F-YLS6UVQ8",
+      "sid": "90",
+      "msgs": 1,
+      "cid": 36
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V.C-R3F-PMCEI4Uh",
+      "sid": "94",
+      "msgs": 1,
+      "cid": 40
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.V._meta_",
+      "sid": "60",
+      "msgs": 1,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE._meta_",
+      "sid": "62",
+      "msgs": 128,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE.S-R3F-VJA9dCiS",
+      "sid": "75",
+      "msgs": 1258,
+      "cid": 21
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE.S-R3F-4Atj5A5o",
+      "sid": "80",
+      "msgs": 159,
+      "cid": 27
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE.C-R3F-UDfxZC1Y",
+      "sid": "85",
+      "msgs": 481,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE.C-R3F-YLS6UVQ8",
+      "sid": "92",
+      "msgs": 113,
+      "cid": 36
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.AE.C-R3F-PMCEI4Uh",
+      "sid": "96",
+      "msgs": 132,
+      "cid": 40
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.P.C-R3F-UDfxZC1Y",
+      "sid": "86",
+      "msgs": 0,
+      "cid": 32
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "$NRG.P._meta_",
+      "sid": "63",
+      "msgs": 0,
+      "cid": 5
+    },
+    {
+      "account": "$SYS",
+      "account_tag": "$SYS",
+      "subject": "_R_.IOuo4u.>",
+      "sid": "2",
+      "msgs": 31,
+      "cid": 2
+    }
+  ]
+}

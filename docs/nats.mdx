@@ -1,0 +1,87 @@
+---
+title: "NATS"
+description: "Connect NATS so OpenSRE can diagnose server health, connection pressure, subscriptions, JetStream backlog, and cluster topology during incidents"
+---
+
+## Overview
+
+OpenSRE reads the nats-server HTTP monitoring endpoint to investigate messaging incidents — checking server health and connection pressure, subscription coverage, JetStream stream and consumer backlog, and cluster topology. From OpenSRE's perspective the endpoint is **read-only** — nothing publishes, consumes, or changes server state. Requires nats-server 2.10+.
+
+## Prerequisites
+
+- nats-server started with `-m 8222` (or `http_port: 8222` / `https_port` in the config), reachable from where OpenSRE runs
+- For the JetStream tools, start with `-js`
+- The endpoint has no authentication by design — keep it on a private network or behind a proxy
+
+## Setup
+
+### Option 1: Environment variables
+
+```bash
+NATS_MONITOR_URL=http://nats.example.net:8222
+NATS_MONITOR_USERNAME=
+NATS_MONITOR_PASSWORD=
+NATS_VERIFY_SSL=true
+NATS_TIMEOUT_SECONDS=10
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NATS_MONITOR_URL` | — | **Required.** Monitoring endpoint URL including scheme and port |
+| `NATS_MONITOR_USERNAME` | _(empty)_ | Basic-auth username, only when a proxy protects the port |
+| `NATS_MONITOR_PASSWORD` | _(empty)_ | Basic-auth password for that proxy |
+| `NATS_VERIFY_SSL` | `true` | Verify TLS certificate; set `false` only for self-signed certs in trusted networks |
+| `NATS_TIMEOUT_SECONDS` | `10` | HTTP request timeout in seconds |
+
+### Option 2: Setup wizard
+
+```bash
+opensre integrations setup nats
+```
+
+## Credentials
+
+Credentials are only needed when a reverse proxy sits in front of the monitoring port — nats-server itself accepts no credentials there. When set, the username and password are sent as HTTP basic auth on every monitoring request.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_nats_server_status` | Version, uptime, health, connection counts vs limit, JetStream usage |
+| `get_nats_connections` | Client connections by pending bytes, subs, rates, idle/RTT; open, closed or all |
+| `get_nats_subscriptions` | Subscription totals, cache hit rate, busiest subjects; match one subject |
+| `get_nats_jetstream_streams` | Streams with counts, retention, replicas, limit utilisation, RAFT leader |
+| `get_nats_jetstream_consumers` | Consumers with backlog, lag, unacked, redeliveries, ack policy, leader |
+| `get_nats_cluster_status` | Cluster peers, routes, gateways, leaf nodes, JetStream meta leader |
+
+Two gotchas: the JetStream view is per server — query each cluster member's monitoring port for the full picture. Consumer counters are authoritative only from the consumer's RAFT leader, and the output says which server that is.
+
+## Verify
+
+```bash
+opensre integrations verify nats
+```
+
+Expected output:
+
+```
+SERVICE    SOURCE       STATUS    DETAIL
+nats       local env    passed    nats-server 2.14.6 'n1' reachable at http://nats.example.net:8222 (uptime 1m52s, 1 client connections, JetStream enabled, cluster opensre-demo).
+```
+
+Verify calls `GET /healthz` then `GET /varz`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Did not answer HTTP (wrong port)** | Point `NATS_MONITOR_URL` at the monitoring port (default 8222), not the client port 4222 |
+| **Non-JSON body** | The URL hits the wrong service or proxy — confirm it serves the monitoring endpoint |
+| **401/403 rejected** | Check the proxy credentials (`NATS_MONITOR_USERNAME` / `NATS_MONITOR_PASSWORD`) |
+| **JetStream disabled hint** | Start nats-server with `-js` or point at a JetStream-enabled server |
+| **Empty stream list on a clustered server** | The stream has no replica on this node — query another member's monitoring port |
+
+## Security
+
+- The monitoring endpoint is read-only, but never expose port 8222 publicly — bind it to a private network or proxy.
+- `NATS_MONITOR_PASSWORD` is stored in the keyring tier, never in logs or evidence.

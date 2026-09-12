@@ -262,6 +262,7 @@
                   "airflow",
                   "dagster",
                   "kafka",
+                  "nats",
                   "prefect",
                   "rabbitmq",
                   "temporal"
