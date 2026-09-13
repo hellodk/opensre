@@ -53,22 +53,6 @@ Loading every vendor tool at startup was slow. A static index
 
 Adding a vendor tool is a `@tool`/`BaseTool` module; the index finds it and no other vendor is imported. `tests/tools/test_registry_index.py` checks the index matches the imported registry exactly, so they cannot drift.
 
-## Interactive shell: REPL watchdog demo
-
-PR reviewers expect a **visible demo** (terminal log or screenshot) in the PR under **Demo/Screenshot**, not only tests. Copy the exact steps from this section into your PR description, then attach your terminal output or recording.
-
-1. `uv run opensre` (TTY).
-2. `/trust on` (or confirm the elevated-action prompt when running `/watch`).
-3. `/watch <pid> --max-cpu 80` — expect `task … started.` (use a real PID, e.g. the shell’s Python process).
-4. `/watches` — table columns include id, pid, kind, status, thresholds, last sample.
-5. `/unwatch <task_id>` or `/cancel <task_id>` — then `/watches` again; status should show **cancelled**.
-6. Optional: lower `--max-cpu` so a threshold trips; after delivery, the REPL prints one line: `[task …] alarm fired: … (telegram delivered)`. Add `--provider rocketchat --chat-id "#channel"` to `/watch` to alarm via Rocket.Chat instead (`… (rocketchat delivered)`).
-
-Automated equivalent (runs in `make test-cov`):  
-`uv run pytest tests/interactive_shell/test_watchdog_repl_e2e_demo.py -v --tb=short`
-
-Longer transcript (optional): [tests/interactive_shell/repl_watchdog_demo.md](https://github.com/Tracer-Cloud/opensre/blob/main/tests/interactive_shell/repl_watchdog_demo.md).
-
 ## VS Code dev container
 
 The dev container is defined under [`.devcontainer/`](https://github.com/Tracer-Cloud/opensre/tree/main/.devcontainer). It builds from [`.devcontainer/Dockerfile`](https://github.com/Tracer-Cloud/opensre/blob/main/.devcontainer/Dockerfile) (Python **3.13**), then **`postCreateCommand`** creates `.venv-devcontainer` and runs **`pip install -e '.[dev]'`** (not `uv`). Docker Desktop, OrbStack, Colima, or another compatible runtime must be available on the host.
@@ -76,7 +60,7 @@ The dev container is defined under [`.devcontainer/`](https://github.com/Tracer-
 ## Deployment
 
 Full deployment instructions, prerequisites, and environment variable reference:
-**[DEPLOYMENT.md](../DEPLOYMENT.md)**
+**[DEPLOYMENT.md](https://github.com/Tracer-Cloud/opensre/blob/main/DEPLOYMENT.md)**
 
 Quick reference:
 
@@ -107,24 +91,25 @@ service has `DATABASE_URI` and `REDIS_URI` set before deploying. Set
 
 `opensre` ships with two telemetry stacks, both opt-out:
 
-- **PostHog** — anonymous product analytics (commands used, success/failure, rough runtime, CLI/Python/OS/arch, and limited command metadata).
+- **Product analytics** — lifecycle and usage events sent through `app.opensre.com` (commands used, success/failure, rough runtime, CLI/Python/OS/arch, and limited command metadata).
 - **Sentry** — crashes and errors (stack traces, environment, release).
 
 Events are tagged with `entrypoint`, `opensre.runtime`, and `deployment_method`. Sensitive headers, paths, and secret-shaped keys are scrubbed before send.
 
-PostHog product events also carry `execution_environment` (`local`, `ci`, `container`,
+Product events also carry `execution_environment` (`local`, `ci`, `container`,
 or `ci_container`), `is_ci`, `is_container`, and `container_runtime`. Use these
-first-party fields to exclude automated environments from product funnels; PostHog's
-virtual traffic classification intentionally treats CLI HTTP clients as automation.
+first-party fields to exclude automated environments from product funnels.
 
-A random install ID is stored under `~/.opensre/anonymous_id`. PostHog `distinct_id` is scoped to that ID. Telemetry is off in GitHub Actions and pytest.
+A random install ID is stored under `~/.opensre/anonymous_id`. Telemetry is off
+in GitHub Actions and pytest.
 
-When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE sets `github_username` as a PostHog **person property** (via `$identify`/`$set`). That is the only intentional PII it sends.
+When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE emits
+`github_username` on subsequent product events.
 
 ### Kill-switch matrix
 
-| Env var                        | PostHog    | Sentry     |
-| ------------------------------ | ---------- | ---------- |
+| Env var                        | Product analytics | Sentry     |
+| ------------------------------ | ----------------- | ---------- |
 | `OPENSRE_NO_TELEMETRY=1`       | disabled   | disabled   |
 | `DO_NOT_TRACK=1`               | disabled   | disabled   |
 | `OPENSRE_ANALYTICS_DISABLED=1` | disabled   | unaffected |
@@ -145,12 +130,15 @@ Self-hosted users can set `SENTRY_DSN` to their project; unset uses the bundled 
 
 Set `OPENSRE_DEPLOYMENT_METHOD` to `railway`, `ec2`, `vercel`, or `local` (default `local`) to label Sentry events.
 
-### Local PostHog event log
+### Local product event log
 
-By default, outbound PostHog payloads are also appended to `~/.opensre/posthog_events.txt` (rotates at 1000 lines). Disable:
+By default, outbound product event properties are also appended to
+`~/.opensre/analytics_events.txt` (rotates at 1000 lines). Disable:
 
 ```bash
 export OPENSRE_ANALYTICS_LOG_EVENTS=0
 ```
 
-We do not collect alert contents, file contents, hostnames, credentials, raw CLI arguments, or PII by design.
+Metadata events do not collect alert contents, file contents, hostnames,
+credentials, or raw CLI arguments. The separately documented `$ai_generation`
+event contains redacted prompt and response text.

@@ -12,6 +12,7 @@ here, and ``core`` may import them downward too.
 
 from __future__ import annotations
 
+import os
 from typing import Final
 
 # --- Connection env-var names ------------------------------------------------
@@ -36,6 +37,17 @@ OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV: Final[str] = "OPENSRE_LLM_NATIVE_STRUC
 #: report) may need a higher ceiling so their JSON payloads are not truncated.
 OLLAMA_MAX_TOKENS_ENV: Final[str] = "OLLAMA_MAX_TOKENS"
 DEFAULT_OLLAMA_MAX_TOKENS: Final[int] = 1024
+
+#: Opt-in same-LLM ReAct goal review after tool work. Default off: the acting
+#: prompt proposes done; host gates (unfinished plan, gather discovery-only)
+#: still reject. Set to ``1`` to restore the extra review call.
+OPENSRE_REACT_GOAL_LLM_REVIEW_ENV: Final[str] = "OPENSRE_REACT_GOAL_LLM_REVIEW"
+
+
+def react_goal_llm_review_enabled() -> bool:
+    """True when the same-LLM ReAct goal reviewer is opted back in."""
+    return os.environ.get(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "").strip() == "1"
+
 
 # Custom OpenAI-/Anthropic-compatible gateways (LiteLLM proxy, vLLM, LocalAI,
 # internal model gateways). The base URL is user-supplied, not hard-coded.

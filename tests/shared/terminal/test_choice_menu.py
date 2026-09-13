@@ -65,11 +65,76 @@ def test_draw_menu_letter_keys_labels_options_alphabetically(monkeypatch) -> Non
     )
 
     plain = _ANSI_RE.sub("", out.getvalue())
+    # Section gap before the accent header so Ask User is not flush under
+    # Plan complete / reply text above.
+    assert plain.startswith("\r\n\r  Ask User")
+    assert "\r  Ask User\r\n\r  How should I select repos?" in plain
     assert "❯ (A) Local repos" in plain
     assert "(B) GitHub account" in plain
     assert "(C) Or type your own answer..." in plain
     assert "Enter/A-C Select" in plain
     assert "1." not in plain
+
+
+def test_draw_menu_note_sits_inside_the_erased_block(monkeypatch) -> None:
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+
+    choice_menu._draw_menu(
+        title="Which demo would you like me to run?",
+        crumb="",
+        labels=["Explore a repo"],
+        index=0,
+        erase_lines=0,
+        header="Ask User",
+        letter_keys=True,
+        note="For a demo, I'd rather use something real from your machine.",
+    )
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert "Ask User" in plain
+    assert "I'd rather use something real" in plain
+    assert "Explore a repo" in plain
+
+
+def test_erase_menu_uses_drawn_height_after_the_terminal_resizes(monkeypatch) -> None:
+    """A resize must not recompute wrap height for the leave erase."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
+    drawn = 12
+
+    choice_menu._erase_menu(
+        "",
+        ["one"],
+        header="Ask User",
+        note="For a demo, I'd rather use something real from your machine than a toy example.",
+        drawn_height=drawn,
+    )
+
+    rendered = out.getvalue()
+    assert f"\x1b[{drawn}A" in rendered
+    assert f"\x1b[{drawn}M" in rendered
+
+
+def test_draw_menu_without_header_stays_tight(monkeypatch) -> None:
+    """Slash pickers keep no blank above the title."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+
+    choice_menu._draw_menu(
+        title="integrations",
+        crumb="/integrations",
+        labels=["list"],
+        index=0,
+        erase_lines=0,
+    )
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert plain.startswith("\r  integrations")
+    assert not plain.startswith("\r\n\r  integrations")
 
 
 def test_pick_letter_key_selects_matching_option(monkeypatch) -> None:
@@ -218,16 +283,77 @@ def test_print_valid_choice_list_strips_controls_and_escapes_markup() -> None:
     assert "[bold]" in output
 
 
+def test_draw_menu_redraw_clears_in_place_without_deleting(monkeypatch) -> None:
+    """Arrow-key redraw must overwrite the same rows, not pull the transcript up."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
+
+    choice_menu._draw_menu(
+        title="Pick",
+        crumb="",
+        labels=["one"],
+        index=0,
+        erase_lines=6,
+    )
+
+    rendered = out.getvalue()
+    assert "\x1b[6A" in rendered
+    assert "\x1b[J" in rendered
+    assert "\x1b[6M" not in rendered
+
+
 def test_erase_menu_block_resets_to_column_zero(monkeypatch) -> None:
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
 
     choice_menu._erase_menu("crumb", ["one", "two"])
 
     rendered = out.getvalue()
     assert rendered.startswith("\r\x1b[")
-    assert "A\r\x1b[J" in rendered
+    # Leave must delete the rows (CSI n M), not only blank them (ESC[J).
+    assert "\x1b[7A" in rendered
+    assert "\x1b[7M" in rendered
+    assert "\x1b[J" not in rendered
     assert rendered.endswith("\r")
+
+
+def test_erase_menu_does_not_delete_lines_beyond_the_viewport(monkeypatch) -> None:
+    """A climb that stops at the top of the screen must not CSI-M the transcript."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 5)
+
+    choice_menu._erase_menu("crumb", ["one", "two"])
+
+    rendered = out.getvalue()
+    assert "\x1b[4A" in rendered
+    assert "\x1b[7A" not in rendered
+    assert "\x1b[7M" not in rendered
+    assert not re.search(r"\x1b\[\d+M", rendered)
+    assert "\x1b[J" in rendered
+
+
+def test_draw_menu_keeps_each_row_on_one_physical_line(monkeypatch) -> None:
+    """Wrapped rows would make CSI n A miss the menu origin on leave."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 24)
+
+    choice_menu._draw_menu(
+        title="x" * 80,
+        crumb="y" * 80,
+        labels=["z" * 80],
+        index=0,
+        erase_lines=0,
+    )
+
+    paint_width = 23
+    for raw_line in out.getvalue().split("\r\n"):
+        visible = _ANSI_RE.sub("", raw_line).lstrip("\r")
+        assert len(visible) <= paint_width
 
 
 def test_reset_tty_column_writes_carriage_return(monkeypatch) -> None:
@@ -251,8 +377,8 @@ def test_leave_inline_menu_starts_next_line_at_column_zero(monkeypatch) -> None:
 
     choice_menu.leave_inline_menu()
 
-    # prepare_repl_output_line writes \\r\\n then reset_tty_column writes \\r
-    assert "\r\n" in out.getvalue()
+    # Column zero only — a leftover \\r\\n is a blank row after every picker.
+    assert "\r\n" not in out.getvalue()
     assert out.getvalue().endswith("\r")
 
 
@@ -261,13 +387,16 @@ def test_pick_ignores_unmapped_keys(monkeypatch) -> None:
     actions = iter(["ignore", "enter"])
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
     monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
 
     assert choice_menu._pick(title="test", crumb="", labels=["one"]) == 0
 
     rendered = out.getvalue()
     assert rendered.count("test") == 2
-    assert "A\r\x1b[J" in rendered
+    # Ignore redraws in place (ESC[J); leave deletes the block (CSI n M).
+    assert "\x1b[J" in rendered
+    assert "M" in rendered
 
 
 def test_read_action_treats_space_as_enter(monkeypatch) -> None:
@@ -336,7 +465,7 @@ def test_repl_choose_one_restores_terminal_when_menu_raises(monkeypatch) -> None
         choice_menu.repl_choose_one(title="theme", choices=[("green", "green")])
 
     assert restored == [True]
-    assert "\r\n" in out.getvalue()
+    assert "\r\n" not in out.getvalue()
     assert out.getvalue().endswith("\r")
 
 

@@ -12,24 +12,31 @@ PLAN_STATUS_GLYPH: dict[PlanStepStatus, str] = {
     PlanStepStatus.COMPLETED: "✓",
     PlanStepStatus.IN_PROGRESS: "●",
     PlanStepStatus.PENDING: "○",
+    PlanStepStatus.BLOCKED: "⊘",
 }
 
 
 def format_plan_header(plan: TaskPlan) -> str:
-    """Counter line shared by plain text and the live overlay."""
+    """Counter line shared by plain text and the live overlay.
+
+    Once any step is blocked the counter switches from the focused step to the
+    completed count and names the blocked count, live and settled alike, so
+    ``9/9`` never appears over work that was not done (seven blocked steps with
+    the last one active used to read as ``Plan · 9/9``).
+    """
     if plan.all_pending:
         return f"Plan ready · 0/{plan.total} executed"
+    if plan.blocked_count:
+        return f"Plan · {plan.completed_count}/{plan.total} · {plan.blocked_count} blocked"
     return f"Plan · {plan.current_index}/{plan.total}"
 
 
 def format_task_plan_plain(plan: TaskPlan) -> str:
-    """Checklist with ``Plan · n/m`` header and ✓ / ● / ○ step marks."""
+    """Checklist with ``Plan · n/m`` header and ✓ / ● / ○ / ⊘ step marks."""
     lines = [format_plan_header(plan)]
-    last_index = plan.total - 1
-    for index, item in enumerate(plan.steps):
+    for item in plan.steps:
         mark = PLAN_STATUS_GLYPH[item.status]
-        suffix = "  (verify)" if index == last_index else ""
-        lines.append(f"  {mark} {item.step}{suffix}")
+        lines.append(f"  {mark} {item.step}")
     return "\n".join(lines)
 
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL, AutoLevel
+from core.agent_harness.spi.session_goal import GoalPaintSignature
 from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 
 if TYPE_CHECKING:
@@ -31,6 +32,21 @@ COLLAPSED_STASH_MAX_CHARS = 32_000
 #: Expand in-scrollback when the body fits; larger peeks open ``$PAGER`` / less.
 INLINE_EXPAND_MAX_CHARS = 8_000
 INLINE_EXPAND_MAX_LINES = 120
+
+
+@dataclass
+class ActionLogEntry:
+    """One buffered tool call for the grouped, collapsible action log.
+
+    ``kind`` is the section header (e.g. ``GitHub CLI``); ``concise`` is the
+    one-line status shown in the section (no inline arguments); ``detail`` is
+    the full call + result text revealed on Ctrl+O.
+    """
+
+    call_id: str
+    kind: str
+    concise: str
+    detail: str = ""
 
 
 @dataclass
@@ -78,6 +94,9 @@ class TerminalSession:
     prompt_refresh_fn: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to apply pending prefill and redraw the active prompt."""
 
+    ci_fix_count_fn: Callable[[], int] | None = field(default=None, repr=False)
+    """Cached deployment repair count; reading it performs no disk or network I/O."""
+
     fleet_sampler_starter: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to lazily start the fleet sampler on first live ``/fleet`` use.
 
@@ -87,6 +106,11 @@ class TerminalSession:
 
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
+
+    pending_prompt_plain_turn: bool = False
+    """When True alongside ``pending_prompt_autosubmit``, the submitted prefill runs
+    as an ordinary typed turn: the prompt bar (and its spinner) stays up and no
+    ``/goal`` work-turn label is painted. Set by :meth:`set_auto_prompt`."""
 
     pending_prompt_autosubmit: bool = False
     """When True alongside ``pending_prompt_default``, the prefilled prompt is
@@ -112,6 +136,8 @@ class TerminalSession:
     submitted prompt is painted so the answer uses the brand colour."""
 
     pending_choice_response: str | None = None
+    goal_paint_signature: GoalPaintSignature | None = None
+    """What the last session-goal block showed; unchanged goals repaint as one line."""
     """Selected label while its synthetic answer turn awaits a response.
 
     The response composer consumes the label to hide a pure acknowledgement
@@ -128,6 +154,13 @@ class TerminalSession:
 
     The closing reply must not repeat those results. The response composer
     reads and clears the flag."""
+
+    action_log_entries: list[ActionLogEntry] = field(default_factory=list)
+    """Tool calls buffered for the current turn's grouped action log (call order).
+
+    The observer appends each call here instead of printing it live; the batch
+    flushes as bordered, collapsible sections above the reply (Ctrl+O expands
+    the detail)."""
 
     pending_confirm_options: tuple[tuple[str, str], ...] | None = None
     """Rows the next execution confirmation should offer, or None for Yes/No.
@@ -234,6 +267,37 @@ class TerminalSession:
         self._collapsed_expand_next = idx - 1 if idx > 0 else len(ring) - 1
         return body
 
+    def push_action_log(self, entry: ActionLogEntry) -> None:
+        """Buffer one tool call for the current turn's grouped action log."""
+        self.action_log_entries.append(entry)
+
+    def append_action_result(self, call_id: str, result: str) -> None:
+        """Attach a result line to the buffered call ``call_id`` (if present)."""
+        for entry in reversed(self.action_log_entries):
+            if entry.call_id == call_id:
+                entry.detail = f"{entry.detail}\n{result}" if entry.detail else result
+                return
+
+    def drop_action_log(self, call_id: str) -> None:
+        """Forget the buffered call ``call_id`` (if present).
+
+        A tool that painted its own output needs no row: the buffer flushes at
+        the end of the turn, so its label would land under that output.
+        """
+        self.action_log_entries = [
+            entry for entry in self.action_log_entries if entry.call_id != call_id
+        ]
+
+    def has_action_log(self) -> bool:
+        """True when at least one action is buffered for the current turn."""
+        return bool(self.action_log_entries)
+
+    def take_action_log(self) -> list[ActionLogEntry]:
+        """Return the buffered action entries and clear the buffer."""
+        entries = self.action_log_entries
+        self.action_log_entries = []
+        return entries
+
     def pop_pending_prompt_default(self) -> str:
         """Return pre-filled text for the next prompt line, if any, and clear it."""
         value = self.pending_prompt_default
@@ -246,6 +310,23 @@ class TerminalSession:
         self.pending_prompt_autosubmit = False
         return value
 
+    def pop_pending_plain_turn(self) -> bool:
+        """Return whether the pending autosubmit is a plain turn, and clear the flag."""
+        value = self.pending_prompt_plain_turn
+        self.pending_prompt_plain_turn = False
+        return value
+
+    def set_auto_prompt(self, text: str) -> None:
+        """Queue *text* to be submitted as an ordinary turn, as if the user typed it.
+
+        Unlike :meth:`set_auto_command`, the controller does not suspend the
+        prompt for the turn, so the pinned-layout spinner keeps showing progress.
+        """
+        self.pending_prompt_default = text
+        self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = True
+        self.notify_prompt_changed()
+
     def set_auto_command(self, command: str) -> None:
         """Queue a command to run automatically on the next prompt iteration.
 
@@ -257,6 +338,7 @@ class TerminalSession:
         """
         self.pending_prompt_default = command
         self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = False
         self.notify_prompt_changed()
 
     def notify_prompt_changed(self) -> None:

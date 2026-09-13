@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.spi.grounding import list_action_skills
 from core.agent_harness.spi.handoff import parse_ask_user_answers
 from core.agent_harness.spi.task_plan import (
+    TaskPlan,
     apply_update_plan_host_policy,
     apply_update_plan_session,
+    demote_unevidenced_completions,
     format_task_plan_plain,
+    mark_plan_written,
     parse_task_plan,
+    plan_evidence_available,
     task_plan_to_payload,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
@@ -26,9 +31,23 @@ _PLAN_ITEM_SCHEMA = {
             min_length=1,
         ),
         "status": string_property(
-            description="One of: pending, in_progress, completed.",
-            enum=("pending", "in_progress", "completed"),
+            description=(
+                "One of: pending, in_progress, completed, blocked. Use blocked "
+                "for a step this runtime or the current facts prevent; it is "
+                "terminal, never counts as done, and needs its blocker named "
+                "in explanation."
+            ),
+            enum=("pending", "in_progress", "completed", "blocked"),
         ),
+        "deliverable": {
+            "type": "boolean",
+            "description": (
+                "True when this step's work is a text-only assistant reply the user "
+                "must see (a report or table) while later steps remain. Without it a "
+                "text-only reply before the plan is settled is treated as a premature "
+                "stop and is not shown."
+            ),
+        },
     },
     "required": ["step", "status"],
     "additionalProperties": False,
@@ -40,6 +59,14 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     if error is not None or plan is None:
         return {"ok": False, "error": error or "invalid plan"}
     turn_text = getattr(ctx, "turn_user_message", "") or ""
+    prior = getattr(ctx.session, "task_plan", None)
+    if not isinstance(prior, TaskPlan):
+        prior = None
+    plan, demoted = demote_unevidenced_completions(
+        plan,
+        prior=prior,
+        evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
+    )
     plan, plan_only_requested = apply_update_plan_host_policy(
         plan,
         plan_only_requested=bool(args.get("plan_only")),
@@ -47,6 +74,14 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         session=ctx.session,
     )
     apply_update_plan_session(ctx.session, plan, plan_only=plan_only_requested)
+    active_skill = getattr(ctx.session, "active_skill", None)
+    if (
+        plan.is_settled
+        and active_skill
+        and any(skill.name == active_skill and skill.script_tools for skill in list_action_skills())
+    ):
+        ctx.session.active_skill = None
+    mark_plan_written(ctx.session)
     payload = task_plan_to_payload(plan)
     payload["ok"] = True
     payload["summary"] = format_task_plan_plain(plan)
@@ -60,9 +95,23 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         payload["instruction"] += (
             " Execution is authorized: the first step is in_progress — run it now."
         )
-    elif not plan.all_completed:
+    elif not plan.is_settled:
         payload["instruction"] += (
             " Continue the in_progress step now — do not end the turn while pending steps remain."
+        )
+    if plan.blocked_count:
+        payload["instruction"] += (
+            " Blocked steps stay blocked — their work did not happen. Do not run tools"
+            " to earn a completed mark for them; name each blocker in the reply."
+        )
+    if demoted:
+        names = "; ".join(demoted)
+        payload["instruction"] += (
+            f" Reset to pending — marked completed before any tool ran for them: {names}."
+            " A step is completed only after its work returned while it was in_progress:"
+            " set it in_progress, run the work, then mark it completed."
+            " update_plan, session_goal_*, and loading a skill body do not count as work;"
+            " reading a skill reference does."
         )
     return payload
 
@@ -86,8 +135,10 @@ update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
     description=(
         "Create or revise the live execution plan for this workload, and mark "
-        "steps pending, in_progress, or completed. Call this BEFORE executing "
-        "any multi-step workload. The last step must be a verification check. "
+        "steps pending, in_progress, completed, or blocked. Call this BEFORE executing "
+        "any multi-step workload. Include verification before declaring the task complete. "
+        "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
+        "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Not for durable human todos "
         "(use work_task_*) and not for /goal keep-going."
     ),
@@ -116,10 +167,7 @@ update_plan_tool = RegisteredTool(
             ),
             "plan": {
                 "type": "array",
-                "description": (
-                    "Ordered steps. Last item is always the verification check. "
-                    "At most one status may be in_progress."
-                ),
+                "description": "Ordered steps. At most one status may be in_progress.",
                 "items": _PLAN_ITEM_SCHEMA,
                 "minItems": 2,
             },
@@ -137,7 +185,7 @@ update_plan_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
+    role=ToolRole.BOOKKEEPING,
     accepts_runtime_context=True,
     run=run_update_plan,
     tags=("safe", "fast", "no-credentials"),

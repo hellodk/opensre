@@ -16,6 +16,14 @@ def test_system_prompt_base_comes_from_markdown_file() -> None:
     assert path.read_text(encoding="utf-8") == _SYSTEM_PROMPT_BASE
 
 
+def test_system_prompt_completion_is_the_user_request_not_a_tool_call() -> None:
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "The user's request is the finish line, not that a tool ran" in collapsed
+    assert "Listing tools, schemas, or a drafted query is not completion" in collapsed
+    assert "Propose done with the evidence" in collapsed
+    assert "If you cannot complete the request, say what blocked you and stop" in collapsed
+
+
 def test_system_prompt_runs_explicit_commands_without_repository_probe() -> None:
     assert "execute it directly with the matching tool" in _SYSTEM_PROMPT_BASE
     assert "call `cli_exec` with the leading `opensre` prefix removed" in _SYSTEM_PROMPT_BASE
@@ -23,6 +31,14 @@ def test_system_prompt_runs_explicit_commands_without_repository_probe() -> None
     assert "Do not search for AGENTS.md files or inspect the repository first" in (
         _SYSTEM_PROMPT_BASE
     )
+
+
+def test_actionable_results_are_bullets_not_a_paragraph() -> None:
+    """A schedule card read as one dense block; nobody reached the commands in it."""
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "Three or more things the user can act on" in collapsed
+    assert "are one bullet each, never a run of sentences" in collapsed
+    assert "Repeat a card or list a tool already rendered line for line" in collapsed
 
 
 def test_finite_material_ambiguity_requires_selectable_clarification() -> None:
@@ -36,15 +52,12 @@ def test_finite_material_ambiguity_requires_selectable_clarification() -> None:
     assert "TURN INTERACTION reports the menu is unavailable" in collapsed
 
 
-def test_demo_requests_require_selection_before_skill_resolution() -> None:
+def test_demo_requests_load_the_master_before_asking_for_a_child() -> None:
     collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
     assert "For a demo or getting-started request" in collapsed
-    assert "assembled getting-started prompts as selectable options" in collapsed
-    assert "takes precedence over any assembled getting-started instruction" in collapsed
-    assert "that block supplies the menu options only" in collapsed
-    assert "selection arrives verbatim as the next message" in collapsed
-    assert "then resolve the selected skill or goal" in collapsed
-    assert "Do not choose a goal or resolve a skill before the selection arrives" in collapsed
+    assert "load the master onboarding skill" in collapsed
+    assert "chooses the child skill after the answer" in collapsed
+    assert "Do not ask a separate onboarding question before loading it" in collapsed
 
 
 def test_finite_clarifications_are_batched_without_over_questioning() -> None:
@@ -78,3 +91,35 @@ def test_proactive_messages_are_new_actionable_and_time_sensitive() -> None:
     assert "Broadcast only decisions, anomalies, or milestones" in collapsed
     assert "when the underlying state has not changed" in collapsed
     assert "Do not ask whether to adopt this policy" in collapsed
+
+
+def test_failed_commands_are_rerun_not_estimated() -> None:
+    # Arrange / Act: the shell guidelines carry the rule as one bullet.
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert
+    assert "read-only measurement" in shell_section
+    assert "fix it and run it again before answering" in shell_section
+    assert "Do not rerun a command that may already have written files" in shell_section
+    assert "Never replace a failed measurement" in shell_section
+    assert "the command line still shows dimmed" in shell_section
+
+
+def test_counts_come_from_the_whole_file() -> None:
+    # Arrange / Act: the shell guidelines carry the rule as one bullet.
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert: a range read undercounts silently, which is a wrong answer.
+    assert "Counting or measuring from a file means reading all of it" in shell_section
+    assert "wrong rather than approximate" in shell_section
+
+
+def test_counts_come_from_a_parser_not_a_pattern() -> None:
+    # Arrange / Act
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert: a pattern over indentation answers a different question, and a
+    # column must not be filled in when a neighbouring one is admitted unknown.
+    assert "Count by parsing, not by pattern" in shell_section
+    assert "answers a different question" in shell_section
+    assert "say which field you could not read" in shell_section
