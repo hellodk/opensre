@@ -10,6 +10,7 @@ import pytest
 from prompt_toolkit.completion import Completion
 from rich.console import Console
 
+from core.agent_harness.spi.session_goal import SessionGoal, attach_session_goal
 from infrastructure.scheduling.task_types import TaskKind
 from surfaces.interactive_shell.runtime.core import state as loop_state
 from surfaces.interactive_shell.session import Session
@@ -160,6 +161,7 @@ class TestPromptTurnCounter:
         """``/goal set`` autosubmit must not look like part of the slash turn."""
         session = Session()
         console = _render_console()
+        attach_session_goal(session, SessionGoal(condition="How many Windows users?"))
         session.terminal.last_input_autosubmitted = True
         render_submitted_prompt(console, session, "How many Windows users in the last 7 days?")
         out = console.file.getvalue()  # type: ignore[union-attr]
@@ -167,6 +169,21 @@ class TestPromptTurnCounter:
         assert "[1]" in out
         assert "How many Windows users" in out
         assert session.terminal.last_input_autosubmitted is False
+
+    def test_autosubmit_without_a_goal_gets_no_work_turn_marker(self) -> None:
+        """A queued picker or demo prompt is autosubmitted too; it is not /goal work."""
+        # Arrange
+        session = Session()
+        console = _render_console()
+        session.terminal.last_input_autosubmitted = True
+
+        # Act
+        render_submitted_prompt(console, session, "/demo")
+
+        # Assert
+        out = console.file.getvalue()  # type: ignore[union-attr]
+        assert "/goal — work turn" not in out
+        assert "/demo" in out
 
     def test_history_rows_do_not_advance_counter(self) -> None:
         """One request that runs many tools adds many history rows but one number.
@@ -194,8 +211,8 @@ class TestPromptTurnCounter:
 
 class TestResolveIdleHint:
     def test_idle_hint_is_empty_no_recurring_ready_line(self) -> None:
-        # Hints live once in the banner + footer; the prompt shows no per-turn
-        # "Ready · …" line (it also stacked into copies on terminal resize).
+        # The prompt shows no per-turn "Ready · …" line (it also stacked into
+        # copies on terminal resize).
         session = Session()
         session.configured_integrations_known = True
         session.configured_integrations = ("datadog", "github", "grafana")
@@ -203,21 +220,13 @@ class TestResolveIdleHint:
 
 
 class TestComposerFooter:
-    def test_places_help_hint_without_terminal_mode_chrome(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(prompt_rendering, "prompt_line_width", lambda: 79)
-        footer = _strip_ansi(composer_footer_ansi())
-        assert footer.startswith("Enter send · Shift+Enter newline · ? help")
-        assert "TERMINAL" not in footer
-        assert "■" not in footer
-
-    def test_narrow_footer_keeps_only_a_clipped_help_hint(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(prompt_rendering, "prompt_line_width", lambda: 6)
-        footer = _strip_ansi(composer_footer_ansi())
-        assert footer == "Enter…"
+    def test_footer_row_is_empty_box_is_the_job_prompt(self) -> None:
+        assert composer_footer_ansi() == ""
+        session = Session()
+        text = _placeholder_text(session)
+        assert text == DEFAULT_PLACEHOLDER_TEXT
+        assert "Enter send" not in text
+        assert "? help" not in text
 
 
 class TestPromptMessage:
@@ -228,7 +237,9 @@ class TestPromptMessage:
 class TestResolvePromptPlaceholder:
     def test_default_when_no_session_context(self) -> None:
         session = Session()
-        assert _placeholder_text(session) == "see what you can do"
+        text = _placeholder_text(session)
+        assert text == "Ask about an alert"
+        assert "Enter send" not in text
 
     def test_placeholder_prompts_to_continue_an_unfinished_plan(self) -> None:
         from core.agent_harness.task_plan.plan import parse_task_plan
@@ -276,7 +287,7 @@ class TestResolvePromptPlaceholder:
         session = Session()
         session.terminal.trust_mode = True
         session.resumed_from_name = "redis-incident"
-        task = session.task_registry.create(TaskKind.WATCHDOG)
+        task = session.task_registry.create(TaskKind.CLI_COMMAND)
         task.mark_running()
         text = _placeholder_text(session)
         assert "trust on" in text

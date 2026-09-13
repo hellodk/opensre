@@ -16,6 +16,47 @@ from infrastructure.safety.terminal_output import strip_terminal_controls
 
 _MAX_WORK_LINES_PER_STEP = 12
 _MAX_WORK_LINE_CHARS = 120
+#: A lone work line is trimmed to this so it never wraps under the ``↳`` indent.
+_WORK_LINE_DISPLAY_CHARS = 72
+
+
+def _work_kind(entry: str) -> str:
+    """Leading label of a work entry used to group same-kind calls.
+
+    Two capitalized words (``GitHub CLI``) count as the kind; otherwise the
+    first word (``Execute``, ``opensre``, ``Python``).
+    """
+    words = entry.split()
+    if not words:
+        return entry
+    if len(words) >= 2 and words[0][:1].isupper() and words[1][:1].isupper():
+        return f"{words[0]} {words[1]}"
+    return words[0]
+
+
+def _grouped_work_lines(entries: list[str]) -> list[str]:
+    """Collapse consecutive same-kind entries into ``↳ Kind · N calls``.
+
+    A lone call keeps its (trimmed) text so a single action still reads
+    concretely; a run of the same kind reads as one grouped summary.
+    """
+    lines: list[str] = []
+    start = 0
+    while start < len(entries):
+        kind = _work_kind(entries[start])
+        end = start
+        while end < len(entries) and _work_kind(entries[end]) == kind:
+            end += 1
+        count = end - start
+        if count >= 2:
+            lines.append(f"      ↳ {kind} · {count} calls")
+        else:
+            entry = entries[start]
+            if len(entry) > _WORK_LINE_DISPLAY_CHARS:
+                entry = f"{entry[: _WORK_LINE_DISPLAY_CHARS - 1].rstrip()}…"
+            lines.append(f"      ↳ {entry}")
+        start = end
+    return lines
 
 
 def _step_texts(plan: TaskPlan) -> tuple[str, ...]:
@@ -41,7 +82,7 @@ def sync_task_plan_work_for_plan(session: Any, plan: TaskPlan) -> None:
                 if isinstance(lines, list):
                     resized[index] = [str(line) for line in lines]
         session.task_plan_work = resized
-    if not plan.all_completed:
+    if not plan.is_settled:
         session.task_plan_breakdown_emitted = False
 
 
@@ -90,33 +131,36 @@ def format_task_plan_breakdown(
     """Plain-text post-execution checklist with work lines under each step.
 
     Empty steps still appear (so the user sees the full plan). Steps that
-    gathered work list each line under a ``↳`` marker.
+    gathered work list each line under a ``↳`` marker. A plan settled with
+    blocked steps is headed ``Plan ended``, never ``Plan complete``.
     """
     work = work_by_step or []
     header = format_plan_header(plan)
     if plan.all_completed:
         header = f"Plan complete · {plan.total}/{plan.total}"
+    elif plan.is_settled:
+        header = (
+            f"Plan ended · {plan.completed_count}/{plan.total} completed"
+            f" · {plan.blocked_count} blocked"
+        )
     lines = [header]
-    last_index = plan.total - 1
     for index, item in enumerate(plan.steps):
         mark = PLAN_STATUS_GLYPH[item.status]
-        suffix = "  (verify)" if index == last_index else ""
-        lines.append(f"  {mark} {item.step}{suffix}")
+        lines.append(f"  {mark} {item.step}")
         step_work = work[index] if index < len(work) else []
-        for entry in step_work:
-            lines.append(f"      ↳ {entry}")
+        lines.extend(_grouped_work_lines(step_work))
     return "\n".join(lines)
 
 
 def take_completed_plan_breakdown(session: Any) -> str:
-    """Return the one-shot breakdown when the plan is complete; else ``\"\"``.
+    """Return the one-shot breakdown when the plan is settled; else ``\"\"``.
 
-    Marks the breakdown as emitted so a later caller in the same workload does
-    not reprint it. A new checklist identity resets that latch via
-    :func:`sync_task_plan_work_for_plan`.
+    Settled means every step is completed or blocked. Marks the breakdown as
+    emitted so a later caller in the same workload does not reprint it. A new
+    checklist identity resets that latch via :func:`sync_task_plan_work_for_plan`.
     """
     plan = getattr(session, "task_plan", None)
-    if plan is None or not plan.steps or not plan.all_completed:
+    if plan is None or not plan.steps or not plan.is_settled:
         return ""
     if getattr(session, "task_plan_breakdown_emitted", False):
         return ""

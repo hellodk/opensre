@@ -23,7 +23,6 @@ QUICK_ACCESS_COMMANDS: list[str] = [
     "/integrations",
     "/model",
     "/health",
-    "/watch",
     "/status",
     "/help",
 ]
@@ -45,6 +44,7 @@ def _raw_help_sections() -> list[HelpSection]:
     from surfaces.interactive_shell.command_registry.cli_parity import (
         COMMANDS as PARITY_COMMANDS,
     )
+    from surfaces.interactive_shell.command_registry.demo_cmds import COMMANDS as DEMO_CMDS
     from surfaces.interactive_shell.command_registry.diagnostics_cmds import (
         COMMANDS as DIAGNOSTICS_CMDS,
     )
@@ -73,7 +73,6 @@ def _raw_help_sections() -> list[HelpSection]:
     from surfaces.interactive_shell.command_registry.tasks_cmds import COMMANDS as TASK_CMDS
     from surfaces.interactive_shell.command_registry.theme import COMMANDS as THEME_CMDS
     from surfaces.interactive_shell.command_registry.tools_cmds import COMMANDS as TOOLS_CMDS
-    from surfaces.interactive_shell.command_registry.watch_cmds import COMMANDS as WATCH_CMDS
     from surfaces.interactive_shell.command_registry.work_cmds import COMMANDS as WORK_CMDS
 
     return [
@@ -81,18 +80,18 @@ def _raw_help_sections() -> list[HelpSection]:
         ("Help", list(COMMANDS)),
         (
             "Session",
-            list(SESSION_CMDS) + list(CHOICE_CMDS) + list(SETTINGS_CMDS) + list(DIAGNOSTICS_CMDS),
+            list(SESSION_CMDS)
+            + list(CHOICE_CMDS)
+            + list(DEMO_CMDS)
+            + list(SETTINGS_CMDS)
+            + list(DIAGNOSTICS_CMDS),
         ),
         ("Integrations, Models & Tools", list(INT_CMDS) + list(MODEL_CMDS) + list(TOOLS_CMDS)),
         ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS)),
         ("Remote sync", list(REMOTE_SYNC_CMDS)),
         (
             "Tasks",
-            list(WORK_CMDS)
-            + list(LOOPS_CMDS)
-            + list(TASK_CMDS)
-            + list(WATCH_CMDS)
-            + list(GATEWAY_CMDS),
+            list(WORK_CMDS) + list(LOOPS_CMDS) + list(TASK_CMDS) + list(GATEWAY_CMDS),
         ),
         ("Theme", list(THEME_CMDS)),
         ("Agents", list(AGENTS_CMDS)),

@@ -7,20 +7,25 @@ Shared action-tool, reasoning-client and run-record providers live in
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markup import escape
+from rich.text import Text
 
 from core.agent_harness import OutputSink
 from core.agent_harness.spi.defaults import DefaultErrorReporter
-from core.agent_harness.spi.session_goal import strip_session_goal_progress_tags
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
-from surfaces.interactive_shell.ui import DIM
+from infrastructure.safety.terminal_output import strip_terminal_controls
+from surfaces.interactive_shell.ui import DIM, ERROR, TEXT
+from surfaces.interactive_shell.ui.transcript import TranscriptRole, transcript_prefix
+
+if TYPE_CHECKING:
+    from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming import (
     StreamRenderResult,
     finish_deferred_closer,
     publish_full_response,
-    render_response_header,
     stream_to_console,
     stream_to_console_state,
 )
@@ -35,14 +40,27 @@ class ShellOutputSink:
     can keep the same sink object.
     """
 
-    def __init__(self, console: Console) -> None:
+    def __init__(self, console: Console, session: Session | None = None) -> None:
         self._console = console
+        self._session = session
         self._stream_result: StreamRenderResult | None = None
         self._defer_want_me_to_closer = False
 
     def bind_console(self, console: Console) -> None:
         """Point subsequent output at ``console`` for the current turn."""
         self._console = console
+
+    def _flush_pending_action_log(self) -> None:
+        """Render the turn's buffered tool actions once, just before the reply.
+
+        Flushing here (not per ReAct iteration) keeps same-kind calls that span
+        iterations in one group, and keeps the log above the reply.
+        """
+        if self._session is None:
+            return
+        from surfaces.interactive_shell.ui.action_log import flush_action_log
+
+        flush_action_log(self._console, self._session)
 
     def print(self, message: str = "") -> None:
         """Render harness text literally.
@@ -51,23 +69,26 @@ class ShellOutputSink:
         replies, skill bodies. A ``sed 's/\\]\\]>//'`` in a shell command
         reads to Rich as an unbalanced markup tag and raised ``MarkupError``,
         which took the whole turn down. Styled output goes through the
-        ``render_*`` methods instead. Session-goal progress tags are scrubbed
-        so a non-stream render path cannot leak ``session_goal:done=`` /
-        ``achieved`` into the TTY.
+        ``render_*`` methods instead.
         """
-        if message and "session_goal:" in message:
-            visible = strip_session_goal_progress_tags(message)
-            if not visible.strip():
-                return
-            message = visible
         self._console.print(message, markup=False)
 
     def render_response_header(self, label: str) -> None:
-        # No leading blank — Droid-dense turn stacking (user row → Ω reply).
-        render_response_header(self._console, label)
+        """Leave terminal headers to the following reply or error renderer."""
+        _ = label
+
+    def render_plan_breakdown(self, breakdown: str) -> None:
+        """Theme the post-execution checklist: primary steps, dim work notes."""
+        from surfaces.interactive_shell.ui.task_plan import render_plan_breakdown
+
+        render_plan_breakdown(self._console, breakdown)
 
     def render_error(self, message: str) -> None:
-        self._console.print(f"[yellow]{escape(message)}[/]")
+        safe_message = strip_terminal_controls(message, keep_whitespace=True)
+        line = Text()
+        line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+        line.append(" ".join(safe_message.split()), style=str(TEXT))
+        self._console.print(line)
         # On a credit/billing wall, add the in-tool recovery hint.
         if CREDIT_EXHAUSTED_MARKER in message:
             self._console.print("[dim]Run /model to switch to another provider.[/]")
@@ -101,6 +122,9 @@ class ShellOutputSink:
         suppress_if_starts_with: str | None = None,
         defer_want_me_to_closer: bool = False,
     ) -> str:
+        # All tool iterations are done by the time the reply streams: flush the
+        # buffered action log now so it sits above the reply, grouped as one.
+        self._flush_pending_action_log()
         self._defer_want_me_to_closer = defer_want_me_to_closer
         if defer_want_me_to_closer:
             stream_result = stream_to_console_state(
@@ -142,11 +166,13 @@ class ShellOutputSink:
         )
 
 
-def resolve_output_sink(console: Console, output: OutputSink | None) -> OutputSink:
-    """Return the caller's sink, or a shell sink bound to ``console``."""
+def resolve_output_sink(
+    console: Console, output: OutputSink | None, session: Session | None = None
+) -> OutputSink:
+    """Return the caller's sink, or a shell sink bound to ``console`` and ``session``."""
     if output is not None:
         return output
-    return ShellOutputSink(console)
+    return ShellOutputSink(console, session)
 
 
 class ShellErrorReporter:

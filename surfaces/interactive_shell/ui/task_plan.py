@@ -1,13 +1,15 @@
-"""Live task-plan overlay for the interactive shell.
+"""Live task-plan overlay and themed post-execution breakdown for the shell.
 
-The plan renders in one place: an ANSI overlay pinned above the prompt, at the
-bottom of the screen. Before execution the whole checklist is shown; once work
-starts it collapses to the header plus the current step so the prompt region
-stays short while tool output streams above it. The plan is never dumped into
-the transcript.
+The live plan renders as an ANSI overlay pinned above the prompt. Before
+execution the whole checklist is shown; once work starts it collapses to the
+header plus the current step so the prompt region stays short while tool
+output streams above it. The live checklist is never dumped into the
+transcript — only the one-shot ``Plan complete`` breakdown is.
 """
 
 from __future__ import annotations
+
+from rich.console import Console
 
 from core.agent_harness.spi.task_plan import (
     PLAN_STATUS_GLYPH,
@@ -19,12 +21,15 @@ from core.agent_harness.spi.task_plan import (
 )
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, prompt_line_width
+from surfaces.shared.terminal.components.rendering import print_repl_text
 
 _STEP_INDENT = "  "
 # Steps shown before the plan collapses; a longer plan folds to a window
 # around the current step until the user expands it.
 _COLLAPSED_MAX_STEPS = 3
 _EXPAND_HINT = "Ctrl+P to view all"
+# Work-note lines in the post-execution breakdown (``↳ …`` under each step).
+_WORK_NOTE_MARKER = "↳"
 
 
 def task_plan_from_tool_args(args: dict[str, object]) -> TaskPlan | None:
@@ -33,6 +38,53 @@ def task_plan_from_tool_args(args: dict[str, object]) -> TaskPlan | None:
         return None
     plan, _error = parse_task_plan(args)
     return plan
+
+
+def render_plan_breakdown(console: Console, breakdown: str) -> None:
+    """Paint the one-shot plan breakdown with Droid/Cursor/Claude hierarchy.
+
+    Checked steps stay primary (warm ``✓`` + body text); nested work notes
+    under ``↳`` go dim so the checklist reads apart from tool chatter —
+    the same parent/child split live tool rows already use. The rows go out
+    as one buffered block so they stay left-aligned when the prompt has the
+    terminal in raw mode.
+    """
+    text = (breakdown or "").rstrip("\n")
+    if not text:
+        return
+    # Palette ANSI, not Rich Style. Style.parse caches the first color_system
+    # that rendered ``#6E6E6E``; a 16-color console on the same worker then
+    # re-emits work notes as bright-black ``[90m`` instead of DIM_ANSI.
+    print_repl_text(
+        console,
+        "\n".join(_breakdown_row_ansi(raw) for raw in text.splitlines()),
+        markup=False,
+    )
+
+
+def _breakdown_row_ansi(raw: str) -> str:
+    """One breakdown row in theme ANSI (header, checklist step, or work note)."""
+    stripped = raw.lstrip()
+    if not stripped:
+        return ""
+    if stripped.startswith(_WORK_NOTE_MARKER):
+        return f"{ui_theme.DIM_ANSI}{raw}{ui_theme.ANSI_RESET}"
+    if stripped.startswith("Plan"):
+        return f"{ui_theme.SECONDARY_ANSI}{raw}{ui_theme.ANSI_RESET}"
+    indent_len = len(raw) - len(stripped)
+    indent = raw[:indent_len]
+    glyph, _, rest = stripped.partition(" ")
+    if glyph in PLAN_STATUS_GLYPH.values() and rest:
+        glyph_ansi = (
+            ui_theme.HIGHLIGHT_ANSI
+            if glyph == PLAN_STATUS_GLYPH[PlanStepStatus.COMPLETED]
+            else ui_theme.TEXT_ANSI
+        )
+        return (
+            f"{indent}{glyph_ansi}{glyph}{ui_theme.ANSI_RESET} "
+            f"{ui_theme.TEXT_ANSI}{rest}{ui_theme.ANSI_RESET}"
+        )
+    return f"{indent}{ui_theme.TEXT_ANSI}{stripped}{ui_theme.ANSI_RESET}"
 
 
 def _overlay_line(text: str, style: str, width: int) -> str:
@@ -87,12 +139,11 @@ def _collapsed_window(plan: TaskPlan) -> tuple[int, int]:
 
 
 def task_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
-    """ANSI plan overlay pinned above the prompt: a checklist indented under its
-    header, with ✓ done / ● current / ○ pending.
+    """Render the ANSI plan overlay pinned above the prompt.
 
-    A short plan (or ``expanded``) shows every step. A longer one collapses to a
-    window around the current step with ``… N earlier`` / ``… N more`` markers
-    and a hint to expand, so the prompt region stays short while output streams.
+    Header flush left; steps indented two spaces under it (``✓`` / ``●`` /
+    ``○``). A short plan (or ``expanded``) shows every step; a longer one
+    collapses to a window around the current step.
     """
     width = prompt_line_width()
     header = _overlay_line(format_plan_header(plan), ui_theme.SECONDARY_ANSI, width)
@@ -113,6 +164,7 @@ def task_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
 
 
 __all__ = [
+    "render_plan_breakdown",
     "task_plan_from_tool_args",
     "task_plan_overlay_ansi",
 ]

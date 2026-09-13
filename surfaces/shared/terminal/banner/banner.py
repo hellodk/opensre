@@ -2,7 +2,7 @@
 
 Droid-style centered hero: each row is centered independently (a single
 ``Align.center`` on a multi-line block left-aligns short lines inside the
-widest line). Bold block wordmark + clean version + tip + capability chips.
+widest line). Bold block wordmark + version + welcome + capability chips.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import enum
 import math
 import sys
+import threading
 import time
 from dataclasses import dataclass
 
@@ -19,7 +20,12 @@ from rich.console import Console, Group, RenderableType
 from rich.padding import Padding
 from rich.text import Text
 
-from config.constants import PRODUCT_DISPLAY_NAME, WELCOME_DESCRIPTION, WELCOME_TITLE
+from config.constants import (
+    CI_FIX_COUNT_LABEL,
+    PRODUCT_DISPLAY_NAME,
+    WELCOME_DESCRIPTION,
+    WELCOME_TITLE,
+)
 from config.version import get_opensre_version
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
@@ -45,9 +51,6 @@ _STATUS_MISSING_GLYPH = "✗"
 #: Spacing between status items.
 _STATUS_ITEM_GAP = "     "
 
-#: Keyboard hints (real bindings, not aspirational shortcuts).
-_SHORTCUTS_LINE = "/ commands · tab tool details · ? help · Enter send"
-
 #: Minimum console width to paint the ring mark (its cell width + margin);
 #: narrower terminals get the compact text title instead.
 _WORDMARK_MIN_WIDTH = 24
@@ -57,7 +60,7 @@ class LaunchStatusLabel(enum.StrEnum):
     """Labels for the launch banner's capability status line."""
 
     SKILLS = "Skills"
-    INTEGRATIONS = "Integrations"
+    CI_CD_FIXES = CI_FIX_COUNT_LABEL
 
 
 #: The canonical overlapping-ring OpenSRE mark (docs/images/opensre-mark.svg),
@@ -78,6 +81,9 @@ _WORDMARK_ROWS: tuple[str, ...] = (
 # A short 60 FPS startup turn; animation stops before the prompt becomes live.
 _WORDMARK_SPIN_FRAME_COUNT = 48
 _WORDMARK_SPIN_FRAME_INTERVAL_SECONDS = 1 / 60
+# When the spin runs under startup work and is asked to stop, it still shows
+# at least this many frames so it always reads as a turn, never a flicker.
+_WORDMARK_SPIN_MIN_FRAMES = 24
 _MIN_PROJECTED_SCALE = 0.08
 _BRAILLE_BASE = 0x2800
 _BRAILLE_LIMIT = 0x28FF
@@ -209,8 +215,18 @@ def _clear_animation(frame: WordmarkSpinFrame) -> str:
     )
 
 
-def animate_launch_wordmark(console: Console) -> None:
-    """Turn the terminal wordmark once before the interactive prompt starts."""
+def animate_launch_wordmark(
+    console: Console,
+    *,
+    stop: threading.Event | None = None,
+    min_frames: int = _WORDMARK_SPIN_MIN_FRAMES,
+) -> None:
+    """Turn the terminal wordmark once before the interactive prompt starts.
+
+    With ``stop``, the turn ends early once the event is set and at least
+    ``min_frames`` have shown — so the runtime can boot under the animation and
+    the prompt appears as soon as it is ready instead of after a fixed delay.
+    """
     if (
         console.file is not sys.stdout
         or not sys.stdout.isatty()
@@ -224,6 +240,8 @@ def animate_launch_wordmark(console: Console) -> None:
     try:
         stream.write(_HIDE_CURSOR)
         for index, frame in enumerate(frames):
+            if stop is not None and stop.is_set() and index >= min_frames:
+                break
             stream.write(
                 _animation_frame(
                     frame,
@@ -252,12 +270,16 @@ def _append_status_item(
     count: int | None,
     *,
     available: bool,
+    mark_unavailable: bool = True,
 ) -> None:
     if line:
         line.append(_STATUS_ITEM_GAP, style=DIM)
-    line.append(label, style=f"bold {TEXT}")
+    muted = not available and not mark_unavailable
+    line.append(label, style=DIM if muted else f"bold {TEXT}")
     if count is not None:
-        line.append(f" ({count})", style=SECONDARY)
+        line.append(f" ({count})", style=DIM if muted else SECONDARY)
+    if muted:
+        return
     glyph = _STATUS_OK_GLYPH if available else _STATUS_MISSING_GLYPH
     # Green success / red missing — same signal language as Droid's chips.
     line.append(f" {glyph}", style=BOLD_SKILL if available else ERROR)
@@ -281,14 +303,6 @@ def _build_welcome_paragraph() -> Text:
     return Text(WELCOME_DESCRIPTION, style=str(TEXT), justify="center")
 
 
-def _build_shortcuts_line(*, max_width: int) -> Text:
-    return Text(
-        clip_prompt_text(_SHORTCUTS_LINE, max(8, max_width)),
-        style=str(DIM),
-        no_wrap=True,
-    )
-
-
 def _build_capabilities(status: LaunchStatus, *, max_width: int) -> Text:
     capabilities = Text(overflow="fold", no_wrap=True)
     _append_status_item(
@@ -299,9 +313,10 @@ def _build_capabilities(status: LaunchStatus, *, max_width: int) -> Text:
     )
     _append_status_item(
         capabilities,
-        LaunchStatusLabel.INTEGRATIONS,
-        status.integration_count,
-        available=status.integration_count > 0,
+        LaunchStatusLabel.CI_CD_FIXES,
+        status.ci_fix_count,
+        available=status.ci_fix_count > 0,
+        mark_unavailable=False,
     )
     # Clip rather than soft-wrap — a wrapped chip row looks left-ragged.
     plain = capabilities.plain
@@ -342,8 +357,6 @@ def build_launch_banner(
         _build_welcome_title(),
         _build_welcome_paragraph(),
         None,
-        _build_shortcuts_line(max_width=line_width),
-        None,
         _build_capabilities(status, max_width=line_width),
     ]
     body: RenderableType = Group(*(Text() if row is None else _center(row) for row in rows))
@@ -354,8 +367,13 @@ def render_launch_banner(
     console: Console | None = None,
     *,
     session: object = None,
+    animate: bool = True,
 ) -> None:
-    """Print the OpenSRE launch banner."""
+    """Print the OpenSRE launch banner.
+
+    ``animate=False`` skips the startup spin — used on terminal resize where the
+    banner must be reprinted instantly at the new width.
+    """
     console = console or Console(
         highlight=False,
         force_terminal=True,
@@ -363,7 +381,8 @@ def render_launch_banner(
         legacy_windows=False,
     )
     banner = build_launch_banner(console, session=session)
-    animate_launch_wordmark(console)
+    if animate:
+        animate_launch_wordmark(console)
     console.print(banner)
 
 
