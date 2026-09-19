@@ -1,0 +1,38 @@
+# Scenario 8 — NATS cut off from its consumers (NetworkChaos partition)
+#
+# Partitions the NATS server from the nats-box consumer pod. NATS keeps
+# running; its client connections vanish. OpenSRE sees subscriptions and
+# connection count collapse while the server process itself stays "ok" —
+# the fix is network isolation, not NATS restart.
+#
+# Apply:    kubectl apply -f scenario-8-partition.yaml
+# Observe:  get_nats_connections + get_nats_subscriptions -> count drops to
+#           zero for the parted client; server_status stays up.
+# Revert:   kubectl delete -f scenario-8-partition.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: nats-natsbox-partition
+  namespace: hetu
+  labels:
+    workshop: chaos-mesh
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - hetu
+    labelSelectors:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/component: nats
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - hetu
+      labelSelectors:
+        app.kubernetes.io/name: nats
+        app.kubernetes.io/component: nats-box
+  partition:
+    direction: both
+  duration: "60s"

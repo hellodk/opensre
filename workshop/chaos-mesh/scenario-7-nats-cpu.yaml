@@ -1,0 +1,30 @@
+# Scenario 7 — CPU starvation on the NATS pod (StressChaos)
+#
+# Saturates one core on the NATS container. Connection churn and keepalive
+# processing slow, so OpenSRE sees late/lost pings and degraded latency
+# while the server never actually dies — classic "saturated but alive".
+#
+# Apply:    kubectl apply -f scenario-7-nats-cpu.yaml
+# Observe:  get_nats_server_status + get_nats_connections -> still reachable,
+#           latency/keepalive metrics degrade; CPU saturates (dashboard).
+# Revert:   kubectl delete -f scenario-7-nats-cpu.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: nats-cpu
+  namespace: hetu
+  labels:
+    workshop: chaos-mesh
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - hetu
+    labelSelectors:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/component: nats
+  stressors:
+    cpu:
+      workers: 1
+      load: 80
+  duration: "2m"

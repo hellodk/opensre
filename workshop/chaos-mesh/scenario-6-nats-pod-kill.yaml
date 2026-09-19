@@ -1,0 +1,29 @@
+# Scenario 6 — NATS pod killed (PodChaos)
+#
+# The consumer/tooling perspective sees connections reset: connz drops to
+# zero then reconnects the moment the StatefulSet controller replaces the
+# pod. OpenSRE sees the NATS server as "down" during the gap and must
+# distinguish cause (process terminated) from casualty (reconnect storm).
+#
+# Apply:    kubectl apply -f scenario-6-nats-pod-kill.yaml
+# Observe:  get_nats_connections -> num_connections falls to 0 mid-run,
+#           then recovers; server state flips through down/ready.
+# Revert:   kubectl delete -f scenario-6-nats-pod-kill.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: nats-pod-kill
+  namespace: hetu
+  labels:
+    workshop: chaos-mesh
+spec:
+  action: kill
+  mode: one
+  selector:
+    namespaces:
+      - hetu
+    labelSelectors:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/component: nats
+  gracePeriod: 0
+  duration: "45s"
