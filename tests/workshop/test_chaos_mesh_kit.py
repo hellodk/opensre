@@ -82,6 +82,18 @@ def test_chaos_cr_labels_and_shape(yaml_file: str) -> None:
     assert "duration" in doc["spec"]
 
 
+def test_partition_uses_spec_direction_field() -> None:
+    """NetworkChaos put ``direction`` at spec level, not under ``partition``.
+
+    A ``spec.partition`` key is rejected by the CRD on apply; the partition
+    action has no parameter block of its own.
+    """
+    doc = yaml.safe_load((KIT_DIR / "scenario-8-partition.yaml").read_text(encoding="utf-8"))
+    assert doc["spec"]["action"] == "partition"
+    assert "partition" not in doc["spec"]
+    assert doc["spec"]["direction"] in {"to", "from", "both"}
+
+
 @pytest.mark.parametrize("script", SHELL_SCRIPTS)
 def test_script_safe_under_dry_run(tmp_path: Path, script: str) -> None:
     calls_log = tmp_path / "calls.log"

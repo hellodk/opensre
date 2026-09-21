@@ -33,6 +33,5 @@ spec:
       labelSelectors:
         app.kubernetes.io/name: nats
         app.kubernetes.io/component: nats-box
-  partition:
-    direction: both
+  direction: both
   duration: "60s"
