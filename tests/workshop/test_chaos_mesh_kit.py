@@ -39,6 +39,17 @@ EXPECTED_ARTIFACTS = SHELL_SCRIPTS + CHAOS_YAMLS + ["README.md"]
 
 CHAOS_KINDS = {"NetworkChaos", "PodChaos", "StressChaos"}
 
+# Valid action values per Chaos Mesh kind as exposed by the cluster CRD.
+# If a new scenario introduces a different action, update here first — it
+# must match the CRD enum or kubectl apply will reject it at runtime.
+VALID_ACTIONS_PER_KIND: dict[str, set[str]] = {
+    "NetworkChaos": {"partition", "delay", "loss", "duplicate", "corrupt", "tc"},
+    "PodChaos": {"pod-kill", "pod-failure", "container-kill"},
+}
+
+# Which stressor keys StressChaos may define under ``spec.stressors``.
+VALID_STRESSORS = {"cpu", "memory", "disk", "pid"}
+
 
 def _stub_bin(tmp_path: Path, calls_log: Path) -> dict[str, str]:
     """Install a fake kubectl that records invocations instead of running them."""
@@ -80,6 +91,30 @@ def test_chaos_cr_labels_and_shape(yaml_file: str) -> None:
     assert doc["spec"]["selector"]["namespaces"] == ["hetu"]
     assert doc["spec"]["mode"] in {"one", "all"}
     assert "duration" in doc["spec"]
+
+
+@pytest.mark.parametrize("yaml_file", CHAOS_YAMLS)
+def test_chaos_cr_action_is_crd_valid(yaml_file: str) -> None:
+    """Every CR action must match the CRD enum, or apply fails at runtime.
+
+    Regression for ``scenario-6`` using ``kill`` (rejected) instead of the
+    PodChaos-valid ``pod-kill``.
+    """
+    doc = yaml.safe_load((KIT_DIR / yaml_file).read_text(encoding="utf-8"))
+    kind = doc["kind"]
+    if kind == "StressChaos":
+        stressors = doc["spec"].get("stressors") or {}
+        defined = [k for k, v in stressors.items() if v]
+        assert defined, f"{yaml_file}: StressChaos must define a non-empty stressors block"
+        assert set(defined) <= VALID_STRESSORS, (
+            f"{yaml_file}: invalid stressors {defined}; valid: {sorted(VALID_STRESSORS)}"
+        )
+        return
+    action = doc["spec"].get("action")
+    assert action in VALID_ACTIONS_PER_KIND[kind], (
+        f"{yaml_file}: action {action!r} is not valid for {kind}; "
+        f"valid: {sorted(VALID_ACTIONS_PER_KIND[kind])}"
+    )
 
 
 def test_partition_uses_spec_direction_field() -> None:

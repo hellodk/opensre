@@ -17,7 +17,7 @@ metadata:
   labels:
     workshop: chaos-mesh
 spec:
-  action: kill
+  action: pod-kill
   mode: one
   selector:
     namespaces:
