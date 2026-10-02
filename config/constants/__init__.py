@@ -50,6 +50,12 @@ if TYPE_CHECKING:
     from config.constants.account import (
         OPENSRE_APP_URL_ENV as OPENSRE_APP_URL_ENV,
     )
+    from config.constants.account import (
+        OPENSRE_GATEWAY_LLM_MODEL_DEFAULT as OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
+    )
+    from config.constants.account import (
+        OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,
+    )
     from config.constants.aerospike import (
         AEROSPIKE_HOST_ENV as AEROSPIKE_HOST_ENV,
     )
@@ -67,12 +73,6 @@ if TYPE_CHECKING:
     )
     from config.constants.aerospike import (
         AEROSPIKE_USERNAME_ENV as AEROSPIKE_USERNAME_ENV,
-    )
-    from config.constants.account import (
-        OPENSRE_GATEWAY_LLM_MODEL_DEFAULT as OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
-    )
-    from config.constants.account import (
-        OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,
     )
     from config.constants.alertmanager import (
         ALERTMANAGER_BEARER_TOKEN_ENV as ALERTMANAGER_BEARER_TOKEN_ENV,

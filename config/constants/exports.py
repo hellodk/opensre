@@ -67,7 +67,7 @@ EXPORTS: dict[str, str] = {
     "ANALYTICS_SIGNATURE_VERSION": "analytics",
     "ANALYTICS_SOURCE": "analytics",
     "ANALYTICS_TIMESTAMP_HEADER": "analytics",
-# aerospike
+    # aerospike
     "AEROSPIKE_HOST_ENV": "aerospike",
     "AEROSPIKE_PASSWORD_ENV": "aerospike",
     "AEROSPIKE_PORT_ENV": "aerospike",
@@ -277,7 +277,7 @@ EXPORTS: dict[str, str] = {
     "KAFKA_SASL_PASSWORD_ENV": "kafka",
     "KAFKA_SASL_USERNAME_ENV": "kafka",
     "KAFKA_SECURITY_PROTOCOL_ENV": "kafka",
-# keycloak
+    # keycloak
     "KEYCLOAK_AUTH_REALM_ENV": "keycloak",
     "KEYCLOAK_CLIENT_ID_ENV": "keycloak",
     "KEYCLOAK_CLIENT_SECRET_ENV": "keycloak",

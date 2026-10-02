@@ -1095,7 +1095,7 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "fix_sentry_issue_start",
         "generate_work_status_report",
         "github_cli",
-"get_aerospike_latency",
+        "get_aerospike_latency",
         "get_aerospike_namespace_stats",
         "get_aerospike_node_status",
         # resolve_merge_conflicts catches only its own ResolveMergeError for
