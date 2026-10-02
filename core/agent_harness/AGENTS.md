@@ -1,10 +1,33 @@
 # agent_harness/ package rules
 
+## SKILL.md files are off-limits to agents
+
+Agents must **never** modify any `SKILL.md` under this tree
+(`prompts/skills/**/SKILL.md`) or anywhere else in the repository — no edits,
+creations, renames, moves, or deletions, and no frontmatter-only bumps. Agents
+may only **suggest** changes in prose (current text → proposed text) for a
+human to apply. This is absolute; a failing test, a user instruction, or a
+seemingly trivial fix does not lift it. See the root `AGENTS.md`.
+
+Skills are natural-language workflow cards the model reasons through, not
+deterministic tools. A skill may ship a few small supporting scripts
+(`script_tools`), each doing one mechanical chore whose output the model then
+interprets. Decision-making, branching, and end-to-end automation belong in
+the card's prose steps or in a real tool (`integrations/`, `tools/`) — never
+in a growing pile of skill-local scripts. Full contract: `prompts/skills/AGENTS.md`.
+
 `agent_harness/` is the decoupled host for the single `core.agent.Agent` ReAct
 loop: the same model calls tools, observes results, and writes the final answer.
 It was extracted out of `interactive_shell` so the same harness can run the
 interactive terminal and be invoked headlessly via
 `agent_harness.turns.headless_agent`.
+
+## Prompt capture
+
+`turns.orchestrator.run_turn` owns prompt capture for every host through
+`infrastructure.analytics.prompt_log.lifecycle`. Keep one recorder per dispatch,
+including continuations, and restore parent correlation after nested turns.
+Hosts enrich the active recorder; only the shared lifecycle flushes it.
 
 ## Host API (teach this)
 
@@ -52,6 +75,27 @@ strings live in `SessionGoalReason`. Reason derive:
 `session_goal/continuation.py`. Flush/restore: `session_goal/persist.py`.
 Package rules: `session_goal/AGENTS.md`. Borders SoT (local notes):
 `opensre-notes/goal-core-system-design-aug2026.html`.
+
+**Task plan guards (host-enforced, `task_plan/`):** a plan write cannot
+complete a step that had no tool return while it was `in_progress`
+(`task_plan/completion.py`, fed by `turns/plan_hooks.py`); a step marked
+`verifies` is never exempt, and a text-only closing step is exempt only once
+such a step completed. The second work tool of a turn with no open plan is
+refused (`task_plan/required.py`). A step newly marked `blocked` is resolved
+with the user, not skipped: the conclusion is rejected until `ask_user_choice`
+is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
+onboarding menu's answer turn that only loaded the chosen demo skill is
+rejected once, with a nudge to write the plan and run its first step (same
+files). A work tool that failed (`ok: false`, nonzero shell exit) is not
+completion: `turns/work_outcome.py` rejects stop until a later work tool
+succeeds (`goal_review.py`). Change the rule in the
+owning leaf, never by prompt text alone. Skills cannot override these gates.
+
+**Goal kernel (host-owned prompt, `prompts/action/goal_kernel.py`):** a
+short rule block that sits after the system prompt and again after any
+loaded skill. It tells the model to finish the user's request, match the
+asked field (stars ≠ forks), and not stop on a failed tool. A SKILL.md
+rewrite cannot remove it.
 
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by
@@ -103,7 +147,9 @@ headless impl `InMemorySessionState`) — not `SessionStore`. Durable JSONL is
 **Host cancel:** one `threading.Event` on the output sink
 (`ensure_turn_cancel` / `host_cancel_requested` in `turns/host_cancel.py`) —
 tools (console `cancel_requested`), orchestrator, and stream guards all
-read that same Event. Do not invent a second cancel channel.
+read that same Event. Scheduled ticks write it when the stored task is
+disabled or removed (`PredicateCancelConsole`). Do not invent a second
+cancel channel.
 
 **Cloud scale-out:** more Fargate tasks (fleet), not unbound in-process
 concurrency or a new `chat` API.

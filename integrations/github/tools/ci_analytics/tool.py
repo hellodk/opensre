@@ -10,6 +10,11 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.constants.github import (
+    GITHUB_INTEGRATION_SETUP_CLI,
+    GITHUB_INTEGRATION_SETUP_SLASH,
+    GITHUB_SETUP_SLASH_INVOKE,
+)
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
@@ -20,13 +25,13 @@ from integrations.github.client import GitHubApiError, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
-    github_source_available,
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
 from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
+from integrations.github.tools.ci_analytics.payload import report_payload
 from integrations.github.tools.ci_analytics.render import (
     comparison_figures,
     comparison_markdown,
@@ -53,12 +58,23 @@ _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
 
 
-def _available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        github_source_available(sources)
-        or resolve_github_token(None)
-        or github_creds(gh).get("github_token")
+def _available(_sources: dict[str, dict]) -> bool:
+    """Stay listed when GitHub is not connected yet.
+
+    A fresh onboarding session has no token. Hiding this tool removes the
+    result that tells the agent to open setup, so the demo cannot finish.
+    The call itself returns that setup handoff when no token resolves.
+    """
+    return True
+
+
+def _missing_token_message(repository: str) -> str:
+    return (
+        f"A GitHub token is required to read the Actions history of {repository}. "
+        f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
+        f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
+        f"After they finish, call analyze_github_ci_reliability again for {repository}. "
+        "Do not leave the analysis blocked and do not ask them to retry in a new session."
     )
 
 
@@ -115,64 +131,6 @@ def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict
             label="GitHub CI reliability",
             summary=str(output.get("summary") or ""),
         )
-
-
-def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
-    """The report's figures as plain JSON-ready values."""
-    return {
-        "executions": report.executions,
-        "pr_executions": report.pr_executions,
-        "pr_failures": report.pr_failures,
-        "pr_failure_rate": report.pr_failure_rate,
-        "reliability_failures": report.count(FailureKind.RELIABILITY),
-        "source_failures": report.count(FailureKind.SOURCE),
-        "unresolved_failures": report.count(FailureKind.UNRESOLVED),
-        "blocked_minutes": round(report.blocked_minutes, 1),
-        "blocked_minutes_all": round(report.blocked_minutes_all, 1),
-        "merged_pr_branches": report.merged_pr_branches,
-        "blocked_working_minutes": round(report.blocked_working_minutes, 1),
-        "blocked_working_hours": round(report.blocked_working_minutes / 60, 1),
-        "working_hours": report.working_hours_label,
-        "developers_affected": report.developers_affected,
-        "developers": [
-            {
-                "login": w.login,
-                "pull_requests": w.pull_requests,
-                "working_minutes": round(w.working_minutes, 1),
-                "working_minutes_per_week": round(w.working_minutes_per_week, 1),
-                "working_hours_per_week": round(w.working_minutes_per_week / 60, 1),
-            }
-            for w in report.developer_waits[:10]
-        ],
-        "blocked_prs": [
-            {
-                "pr_number": d.pr_number,
-                "author": d.author,
-                "branch": d.branch,
-                "delay_minutes": round(d.delay_minutes, 1),
-                "working_minutes": round(d.working_minutes, 1),
-                "commits": d.commits,
-            }
-            for d in report.blocked_pr_delays[:10]
-        ],
-        "branch_runs": report.branch_runs,
-        "branch_failures": report.branch_failures,
-        "red_hours": round(report.red_hours, 2),
-        "outages": len(report.outages),
-        "mean_recovery_hours": report.mean_recovery_hours,
-        "workflows": [
-            {
-                "workflow": s.workflow,
-                "runs": s.runs,
-                "failures": s.failures,
-                "reliability_failures": s.reliability_failures,
-                "normal_minutes": s.normal_minutes,
-                "red_hours": round(s.red_hours, 2),
-            }
-            for s in report.workflows
-        ],
-        "coverage_notices": list(report.coverage_notices),
-    }
 
 
 def report_text_from_snapshot(
@@ -277,7 +235,7 @@ def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> di
     ],
     anti_examples=[
         "Fixing a failing check (use fix_github_pr_ci)",
-        "Listing currently failing checks on open PRs (use the CI health report)",
+        "Listing currently failing checks on open PRs or branches (use scan_github_ci_health)",
         "Reading one workflow run's logs (use the GitHub Actions log tools)",
     ],
     requires=[],
@@ -367,11 +325,13 @@ def analyze_github_ci_reliability(
     console = _console(context)
     token = resolve_github_token(github_token)
     if not token:
-        message = (
-            f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
-            "Run `opensre integrations setup github` and try again."
+        message = _missing_token_message(f"{repo_owner}/{repo_name}")
+        return tool_unavailable(
+            _SOURCE,
+            message,
+            response_text=message,
+            setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
         )
-        return tool_unavailable(_SOURCE, message, response_text=message)
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines
         # hang with the agent's notes instead of breaking the transcript edge.

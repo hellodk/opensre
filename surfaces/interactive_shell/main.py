@@ -12,16 +12,22 @@ from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
+from core.agent_harness.spi.session_goal import pause_active_session_goal
+from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
+from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
 from infrastructure.terminal.theme import set_active_theme
+from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
+from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 from surfaces.shared.terminal.banner import animate_launch_wordmark
 from surfaces.shared.terminal.components.rendering import repl_clear_screen
@@ -31,6 +37,27 @@ from surfaces.shared.terminal.components.rendering import repl_clear_screen
 _DEFAULT_CONSOLE = Console(
     highlight=False, force_terminal=True, color_system="truecolor", legacy_windows=False
 )
+
+
+def _new_shell_session() -> Session:
+    """The shell's first session, under the process analytics session id when still unclaimed.
+
+    Sharing it keeps ``cli_invoked``, startup onboarding and the shell's turns
+    in one analytics session; ``/new`` and ``/resume`` still change the id.
+    """
+    session_id = claim_process_session_id()
+    return Session(session_id=session_id) if session_id else Session()
+
+
+def _close_repl_session(session: Session, state: ReplState) -> None:
+    """Persist final session state, including an interrupted goal-pause boundary."""
+    pause_requested = state.is_goal_pause_requested()
+    manager = SessionManager.for_session(session)
+    with session_execution_lock(session.session_id):
+        manager.refresh_from_storage(session)
+        if pause_requested:
+            pause_active_session_goal(session)
+        manager.close(session)
 
 
 async def run_repl_async(
@@ -63,7 +90,7 @@ async def run_repl_async(
     install_shell_log_handler(lambda: out)
     # Let PromptBuilder build the prompt session so it can wire the
     # composer-hide (needs the session + REPL state, which do not exist yet).
-    runtime_context = create_repl_runtime()
+    runtime_context = create_repl_runtime(session=_new_shell_session())
     session = runtime_context.session
     session.terminal.cli_command_group = cli_command_group
 
@@ -114,10 +141,12 @@ async def run_repl_async(
         return 0
     finally:
         # True end-of-run teardown: persist and release the session's resources.
-        SessionManager.for_session(session).close(session)
+        _close_repl_session(session, runtime_context.state)
 
 
-def _start_launch_banner(console: Console) -> Callable[[], None]:
+def _start_launch_banner(
+    console: Console, *, on_painted: Callable[[], None] | None = None
+) -> Callable[[], None]:
     """Spin the wordmark on a thread while the runtime boots; return the finisher.
 
     The finisher stops the spin (after its minimum frames), waits for it, and
@@ -138,6 +167,8 @@ def _start_launch_banner(console: Console) -> Callable[[], None]:
         stop.set()
         spinner.join()
         render_terminal_ui(console, animate=False)
+        if on_painted is not None:
+            on_painted()
 
     return finish
 
@@ -150,8 +181,14 @@ def run_repl(
     console: Console | None = None,
     cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
+    capture_shell_rendered: bool = True,
 ) -> int:
-    """Run the shell on a new event loop and return its exit code."""
+    """Run the shell on a new event loop and return its exit code.
+
+    ``interactive_shell_rendered`` fires at the sign-in screen when that is
+    painted, or at first banner paint when the user is already signed in.
+    ``--resume`` and an auto-launch after ``opensre onboard`` do not record it.
+    """
     cfg = config or ReplConfig.load()
     set_active_theme(cfg.theme)
     out = console or _DEFAULT_CONSOLE
@@ -160,15 +197,29 @@ def run_repl(
     if not sys.stdin.isatty() and initial_input is None:
         return 0
 
+    record_shell = capture_shell_rendered and not resume_session_id
+    shell_rendered = False
+
+    def record_shell_rendered() -> None:
+        nonlocal shell_rendered
+        if not record_shell or shell_rendered:
+            return
+        shell_rendered = True
+        capture_interactive_shell_rendered(entrypoint="opensre_binary")
+
     finish_banner: Callable[[], None] | None = None
     try:
         if not initial_input:
-            if not pass_sign_in_gate(out):
+            if not pass_sign_in_gate(
+                out, on_screen=record_shell_rendered if record_shell else None
+            ):
                 return 0
             # Wipe the calling shell or completed sign-in screen so the REPL
             # reads as its own screen, then boot it under the launch animation.
             repl_clear_screen()
-            finish_banner = _start_launch_banner(out)
+            finish_banner = _start_launch_banner(
+                out, on_painted=record_shell_rendered if record_shell else None
+            )
 
         return asyncio.run(
             run_repl_async(

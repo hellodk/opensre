@@ -5,12 +5,13 @@
 - ``completed`` — loop ended normally (conclusion accepted or tool terminate)
 - ``iteration_cap`` — ``hit_iteration_cap`` is true
 - ``error`` — ``Agent.run`` raised before returning
-- ``cancelled`` — ``KeyboardInterrupt`` during ``Agent.run``
+- ``cancelled`` — host cancellation during ``Agent.run``
 - ``no_tools_needed`` — loop finished without executing any tools
 """
 
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Sequence
 from typing import Any, Literal
@@ -18,9 +19,14 @@ from typing import Any, Literal
 from core.agent import Agent
 from core.agent.run_io import AgentRunResult
 from core.agent_harness.ports import SessionState
-from core.agent_harness.spi.accounting import resolve_model_name, resolve_provider_name
+from core.agent_harness.spi.accounting import (
+    LlmRunInfo,
+    resolve_model_name,
+    resolve_provider_name,
+)
 from core.messages import RuntimeMessageLike
 from infrastructure.analytics.capture import capture_react_turn_completed
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.analytics.repl_context import (
     get_cli_session_id,
     get_cli_turn_kind,
@@ -81,12 +87,12 @@ def emit_react_turn_completed(
     result: AgentRunResult | None,
     iteration_cap: int,
     duration_ms: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
     error: BaseException | None = None,
     cancelled: bool = False,
 ) -> None:
-    """Emit one ``react_turn_completed`` lifecycle event for an Agent.run."""
+    """Emit one lifecycle event; ``llm=None`` identifies deterministic dispatch."""
     tool_calls_executed = len(result.executed) if result is not None else 0
     llm_iterations_used = result.llm_iterations_used if result is not None else 0
     hit_iteration_cap = bool(result.hit_iteration_cap) if result is not None else False
@@ -99,6 +105,21 @@ def emit_react_turn_completed(
     hit_iteration_cap = stop_reason == "iteration_cap"
 
     cli_turn_kind = get_cli_turn_kind() or "agent"
+
+    recorder = PromptRecorder.current()
+    if recorder is not None and llm is None:
+        recorder.set_llm_attempted(False)
+        if error is not None:
+            recorder.set_error("cancelled" if cancelled else "action_error", str(error))
+    elif recorder is not None:
+        recorder.set_run(
+            LlmRunInfo(
+                model=resolve_model_name(llm),
+                provider=resolve_provider_name(llm),
+                input_tokens=result.input_tokens if result is not None else None,
+                output_tokens=result.output_tokens if result is not None else None,
+            )
+        )
 
     capture_react_turn_completed(
         phase=phase,
@@ -122,45 +143,28 @@ def run_react_agent_with_telemetry(
     *,
     phase: ReactPhase,
     iteration_cap: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
 ) -> AgentRunResult:
-    """Run ``agent.run`` and emit exactly one ``react_turn_completed`` event."""
+    """Run with one completion event, using ``llm=None`` for deterministic dispatch."""
     started = time.monotonic()
+    result: AgentRunResult | None = None
     try:
         result = agent.run(initial_messages)
-    except KeyboardInterrupt:
+        return result
+    finally:
+        error = sys.exception() if result is None else None
         emit_react_turn_completed(
             phase=phase,
-            result=_partial_result_from_agent(agent),
+            result=result if result is not None else _partial_result_from_agent(agent),
             iteration_cap=iteration_cap,
             duration_ms=int((time.monotonic() - started) * 1000),
             llm=llm,
             session=session,
-            cancelled=True,
+            error=error,
+            cancelled=(error is not None and not isinstance(error, Exception))
+            or bool(result is not None and result.cancelled),
         )
-        raise
-    except Exception as exc:
-        emit_react_turn_completed(
-            phase=phase,
-            result=_partial_result_from_agent(agent),
-            iteration_cap=iteration_cap,
-            duration_ms=int((time.monotonic() - started) * 1000),
-            llm=llm,
-            session=session,
-            error=exc,
-        )
-        raise
-
-    emit_react_turn_completed(
-        phase=phase,
-        result=result,
-        iteration_cap=iteration_cap,
-        duration_ms=int((time.monotonic() - started) * 1000),
-        llm=llm,
-        session=session,
-    )
-    return result
 
 
 __all__ = [

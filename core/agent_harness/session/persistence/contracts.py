@@ -30,6 +30,7 @@ class RestoreContextKey(StrEnum):
     ACCUMULATED_CONTEXT = "accumulated_context"
     SESSION_GOAL_STATE = "session_goal_state"
     TASK_PLAN_STATE = "task_plan_state"
+    PENDING_USER_CHOICE_STATE = "pending_user_choice_state"
     HISTORY = "history"
 
 
@@ -57,6 +58,9 @@ class SessionStore(Protocol):
 
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
         raise NotImplementedError
+
+    def append_session_name(self, session_id: str, name: str) -> str:
+        """Append a session-name override; an empty name restores the derived title."""
 
     def append_turn_detail(
         self,
@@ -133,8 +137,13 @@ class SessionStore(Protocol):
 class SessionRepo(Protocol):
     """Cross-session query/lifecycle surface over all stored sessions."""
 
-    def load_recent(self, n: int = 20) -> list[dict[str, Any]]:
-        raise NotImplementedError
+    def load_recent(
+        self,
+        n: int = 20,
+        *,
+        require_conversation: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return recent sessions, optionally counting only conversations toward ``n``."""
 
     def count_prefix_matches(self, prefix: str) -> int:
         raise NotImplementedError

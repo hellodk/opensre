@@ -24,13 +24,18 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 
 from rich.console import Console
 
 from core.agent_harness import SessionCore, SessionManager, TurnResult
 from core.agent_harness.ports import ConfirmFn, SlashPortsFactory, TurnAccounting
 from core.agent_harness.runtime import AgentBuildConfig, TurnBinding
-from core.agent_harness.spi.cancel import ensure_turn_cancel, host_cancel_requested
+from core.agent_harness.spi.cancel import (
+    ensure_turn_cancel,
+    host_cancel_requested,
+    turn_cancel_reason,
+)
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
     format_session_goal_progress,
@@ -47,10 +52,14 @@ from infrastructure.analytics.usage_context import (
     get_surface,
 )
 from infrastructure.observability.trace.spans import traced_session
-from infrastructure.process.turn_capacity import turn_slot
+from infrastructure.process.turn_capacity import turn_slot, waiting_turn_slot
 from infrastructure.turn_host.cancel_console import CancelConsole
 from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
 from infrastructure.turn_host.session_agents import SessionAgentPool
+from infrastructure.turn_host.session_lock import (
+    retained_session_execution_locks,
+    session_execution_lock,
+)
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 from infrastructure.turn_host.turn_memory import log_turn_memory, resident_memory_bytes
 from infrastructure.turn_host.turn_output import TurnOutput
@@ -118,8 +127,13 @@ class TurnRunner:
         is_tty: bool | None = False,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
+        slot_wait_seconds: float | None = None,
     ) -> TurnResult | None:
         """Run one admitted turn, or return ``None`` when a gate rejects it.
+
+        ``slot_wait_seconds`` makes the turn wait that long for a free slot before
+        it counts as refused: a queued remote prompt is already accepted work, so
+        it queues behind a chat turn instead of failing the moment one is running.
 
         Same turn as :meth:`__call__` — one capacity gate, one agent pool, one
         ``handle`` call. The keywords carry a caller's terminal context; every
@@ -133,7 +147,20 @@ class TurnRunner:
         admission hook rejected it. Only the first finalizes anything here — a
         cancelling host and a rejecting hook each own their user-facing response.
         """
-        with turn_slot(self._gate) as running:
+        session_id = str(getattr(session, "session_id", "") or "")
+        # A session already being resumed elsewhere must not consume the process
+        # turn budget while it waits.  The pool takes this same reentrant lease
+        # around agent binding, preserving safety for direct pool callers.
+        lease = session_execution_lock(session_id) if session_id else nullcontext()
+        # /resume may non-blockingly claim a second session while this turn is
+        # running. Keep that target protected until _run_turn has flushed its
+        # rebound state, then release it together with this turn's source lease.
+        slot = (
+            turn_slot(self._gate)
+            if slot_wait_seconds is None
+            else waiting_turn_slot(self._gate, timeout_seconds=slot_wait_seconds)
+        )
+        with lease, retained_session_execution_locks(), slot as running:
             if not running:
                 output.finalize(self._busy_message)
                 return None
@@ -225,6 +252,7 @@ class TurnRunner:
                     ),
                     accounting_factory=accounting_factory,
                     cancel_requested=_cancel_requested,
+                    cancel_reason=lambda: turn_cancel_reason(cancel),
                     on_progress=on_progress or _status_line_progress,
                 )
                 outbound_text = turn_result.primary_response_text

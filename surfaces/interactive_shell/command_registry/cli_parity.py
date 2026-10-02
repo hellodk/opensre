@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
+from typing import BinaryIO
 
 from rich.console import Console
+from rich.markup import escape
 
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from core.agent_harness.spi.session_state import session_terminal, set_turn_outcome_hint
@@ -13,11 +16,50 @@ from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
 from surfaces.interactive_shell.telemetry.turn_outcome import format_wizard_cli_outcome
-from surfaces.interactive_shell.ui import DIM, ERROR, print_command_output
+from surfaces.interactive_shell.ui import (
+    COMMAND_OUTPUT_GUTTER_WIDTH,
+    DIM,
+    ERROR,
+    print_command_output,
+)
 from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
+from tools.interactive_shell.subprocess import (
+    force_rich_color,
+    headless_subprocess_env,
+    subprocess_env_with_width,
+)
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
+_PIPE_DRAIN_CHUNK = 65536
+_STILL_RUNNING_OUTCOME = "still_running"
+_KEPT_CLI_COMMANDS: list[threading.Thread] = []
+_KEPT_CLI_LOCK = threading.Lock()
+
+
+def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
+    """Environment for a delegated child whose stdout is captured and replayed.
+
+    The child's stdout is a pipe, not a TTY, so Rich in the child has neither a
+    width nor a colour decision of its own. Without ``COLUMNS`` it renders at 80
+    and ellipsizes table cells; the ``/cron list`` ids the action agent chains
+    into ``/cron remove <id>`` come back as ``ecf7c2580b…``. Too wide is just as
+    bad: :func:`print_command_output` re-prints the captured text under a
+    ``↳`` gutter and cannot re-flow a table, so rows wider than the terminal
+    fold mid-border. On the REPL the child therefore renders exactly to the
+    real terminal minus that gutter; headless surfaces have no human reader
+    and render wide so ids stay intact. Colour is forced so the replay can
+    parse the child's styling back instead of losing it.
+    """
+    if headless:
+        return force_rich_color(headless_subprocess_env())
+    return force_rich_color(
+        subprocess_env_with_width(
+            columns=console.size.width,
+            lines=console.size.height,
+            prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+        )
+    )
 
 
 def publish_headless_slash_response(
@@ -53,6 +95,166 @@ def _cli_command_succeeded(exit_code: int | None) -> bool:
     return exit_code == 0
 
 
+def shutdown_kept_cli_commands() -> None:
+    """Wait until background CLI children have exited and their pipes are drained.
+
+    Not used on session teardown: the gateway closes the session before it
+    publishes the prompt result, and a stuck tick must not block that. The
+    reaper is non-daemon, so interpreter shutdown waits for it instead.
+    Children are not killed; stopping one is what blocked the task's later ticks.
+    """
+    with _KEPT_CLI_LOCK:
+        threads = tuple(_KEPT_CLI_COMMANDS)
+    for thread in threads:
+        thread.join()
+
+
+def _pump_pipe(
+    stream: BinaryIO,
+    sink: bytearray,
+    discard: threading.Event,
+    lock: threading.Lock,
+) -> None:
+    """Read ``stream`` until EOF, keeping bytes only until ``discard`` is set."""
+    try:
+        while True:
+            chunk = stream.read(_PIPE_DRAIN_CHUNK)
+            if not chunk:
+                return
+            with lock:
+                if not discard.is_set():
+                    sink.extend(chunk)
+    finally:
+        stream.close()
+
+
+def _snapshot_and_discard(
+    stdout_buf: bytearray,
+    stderr_buf: bytearray,
+    discard: threading.Event,
+    lock: threading.Lock,
+) -> tuple[bytes, bytes]:
+    with lock:
+        discard.set()
+        stdout = bytes(stdout_buf)
+        stderr = bytes(stderr_buf)
+        stdout_buf.clear()
+        stderr_buf.clear()
+    return stdout, stderr
+
+
+def _reap_kept_cli_command(
+    process: subprocess.Popen[bytes], readers: list[threading.Thread]
+) -> None:
+    """Join pipe readers and reap the child once it exits. Output is discarded."""
+    try:
+        for reader in readers:
+            reader.join()
+        process.wait()
+    finally:
+        with _KEPT_CLI_LOCK:
+            current = threading.current_thread()
+            if current in _KEPT_CLI_COMMANDS:
+                _KEPT_CLI_COMMANDS.remove(current)
+
+
+def _hand_off_kept_cli_command(
+    process: subprocess.Popen[bytes], readers: list[threading.Thread]
+) -> None:
+    thread = threading.Thread(
+        target=_reap_kept_cli_command,
+        args=(process, readers),
+        name="cli-command-reaper",
+        daemon=False,
+    )
+    with _KEPT_CLI_LOCK:
+        _KEPT_CLI_COMMANDS.append(thread)
+    thread.start()
+
+
+def _start_pipe_readers(
+    process: subprocess.Popen[bytes],
+    stdout_buf: bytearray,
+    stderr_buf: bytearray,
+    discard: threading.Event,
+    lock: threading.Lock,
+) -> list[threading.Thread]:
+    readers: list[threading.Thread] = []
+    for stream, sink, name in (
+        (process.stdout, stdout_buf, "cli-command-stdout"),
+        (process.stderr, stderr_buf, "cli-command-stderr"),
+    ):
+        if stream is None:
+            continue
+        reader = threading.Thread(
+            target=_pump_pipe,
+            args=(stream, sink, discard, lock),
+            name=name,
+            daemon=False,
+        )
+        reader.start()
+        readers.append(reader)
+    return readers
+
+
+def _decode_pipe(data: bytes) -> str:
+    return data.decode("utf-8", errors="replace")
+
+
+def _run_captured_keep_running(
+    cmd: list[str], *, timeout: float | None, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """``subprocess.run`` with captured output, except a timeout leaves the child running.
+
+    After the timeout, pipe readers discard further output and a non-daemon
+    reaper waits for the child. The child is not killed: its claim stays live
+    until the tick finishes, and a full pipe must not stall it.
+    """
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        env=env,
+    )
+    discard = threading.Event()
+    lock = threading.Lock()
+    stdout_buf = bytearray()
+    stderr_buf = bytearray()
+    readers = _start_pipe_readers(process, stdout_buf, stderr_buf, discard, lock)
+    handed_off = False
+    try:
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            partial_stdout, partial_stderr = _snapshot_and_discard(
+                stdout_buf, stderr_buf, discard, lock
+            )
+            _hand_off_kept_cli_command(process, readers)
+            handed_off = True
+            raise subprocess.TimeoutExpired(
+                cmd,
+                0.0 if timeout is None else timeout,
+                output=partial_stdout,
+                stderr=partial_stderr,
+            ) from None
+        for reader in readers:
+            reader.join()
+        return subprocess.CompletedProcess(
+            cmd,
+            process.returncode if process.returncode is not None else 1,
+            _decode_pipe(bytes(stdout_buf)),
+            _decode_pipe(bytes(stderr_buf)),
+        )
+    finally:
+        if not handed_off and process.poll() is None:
+            process.kill()
+            process.wait()
+        if not handed_off:
+            for reader in readers:
+                reader.join()
+
+
 def run_cli_command(
     console: Console,
     args: list[str],
@@ -60,6 +262,7 @@ def run_cli_command(
     session: Session | None = None,
     subprocess_timeout: float | None = None,
     capture_output: bool = True,
+    keep_running_hint: str | None = None,
 ) -> bool:
     """Helper to delegate complex or interactive Click commands to a child process.
 
@@ -71,6 +274,11 @@ def run_cli_command(
     capture, so a long-running network command can still stream live to the
     real TTY (e.g. the install script's own progress output during an update)
     while still being killed if it hangs.
+
+    ``keep_running_hint`` marks a captured command whose work must not be cut
+    off at the timeout (a scheduled tick holding its claim): the reply returns
+    at the timeout with the hint, telling the reader where the outcome lands,
+    and the child keeps running instead of being killed.
 
     ``capture_output`` (default ``True``) makes the helper capture stdout/stderr
     and replay them through ``console``, so delegated command output appears
@@ -98,35 +306,31 @@ def run_cli_command(
     should_capture = capture_output or headless
     if headless and subprocess_timeout is None:
         subprocess_timeout = _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS
-    child_env = os.environ.copy()
+    # A streamed child owns the real TTY and sizes itself; only a captured child
+    # needs to be told how wide its reader is.
+    child_env = (
+        _captured_child_env(console, headless=headless) if should_capture else os.environ.copy()
+    )
     child_env[OPENSRE_PARENT_INTERACTIVE_SHELL_ENV] = "1"
-    if should_capture:
-        # Captured child stdout isn't a TTY, so force Rich colour there and parse
-        # it back in print_command_output — otherwise its styling would be lost.
-        child_env["FORCE_COLOR"] = "1"
-        # Without a terminal (and with no exported COLUMNS) Rich in the child
-        # falls back to 80 columns and truncates table cells with an ellipsis —
-        # `/cron list` task ids come back as `ecf7c2580b…`, which the action
-        # agent cannot chain into `/cron remove <id>`. Render captured output
-        # wide; the REPL re-print re-wraps to the real terminal anyway. On a
-        # "dumb" TERM Rich short-circuits to 80x25 and ignores COLUMNS, so give
-        # the forced-colour child a real TERM as well (headless/CI surfaces).
-        if child_env.get("TERM", "").lower() in {"dumb", "unknown"}:
-            child_env["TERM"] = "xterm-256color"
-        child_env.setdefault("COLUMNS", "200")
     exit_code: int | None = 0
+    backgrounded = False
     try:
         if should_capture:
-            captured_result = subprocess.run(
-                cmd,
-                check=False,
-                timeout=subprocess_timeout,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=child_env,
-            )
+            if keep_running_hint is not None:
+                captured_result = _run_captured_keep_running(
+                    cmd, timeout=subprocess_timeout, env=child_env
+                )
+            else:
+                captured_result = subprocess.run(
+                    cmd,
+                    check=False,
+                    timeout=subprocess_timeout,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=child_env,
+                )
             exit_code = captured_result.returncode
             print_command_output(
                 console,
@@ -178,7 +382,26 @@ def run_cli_command(
             style=ERROR,
             on_collapse=lambda body: _stash_collapsed_output(session, body),
         )
-        console.print(f"[{ERROR}]error:[/] CLI command timed out")
+        if keep_running_hint is None:
+            console.print(f"[{ERROR}]error:[/] CLI command timed out")
+        else:
+            # The tick is still in progress. Record that explicitly so slash
+            # history is not a successful repair, and do not fail the turn:
+            # a failure here is what made the agent run the command again.
+            backgrounded = True
+            waited = exc.timeout if isinstance(exc.timeout, int | float) else 0
+            message = (
+                f"Still running in the background after {waited:.0f}s; "
+                f"it was not stopped. {keep_running_hint}"
+            )
+            if session is not None:
+                session.complete_latest_record(
+                    "slash",
+                    ok=False,
+                    slash_outcome=_STILL_RUNNING_OUTCOME,
+                    response_text=message,
+                )
+            console.print(f"[{DIM}]{escape(message)}[/]")
     except KeyboardInterrupt:
         exit_code = None
         # Same cursor hazard as the normal-exit path: Ctrl+C can land mid-line while
@@ -192,11 +415,13 @@ def run_cli_command(
     if session is not None and not should_capture:
         set_turn_outcome_hint(session, format_wizard_cli_outcome(args, exit_code=exit_code))
     ok = _cli_command_succeeded(exit_code)
-    if session is not None and not ok:
+    if session is not None and not ok and not backgrounded:
         session.mark_latest(ok=False, kind="slash")
-    # Headless/gateway surfaces need the real exit status for slash analytics.
-    # Interactive REPL handlers must not return False to dispatch_slash on CLI
-    # failure — that would exit the shell (/exit is the only intentional False).
+    # A backgrounded tick already recorded ``still_running``. Returning True
+    # keeps the REPL (and a headless turn) from treating the handoff as a
+    # failed command. Headless surfaces otherwise need the real exit status.
+    if backgrounded:
+        return True
     return ok if headless else True
 
 
@@ -237,6 +462,10 @@ def _cmd_setup(session: Session, console: Console, args: list[str]) -> bool:  # 
     return run_cli_command(console, ["setup", *args], capture_output=False, session=session)
 
 
+def _cmd_credits(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    return run_cli_command(console, ["credits", *args], capture_output=True, session=session)
+
+
 def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     subcommand = args[0].lower() if args else "status"
     if session_terminal(session) is None and subcommand == "login":
@@ -252,7 +481,7 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
     if subcommand == "usage" and session_terminal(session) is None and "--no-browser" not in args:
         # A chat user cannot use a browser opened on the server; give them the URL.
         cli_args.append("--no-browser")
-    capture_output = subcommand in {"status", "usage", "logout"}
+    capture_output = subcommand in {"status", "usage", "logout", "credits"}
     handled = run_cli_command(
         console, ["account", *cli_args], capture_output=capture_output, session=session
     )
@@ -318,6 +547,15 @@ def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
     # TTY. Every other subcommand is a printer; the captured output reaches the
     # slash history row, where the action agent reads it back (e.g. task ids
     # from ``/cron list`` to chain a remove).
+    if len(args) >= 2 and args[0].lower() == "run":
+        # A tick holds its claim until it finishes, so a headless reply window
+        # must not kill it: the task's later ticks would stay blocked.
+        return run_cli_command(
+            console,
+            ["cron", *args],
+            session=session,
+            keep_running_hint=f"Read its outcome with `/cron logs {args[1]}`.",
+        )
     capture_output = not args or args[0].lower() != "start"
     return run_cli_command(console, ["cron", *args], capture_output=capture_output, session=session)
 
@@ -343,9 +581,23 @@ COMMANDS: list[SlashCommand] = [
             "/account",
             "/account login",
             "/account status",
+            "/account credits",
             "/account usage",
             "/account logout",
         ),
+        first_arg_completions=(
+            ("login", "Sign in"),
+            ("status", "Show login"),
+            ("credits", "Show hosted credits"),
+            ("usage", "Open top-up page"),
+            ("logout", "Sign out"),
+        ),
+    ),
+    SlashCommand(
+        "/credits",
+        "Show remaining OpenSRE hosted credits for the signed-in account.",
+        _cmd_credits,
+        usage=("/credits", "/credits --dev"),
     ),
     SlashCommand(
         "/auth",

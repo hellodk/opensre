@@ -9,14 +9,17 @@ from core.domain.types.tools import ToolSurface
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WORK_ITEM_STATUSES,
+    AmbiguousWorkItemDatetimeError,
     WorkItemChannelTarget,
     WorkItemPriority,
+    WorkItemStatus,
     WorkItemUpdates,
     add_work_item,
     complete_work_items,
     list_work_items,
     make_work_item,
     prioritize_work_items,
+    resolve_work_item_datetime,
     resolve_work_item_selector,
     update_work_item,
     work_items_path,
@@ -27,7 +30,10 @@ from infrastructure.scheduling.scheduler.storage import add_task as add_schedule
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
-from tools.system.work_items.reminders import schedule_item_reminder
+from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
+    schedule_item_reminder,
+)
 from tools.system.work_items.results import (
     added_result,
     complete_result,
@@ -61,7 +67,9 @@ def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     description=(
         "Create a durable human work item, todo, reminder, or hackathon task. Use this for "
         "'add task ...', 'todo ...', 'remind me ...', and follow-ups the user wants tracked. "
-        "If remind_at is provided, also schedule a one-shot reminder to the selected channel."
+        "If remind_at is provided, also schedule a one-shot reminder to the selected channel. "
+        "In a Slack gateway turn the reminder targets the current channel automatically; "
+        "add channel_targets to also send it to other chats."
     ),
     use_cases=[
         "User asks to add a task or todo",
@@ -168,6 +176,23 @@ def work_task_add(
                 "a gateway chat with an active channel"
             ),
         }
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except AmbiguousWorkItemDatetimeError:
+            return {
+                "error": "invalid_remind_at",
+                "detail": "remind_at is ambiguous in the specified timezone; include an explicit UTC offset",
+            }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
     item = add_work_item(
         title=title,
         priority=parsed_priority,
@@ -268,7 +293,10 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
             "error": "empty_selectors",
             "detail": "selectors must include at least one task id or title",
         }
-    return complete_result(complete_work_items(normalized))
+    result = complete_work_items(normalized)
+    for item in result.completed:
+        disable_existing_item_reminders(item.id)
+    return complete_result(result)
 
 
 @tool(
@@ -358,6 +386,23 @@ def work_task_update(
         error = validate_datetime_arg(value, field=field_name)
         if error is not None:
             return error
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except AmbiguousWorkItemDatetimeError:
+            return {
+                "error": "invalid_remind_at",
+                "detail": "remind_at is ambiguous in the specified timezone; include an explicit UTC offset",
+            }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
     explicit_targets = delivery_targets(
         provider=channel_provider,
         chat_id=channel_id,
@@ -406,7 +451,9 @@ def work_task_update(
             update_error_payload["candidates"] = [item_summary(item) for item in result.candidates]
         return update_error_payload
     scheduled = None
-    if remind_at:
+    if result.item.status is WorkItemStatus.COMPLETED:
+        disable_existing_item_reminders(result.item.id)
+    elif remind_at:
         scheduled = schedule_item_reminder(
             result.item,
             targets=reminder_targets,
@@ -490,7 +537,7 @@ def work_task_prioritize(
         "properties": {
             "cron": {
                 "type": "string",
-                "description": "Five-field cron expression, e.g. 0 9 * * 1-5.",
+                "description": "Five-field cron expression, e.g. 0 9 * * mon-fri for weekdays.",
             },
             "timezone": {"type": "string", "default": "UTC"},
             "provider": {

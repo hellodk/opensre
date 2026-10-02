@@ -17,9 +17,18 @@ from core.agent_harness import (
     pin_recurring_skill,
     resolve_scheduled_skill,
 )
+from infrastructure.observability.trace.trace_session import inherit_trace_session
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.sources import (
+    SCHEDULED_GITHUB_PR_SWEEP,
+    SCHEDULED_MANUAL_LOOP,
+    SCHEDULED_POSTHOG_METRIC_REPORT,
+    SCHEDULED_RECURRING_SKILL,
+    SCHEDULED_SENTRY_MORNING_DIGEST,
+    SCHEDULED_SENTRY_UPTIME_WATCH,
+)
 from infrastructure.scheduling.scheduler.storage import update_task
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
@@ -28,13 +37,29 @@ logger = logging.getLogger(__name__)
 # Keys that should never be forwarded to the agent runner
 _CREDENTIAL_KEYS = frozenset({"bot_token", "access_token", "api_key", "webhook_url", "secret"})
 
+#: Trace tag on every turn a scheduled tick runs, so unattended work is filterable.
+SCHEDULED_TRACE_TAG = "scheduled"
+
 
 def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build the report message for a scheduled task based on its kind.
 
     Returns the formatted message string. Raises RuntimeError on unrecoverable
-    runner failures.
+    runner failures. Every turn the tick runs is traced under the hosting
+    session when there is one (the shell that started this scheduler), else
+    under the task id, so ticks of one loop share one trace session. A tick
+    fired from inside a turn (``/loops run``) inherits that turn's session and
+    still gains the scheduled tag and task metadata.
     """
+    with inherit_trace_session(
+        runners.host_session_id() or task.id,
+        tags=(SCHEDULED_TRACE_TAG,),
+        metadata={"task_id": task.id, "task_name": task.name, "task_kind": task.kind.value},
+    ):
+        return _build_message(task, runners)
+
+
+def _build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     builders = {
         TaskKind.MANUAL_LOOP: _build_manual_loop,
         TaskKind.SENTRY_MORNING_DIGEST: _build_sentry_morning_digest,
@@ -59,7 +84,7 @@ def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners)
             "stats_period": "24h",
             "query": "is:unresolved",
             **safe_params,
-            "source": "scheduled_sentry_morning_digest",
+            "source": SCHEDULED_SENTRY_MORNING_DIGEST,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -81,7 +106,7 @@ def _build_sentry_uptime_watch(task: ScheduledTask, runners: SchedulerRunners) -
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_sentry_uptime_watch",
+            "source": SCHEDULED_SENTRY_UPTIME_WATCH,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -98,7 +123,7 @@ def _build_github_pr_sweep(task: ScheduledTask, runners: SchedulerRunners) -> st
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
             **safe_params,
-            "source": "scheduled_github_pr_sweep",
+            "source": SCHEDULED_GITHUB_PR_SWEEP,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -116,7 +141,7 @@ def _build_posthog_metric_report(task: ScheduledTask, runners: SchedulerRunners)
         payload = {
             "stats_period": "7d",
             **safe_params,
-            "source": "scheduled_posthog_metric_report",
+            "source": SCHEDULED_POSTHOG_METRIC_REPORT,
             "task_id": task.id,
         }
         return runners.agent(payload)
@@ -184,7 +209,7 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
             return f"⚠️ Manual loop task {task.id} has no prompt configured."
         payload = {
             **safe_params,
-            "source": "scheduled_manual_loop",
+            "source": SCHEDULED_MANUAL_LOOP,
             "task_id": task.id,
             "name": task.name,
             "task_name": task.name,
@@ -209,7 +234,7 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
     resolve_scheduled_skill(task.skill_name, task.skill_revision)
     return runners.agent(
         {
-            "source": "scheduled_recurring_skill",
+            "source": SCHEDULED_RECURRING_SKILL,
             "task_id": task.id,
             "skill_name": task.skill_name,
             "skill_revision": task.skill_revision,
@@ -244,4 +269,4 @@ def _migrate_renamed_skill(task: ScheduledTask) -> None:
     )
 
 
-__all__ = ["build_message"]
+__all__ = ["SCHEDULED_TRACE_TAG", "build_message"]

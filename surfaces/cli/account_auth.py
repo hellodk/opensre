@@ -125,12 +125,20 @@ def _pkce_pair() -> tuple[str, str]:
     return verifier, challenge
 
 
-def _login_url(app_url: str, *, callback_port: int, state: str, code_challenge: str) -> str:
+def _login_url(
+    app_url: str,
+    *,
+    callback_port: int,
+    state: str,
+    code_challenge: str,
+    cli_auth_attempt_id: str | None = None,
+) -> str:
     query = urlencode(
         {
             "callback_port": callback_port,
             "state": state,
             "code_challenge": code_challenge,
+            **({"cli_auth_attempt_id": cli_auth_attempt_id} if cli_auth_attempt_id else {}),
         }
     )
     return f"{_app_endpoint(app_url, OPENSRE_ACCOUNT_LOGIN_PATH)}?{query}"
@@ -307,6 +315,9 @@ def open_usage_page(
         opened = bool(opener(url))
     except Exception:
         opened = False
+    from infrastructure.analytics.capture import capture_browser_open_requested
+
+    capture_browser_open_requested(target="account_usage", opened=opened)
     return url, opened
 
 
@@ -337,13 +348,26 @@ def login_account(
     )
     try:
         callback_port = int(server.server_address[1])
+        from infrastructure.analytics.capture import begin_cli_auth_attempt
+
+        cli_auth_attempt_id = begin_cli_auth_attempt()
         authorization_url = _login_url(
             resolved_app_url,
             callback_port=callback_port,
             state=state,
             code_challenge=challenge,
+            cli_auth_attempt_id=cli_auth_attempt_id,
         )
-        opened = bool(open_browser and browser_open(authorization_url))
+        opened = False
+        if open_browser:
+            try:
+                opened = bool(browser_open(authorization_url))
+            finally:
+                from infrastructure.analytics.capture import capture_browser_open_requested
+
+                capture_browser_open_requested(
+                    target="account_login", opened=opened, cli_auth_attempt_id=cli_auth_attempt_id
+                )
         reporter.prompt_sign_in(authorization_url, opened=opened)
         callback = _wait_for_callback(server, results, timeout_seconds=timeout_seconds)
     finally:

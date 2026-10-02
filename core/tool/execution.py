@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
 from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool
 from infrastructure.observability.errors.boundary import report_exception
+from infrastructure.observability.errors.service import is_service_unreachable
 from infrastructure.observability.trace.observations import (
     ObservationLevel,
     is_observation_sink_active,
@@ -26,6 +28,7 @@ logger = logging.getLogger(__name__)
 _TOOL_LOGGER = logging.getLogger("tools")
 
 _UNSET: object = object()
+_EXECUTED_TOOL_OUTCOMES = frozenset({"ok", "tool_error", "exception"})
 
 
 def availability_view(resolved_integrations: dict[str, Any]) -> dict[str, Any]:
@@ -61,6 +64,7 @@ def report_run_error(
     severity: ToolErrorSeverity = "error",
     logger: logging.Logger | None = None,
     extras: dict[str, Any] | None = None,
+    include_traceback: bool | None = None,
 ) -> None:
     """Log + Sentry-capture an error swallowed by a tool wrapper.
 
@@ -69,6 +73,12 @@ def report_run_error(
     ``BaseTool`` ClassVars). ``component`` should identify the call site —
     typically ``"<module>.<function_or_class>"`` — so Sentry groups events
     per tool implementation, not per top-level surface tag.
+
+    A failure whose cause chain ends in an unreachable service (refused, DNS,
+    timeout) is a warning without a traceback, as in ``capture_service_error``:
+    the shell prints ERROR records, and that stack is only HTTP client internals.
+    ``include_traceback`` overrides that default for a failure the caller already
+    classified, such as a vendor's own "service unavailable" answer.
     """
     tags: dict[str, str] = {
         "surface": "tool",
@@ -78,13 +88,15 @@ def report_run_error(
     }
     if method:
         tags["method"] = method
+    unreachable = is_service_unreachable(exc)
     report_exception(
         exc,
         logger=logger or _TOOL_LOGGER,
         message=f"Tool {tool_name} failed: {type(exc).__name__}",
-        severity=severity,
+        severity="warning" if unreachable else severity,
         tags=tags,
         extras=extras,
+        include_traceback=not unreachable if include_traceback is None else include_traceback,
     )
 
 
@@ -248,6 +260,16 @@ def execute_tool_calls(
     violation = response_batch_violation(tool_calls, tool_map)
     if violation is not None:
         logger.debug("tool_batch rejected calls=%s", [tc.name for tc in tool_calls])
+        for tc in tool_calls:
+            _capture_tool_call_analytics(
+                tc,
+                tool=tool_map.get(tc.name),
+                outcome="batch_rejected",
+                is_error=True,
+                terminate=False,
+                duration_ms=0,
+                error_message=violation,
+            )
         return [
             _error_result(violation, metadata={"tool_name": tc.name, "batch_rejected": True})
             for tc in tool_calls
@@ -259,6 +281,7 @@ def execute_tool_calls(
 
     results: list[ToolExecutionResult] = []
     for tc in tool_calls:
+        started = time.monotonic()
         with (
             observe_tool(
                 tc.name,
@@ -282,14 +305,79 @@ def execute_tool_calls(
                 metadata={"is_error": result.is_error, "terminate": result.terminate},
             )
             results.append(result)
+        _capture_tool_call_analytics(
+            tc,
+            tool=tool_map.get(tc.name),
+            outcome=str(span_attrs.get("outcome", "unknown")),
+            is_error=result.is_error,
+            terminate=result.terminate,
+            duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+            details=result.details,
+            error_message=_descriptive_tool_error(result),
+        )
     return results
 
 
+def _descriptive_tool_error(result: ToolExecutionResult) -> str:
+    """The tool's own account of a failure, never its arguments or evidence."""
+    if not result.is_error:
+        return ""
+    content = result.content
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    details = result.details
+    if isinstance(details, dict):
+        error = details.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+    return ""
+
+
+def _capture_tool_call_analytics(
+    tool_call: ToolCall,
+    *,
+    tool: RuntimeTool | None,
+    outcome: str,
+    is_error: bool,
+    terminate: bool,
+    duration_ms: int,
+    details: Any = None,
+    error_message: str = "",
+) -> None:
+    """Emit product analytics without tool arguments or result evidence.
+
+    A failure includes the tool's descriptive error. Evidence payloads stay off
+    the event; they can contain private data.
+    """
+    from infrastructure.analytics.capture import capture_agent_tool_call_completed
+
+    work = details.get("work_outcome") if isinstance(details, dict) else None
+    status = work.get("status") if isinstance(work, dict) else None
+    work_status = (
+        status if status in ("noop", "blocked", "failed", "incomplete", "succeeded") else ""
+    )
+    recorded_error = error_message.strip()
+    capture_agent_tool_call_completed(
+        tool_call_id=tool_call.id,
+        tool_name=tool_call.name,
+        source=str(getattr(tool, "source", "unknown")),
+        role=tool_role(tool).value,
+        outcome=outcome,
+        executed=outcome in _EXECUTED_TOOL_OUTCOMES,
+        is_error=is_error,
+        terminate=terminate,
+        duration_ms=duration_ms,
+        work_status=work_status,
+        **({"error_message": recorded_error} if is_error and recorded_error else {}),
+    )
+
+
 def tool_role(tool: RuntimeTool | None) -> ToolRole:
-    """Return the declared role; an unknown tool counts as an action so it still errors alone."""
+    """Return the declared role; unknown and legacy tools default to action."""
     if tool is None:
         return ToolRole.ACTION
-    return tool.role
+    role = getattr(tool, "role", None)
+    return role if isinstance(role, ToolRole) else ToolRole.ACTION
 
 
 def response_batch_violation(

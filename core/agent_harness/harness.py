@@ -80,6 +80,9 @@ class SessionConfig:
     """
 
     session_id: str | None = None
+    # A caller can preallocate a fresh identity (for example, before acquiring
+    # a cross-process lease) without asking the harness to restore that ID.
+    new_session_id: str | None = None
     prompts: PromptContextProvider | None = None
     load_env: bool = True
     hydrate_integrations: bool = True
@@ -148,6 +151,7 @@ class AgentSession:
         tool_hooks: ToolExecutionHooks | None = None,
         tool_event_observer: ToolEventObserver | None = None,
         unattended: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AgentSession:
         """Return a session that is ready to :meth:`chat`.
 
@@ -172,9 +176,12 @@ class AgentSession:
         fields; ``tools`` the port its ``agent()`` takes;
         ``is_tty`` and ``tool_hooks`` (the turn's approval hooks) are bound on
         the first turn. ``tool_event_observer`` receives action-tool lifecycle
-        events from the default tool provider. A host that needs more (its own
-        sink, prompts, error reporter, an action ``llm_factory``) builds through
-        :class:`DefaultHeadlessBuild` itself and calls :meth:`attach_agent`.
+        events from the default tool provider. ``cancel_requested`` writes the
+        host cancel Event so ReAct and tools stop when the caller (a disabled
+        cron task, a gateway ``/stop``) says the turn is cancelled. A host that
+        needs more (its own sink, prompts, error reporter, an action
+        ``llm_factory``) builds through :class:`DefaultHeadlessBuild` itself and
+        calls :meth:`attach_agent`.
         """
         from core.agent_harness.turns.headless_adapters import BufferOutputSink
 
@@ -183,12 +190,18 @@ class AgentSession:
         if prepare_session is not None:
             prepare_session(startup.session)
         agent_session._bound_session = startup.session
+        sink = output if output is not None else BufferOutputSink()
+        bound_console = console
+        if cancel_requested is not None:
+            from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+            bound_console = bind_cancel_predicate(sink, cancel_requested, console=bound_console)
         agent_session._attach_default_headless(
             session=startup.session,
-            output=output if output is not None else BufferOutputSink(),
+            output=sink,
             prompts=prompts if prompts is not None else startup.prompts,
             tools=tools,
-            console=console,
+            console=bound_console,
             logger=logger,
             surface=surface,
             is_tty=is_tty,
@@ -210,6 +223,7 @@ class AgentSession:
         is_tty: bool | None = None,
         unattended: bool = False,
         tool_hooks: ToolExecutionHooks | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> TurnResult:
         """Run exactly one turn for ``message`` on a throwaway session.
 
@@ -217,6 +231,8 @@ class AgentSession:
         loop that runs several turns must call :meth:`start` once and
         :meth:`chat` per turn instead — this rebuilds the session, re-hydrates
         integrations, and discards every warm cache on each call.
+        ``cancel_requested`` stops the turn (same host Event as chat ``/stop``)
+        when a scheduled task is disabled or removed mid-tick.
         """
         return cls.start(
             config or SCHEDULED_RUN_CONFIG,
@@ -226,6 +242,7 @@ class AgentSession:
             is_tty=is_tty,
             unattended=unattended,
             tool_hooks=tool_hooks,
+            cancel_requested=cancel_requested,
         ).chat(message)
 
     def startup(self) -> SessionStartupResult:
@@ -383,6 +400,8 @@ class AgentSession:
         call to make based on whether the surface is resuming.
         """
         manager = self._session_manager
+        if self._config.session_id and self._config.new_session_id:
+            raise ValueError("SessionConfig cannot resume and create the same session.")
         if self._config.session_id:
             # SessionManager.resolve()'s own default is True: a resumed
             # session needs tools ready immediately.
@@ -398,12 +417,15 @@ class AgentSession:
         # SessionManager.create()'s own default is False: a fresh session can
         # warm lazily on first turn.
         warm = False if self._config.warm_integrations is None else self._config.warm_integrations
-        return manager.create(
-            hydrate_integrations=self._config.hydrate_integrations,
-            warm_integrations=warm,
-            persistent_tasks=self._config.persistent_tasks,
-            open_store=self._config.open_store,
-        )
+        create_args: dict[str, Any] = {
+            "hydrate_integrations": self._config.hydrate_integrations,
+            "warm_integrations": warm,
+            "persistent_tasks": self._config.persistent_tasks,
+            "open_store": self._config.open_store,
+        }
+        if self._config.new_session_id is not None:
+            create_args["session_id"] = self._config.new_session_id
+        return manager.create(**create_args)
 
     def _load_context(self) -> PromptContextProvider | None:
         """Return the surface's grounding-context provider, if any."""

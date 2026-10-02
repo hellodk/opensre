@@ -30,7 +30,15 @@ from core.agent_harness.turns.turn_results import (
     TurnResult,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
-from infrastructure.observability.trace.observations import TraceAttributes, observe_span
+from infrastructure.analytics.prompt_log.lifecycle import record_prompt_turn
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+from infrastructure.observability.trace.observations import (
+    TraceAttributes,
+    is_observation_sink_active,
+    observe_span,
+)
+from infrastructure.observability.trace.trace_session import TraceSession, inherit_trace_session
+from infrastructure.observability.trace.user_identity import resolve_trace_identity
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +54,9 @@ def stage_turn_error(session: Any, kind: str, message: str) -> None:
     setter = getattr(terminal, "set_pending_turn_error", None)
     if callable(setter):
         setter(kind, message)
+    recorder = PromptRecorder.current()
+    if recorder is not None:
+        recorder.set_error(kind, message)
 
 
 def stage_turn_llm_failure(session: Any, *, client: Any | None = None) -> None:
@@ -58,12 +69,15 @@ def stage_turn_llm_failure(session: Any, *, client: Any | None = None) -> None:
 
     terminal = getattr(session, "terminal", None)
     setter = getattr(terminal, "set_pending_turn_llm", None)
-    if not callable(setter):
-        return
     model = resolve_model_name(client) if client is not None else None
     provider = resolve_provider_name(client) if client is not None else None
     if model or provider:
-        setter(LlmRunInfo(model=model, provider=provider))
+        run = LlmRunInfo(model=model, provider=provider)
+        if callable(setter):
+            setter(run)
+        recorder = PromptRecorder.current()
+        if recorder is not None:
+            recorder.set_run(run)
 
 
 def _cancelled_turn_result(
@@ -106,15 +120,20 @@ def run_turn(
     """Run one ReAct turn whose accepted conclusion is the user-facing answer.
 
     One turn is one trace for the observation sink: the user text is the trace
-    input, the assistant reply the output, and ``session_id`` groups the turns
-    of a conversation.
+    input, the assistant reply the output, ``session_id`` groups the turns of a
+    conversation and ``user_id`` names who took the turn. The outermost turn
+    owns the session id; a turn nested inside it (a loop run from a command, a
+    tool driving a headless turn) inherits it rather than stamping its own.
     """
-    trace = TraceAttributes(
-        session_id=getattr(session, "session_id", None),
-        tags=(surface,),
-        metadata={"surface": surface},
-    )
-    with observe_span(_TURN_OBSERVATION_NAME, input=text, trace=trace) as observation:
+    with (
+        record_prompt_turn(text, session, surface=surface) as recorder,
+        inherit_trace_session(getattr(session, "session_id", None)) as trace_session,
+        observe_span(
+            _TURN_OBSERVATION_NAME,
+            input=text,
+            trace=_trace_attributes(trace_session, surface),
+        ) as observation,
+    ):
         result = _run_turn(
             text,
             session,
@@ -129,7 +148,33 @@ def run_turn(
             output=result.primary_response_text or None,
             metadata=_turn_outcome_metadata(result),
         )
+        if recorder is not None:
+            if result.cancelled:
+                recorder.set_error("cancelled", "Agent execution cancelled.")
+            else:
+                recorder.set_response(result.primary_response_text)
         return result
+
+
+def _trace_attributes(trace_session: TraceSession | None, surface: str) -> TraceAttributes:
+    """Trace-wide attributes for the root observation; identity is resolved only when exported."""
+    tags: tuple[str, ...] = (surface,)
+    metadata: dict[str, Any] = {"surface": surface}
+    if trace_session is not None:
+        tags += trace_session.tags
+        metadata.update(trace_session.metadata)
+    user_id: str | None = None
+    if is_observation_sink_active():
+        identity = resolve_trace_identity()
+        user_id = identity.user_id
+        if identity.installation_id:
+            metadata["installation_id"] = identity.installation_id
+    return TraceAttributes(
+        session_id=trace_session.session_id if trace_session is not None else None,
+        user_id=user_id,
+        tags=tags,
+        metadata=metadata,
+    )
 
 
 def _run_turn(
@@ -143,6 +188,9 @@ def _run_turn(
     surface: str,
     output: OutputSink | None,
 ) -> TurnResult:
+    from core.llm.hosted_credits import prefetch_hosted_credits
+
+    prefetch_hosted_credits()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
     expanded = expand_affirmative_follow_up(

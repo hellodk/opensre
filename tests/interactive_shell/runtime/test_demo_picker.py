@@ -39,10 +39,31 @@ _NOTE = ""
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: True)
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(demo_picker, "capture_onboarding_demo_prompted", lambda: None)
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
+
+
+def test_startup_demo_is_suppressed_when_onboarding_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: False)
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
+
+    assert demo_picker.should_offer_demo() is False
+
+
+def test_explicit_demo_still_opens_when_startup_onboarding_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: False)
+    session = Session()
+
+    assert demo_picker.offer_demo(session, force=True)
 
 
 def _take_prompt(session: Session) -> str:
@@ -110,7 +131,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     monkeypatch: pytest.MonkeyPatch,
     onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
-    """Boot output contract: the pre_execute menu is the first paint and needs no model."""
+    """Boot output contract: the skill's entry menu is the first paint and needs no model."""
     _offerable(monkeypatch)
     session = Session()
     session.resolved_integrations_cache = {}
@@ -167,7 +188,10 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     for chrome in ("/goal", "Skill ", "activated", "skill_view", "[1]"):
         assert chrome not in painted, painted
     assert len(picker_calls) == 1
-    assert callable(picker_calls[0].pop("on_custom_answer"))
+    on_custom_answer = picker_calls[0].pop("on_custom_answer")
+    on_answer = picker_calls[0].pop("on_answer")
+    assert callable(on_custom_answer)
+    assert callable(on_answer)
     assert picker_calls[0] == {
         "title": _TITLE,
         "choices": [
@@ -283,6 +307,7 @@ def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
     assert onboarding_outcomes == [
         ("ci_analytics", False),
         ("ci_agent", False),
+        ("remote_managed_service", False),
         ("slack", False),
     ]
 
@@ -384,7 +409,7 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     session = Session()
 
     def enter_without_menu(_name: str, _ctx: Any) -> dict[str, Any]:
-        return {"ok": True, "name": ONBOARDING_SKILL_NAME, "content": "body", "pre_execute": []}
+        return {"ok": True, "name": ONBOARDING_SKILL_NAME, "content": "body", "entry_menu": None}
 
     monkeypatch.setattr(demo_picker, "enter_skill", enter_without_menu)
     assert not demo_picker.offer_demo(session, force=True)
@@ -411,3 +436,18 @@ def test_onboarding_losing_its_terminal_ends_without_a_text_menu(
     assert session.pending_user_choice is None
     assert not session.terminal.awaiting_handoff_answer
     assert not session.terminal.pending_prompt_default
+
+
+def test_a_merge_in_progress_here_skips_the_demo_unless_forced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "merge_in_progress", lambda _cwd: True)
+    session = Session()
+
+    # Act / Assert: startup stays out of the way; /demo still opens the menu.
+    assert not demo_picker.offer_demo(session)
+    assert session.active_skill is None
+    assert demo_picker.offer_demo(session, force=True)
+    assert session.active_skill == ONBOARDING_SKILL_NAME

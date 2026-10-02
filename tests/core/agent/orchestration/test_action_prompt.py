@@ -95,26 +95,15 @@ def test_prior_action_facts_block_surfaces_telegram_followup_values() -> None:
     assert "slack_send_message input" in block
 
 
-def test_system_prompt_slack_fragment_documents_roster_followup() -> None:
-    # Slack-specific "Want me to" roster follow-up now lives in
-    # integrations.slack.action_prompt and is appended to the composed action
-    # prompt via the harness-ports fragment registry, not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    assert "want me to: offering more slack roster" in prompt
-    assert "slack_list_team_members" in prompt
-
-
-def test_system_prompt_routes_slack_teammate_reads_to_action_tools() -> None:
-    # Vendor recipe now lives in integrations.slack.action_prompt and is
-    # appended to the composed action prompt via the harness-ports fragment
-    # registry (see integrations/harness_adapters.py), not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    compact = prompt.replace(" ", "")
-    assert "slack teammate requests use slack tools" in prompt
-    assert 'slack_read_messages(channel="#opensre-slack-testing"' in compact
-    assert "roster / people questions ignore channel_id" in prompt
-    assert "slack_list_team_members only" in prompt
-    assert "never slack_read_messages" in prompt
+def test_system_prompt_leaves_chat_routing_to_the_connected_tools() -> None:
+    # Slack/Telegram/Rocket.Chat/Buzz routing rides on each tool's description,
+    # which reaches the model only when that integration is connected. The
+    # default prompt keeps only the rule for a channel whose tool is absent.
+    prompt = " ".join(build_action_system_prompt(_ctx()).lower().split())
+    for vendor_tool in ("slack_read_messages", "slack_list_team_members", "telegram_send_message"):
+        assert vendor_tool not in prompt
+    assert "never invent a command to deliver the message" in prompt
+    assert 'args=["setup", "<channel>"]' in prompt
 
 
 def test_system_prompt_routes_github_cli_to_action_tools() -> None:
@@ -130,15 +119,6 @@ def test_system_prompt_routes_github_cli_to_action_tools() -> None:
     assert "day-by-day stars" in prompt
 
 
-def test_system_prompt_slack_fragment_documents_invented_command_example() -> None:
-    # The Slack-specific invented-delivery-command example now lives in
-    # integrations.slack.action_prompt, appended via the harness-ports
-    # fragment registry, not hardcoded in core.
-    prompt = build_action_system_prompt(_ctx()).lower()
-    compact_prompt = " ".join(prompt.split())
-    assert "`/messaging send slack …` is not a real command" in compact_prompt
-
-
 def test_morning_report_skill_closes_with_schedule_offer() -> None:
     """A run-once morning report without an offer cannot drive repeat usage."""
     clear_skills_caches()
@@ -146,7 +126,7 @@ def test_morning_report_skill_closes_with_schedule_offer() -> None:
     assert "propose_scheduled_delivery" in body
     assert "recurring_skill" in body
     assert "delivering-morning-briefings" in body
-    assert 'cron="0 8 * * 1-5"' in body or "cron='0 8 * * 1-5'" in body
+    assert 'cron="0 8 * * mon-fri"' in body or "cron='0 8 * * mon-fri'" in body
     assert "do not call /cron yet" in body
     assert "do not start an investigation" in body
     # Intermediate curls must be quiet so the user does not see weather/news
@@ -245,11 +225,11 @@ def test_skills_loader_bundles_github_security_fix_skill() -> None:
 
 def test_skills_loader_bundles_github_ci_fix_skill() -> None:
     clear_skills_caches()
-    skill = skills_dir() / "fixing-github-ci" / "SKILL.md"
+    skill = skills_dir() / "repair-github-ci" / "SKILL.md"
     assert skill.is_file()
 
-    assert "fixing-github-ci" in load_skills_index()
-    body = load_skill_body("fixing-github-ci")
+    assert "repair-github-ci" in load_skills_index()
+    body = load_skill_body("repair-github-ci")
     assert "fix_github_pr_ci" in body
     assert "output exactly that text and stop" in body
     assert '"next steps"' in body
@@ -285,9 +265,9 @@ def test_action_system_prompt_includes_context_blocks() -> None:
     )
     assert "CONNECTED INTEGRATIONS (this install, right now): github" in prompt
     assert "RECENT CONVERSATION" in prompt
-    assert "fixing-github-ci" in prompt
+    assert "repair-github-ci" in prompt
     assert "skill_view" in prompt
-    assert load_skill_body("fixing-github-ci") not in prompt
+    assert load_skill_body("repair-github-ci") not in prompt
 
 
 def test_skills_index_is_thin_relative_to_full_bodies() -> None:
@@ -303,7 +283,7 @@ def test_skills_index_is_thin_relative_to_full_bodies() -> None:
     assert names >= {
         "delivering-morning-briefings",
         "fixing-github-security-alerts",
-        "fixing-github-ci",
+        "repair-github-ci",
     }
     for skill in list_action_skills():
         assert skill.name in index

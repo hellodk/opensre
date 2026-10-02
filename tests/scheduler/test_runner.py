@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from config.constants.turn_concurrency import OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV
+from infrastructure.scheduling.scheduler import runner as scheduler_runner
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.runner import (
@@ -34,6 +35,17 @@ from infrastructure.scheduling.scheduler.types import (
 from tests.scheduler._bundle import real_runners
 
 
+@pytest.fixture(autouse=True)
+def _schedule_cancel_follows_runner_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep in-flight cancel checks on the same ``get_task`` the runner tests stub."""
+    import infrastructure.scheduling.scheduler.schedule_cancel as schedule_cancel
+
+    def _get_task_from_runner(task_id: str) -> ScheduledTask | None:
+        return scheduler_runner.get_task(task_id)
+
+    monkeypatch.setattr(schedule_cancel, "get_task", _get_task_from_runner)
+
+
 class TestMakeTrigger:
     def test_valid_cron(self) -> None:
         task = ScheduledTask(
@@ -54,6 +66,40 @@ class TestMakeTrigger:
         )
         with pytest.raises(ValueError, match="5 fields"):
             _make_trigger(task)
+
+    def test_six_field_cron_fires_within_the_minute(self) -> None:
+        """A leading seconds field yields sub-minute ticks with distinct fire-time keys."""
+        from datetime import UTC, datetime
+
+        from infrastructure.scheduling.scheduler.runner import _compute_fire_time
+
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="*/30 * * * * *",
+            timezone="UTC",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        trigger = _make_trigger(task)
+        start = datetime(2026, 9, 14, 10, 0, 1, tzinfo=UTC)
+        first = trigger.get_next_fire_time(None, start)
+        second = trigger.get_next_fire_time(first, first)
+        assert first == datetime(2026, 9, 14, 10, 0, 30, tzinfo=UTC)
+        assert second == datetime(2026, 9, 14, 10, 1, 0, tzinfo=UTC)
+        assert _compute_fire_time(first) != _compute_fire_time(second)
+        assert _compute_fire_time(first) == "2026-09-14T10:00:30Z"
+
+    def test_five_field_cron_keeps_zero_seconds(self) -> None:
+        from datetime import UTC, datetime
+
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="*/2 * * * *",
+            timezone="UTC",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        trigger = _make_trigger(task)
+        fire = trigger.get_next_fire_time(None, datetime(2026, 9, 14, 10, 0, 1, tzinfo=UTC))
+        assert fire == datetime(2026, 9, 14, 10, 2, 0, tzinfo=UTC)
 
     def test_invalid_cron_bad_values(self) -> None:
         task = ScheduledTask(
@@ -101,7 +147,7 @@ class TestScheduledAdmission:
             "task-1",
             datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
         )
-        assert claims == [("task-1", "2026-01-15T09:00Z")]
+        assert claims == [("task-1", "2026-01-15T09:00:00Z")]
 
 
 class TestScheduledConcurrency:
@@ -254,7 +300,7 @@ class TestComputeFireTime:
 
         dt = datetime(2026, 1, 15, 9, 0, tzinfo=UTC)
         result = _compute_fire_time(dt)
-        assert result == "2026-01-15T09:00Z"
+        assert result == "2026-01-15T09:00:00Z"
 
     def test_with_non_utc_datetime(self) -> None:
         from datetime import datetime, timedelta, timezone
@@ -264,7 +310,7 @@ class TestComputeFireTime:
         dt = datetime(2026, 1, 15, 14, 30, tzinfo=tz)
         result = _compute_fire_time(dt)
         # 14:30 IST = 09:00 UTC
-        assert result == "2026-01-15T09:00Z"
+        assert result == "2026-01-15T09:00:00Z"
 
     def test_scheduled_job_uses_callback_fire_time(
         self,
@@ -294,7 +340,7 @@ class TestComputeFireTime:
             scheduled_run_time=datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
         )
 
-        assert observed == ["2026-01-15T09:00Z"]
+        assert observed == ["2026-01-15T09:00:00Z"]
 
     def test_scheduled_job_rejects_missing_fire_time(self) -> None:
         with pytest.raises(RuntimeError, match="scheduled_run_time"):
@@ -370,6 +416,24 @@ class TestComputeNextRun:
         result = compute_next_run(task, datetime(2026, 8, 5, 7, 30, tzinfo=UTC))
 
         assert result == "2026-08-05T08:00:00+00:00"
+
+    def test_work_item_reminder_uses_exact_year(self) -> None:
+        from datetime import UTC, datetime
+
+        task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="",
+            timezone="UTC",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": "item-1",
+                "run_at": "2027-09-12T09:00:00+00:00",
+            },
+        )
+
+        result = compute_next_run(task, datetime(2026, 1, 1, tzinfo=UTC))
+
+        assert result == "2027-09-12T09:00:00+00:00"
 
 
 class TestRegisterJobs:
@@ -448,7 +512,7 @@ class TestRegisterJobs:
             if started:
                 scheduler.shutdown(wait=True)
 
-        expected_fire_time = scheduled_run_time.strftime("%Y-%m-%dT%H:%MZ")
+        expected_fire_time = scheduled_run_time.strftime("%Y-%m-%dT%H:%M:%SZ")
         assert observed_fire_times == [expected_fire_time]
 
     def test_applies_task_filter(

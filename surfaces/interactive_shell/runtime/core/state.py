@@ -10,6 +10,11 @@ from dataclasses import dataclass, field
 
 from prompt_toolkit.application.current import get_app_or_none
 
+from core.agent_harness.spi.cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    turn_cancel_reason,
+)
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.spinner_frames import BRAILLE_SPINNER_FRAMES, spinner_frames
 from surfaces.shared.terminal.components.token_format import (
@@ -124,6 +129,37 @@ class ReplState:
     def is_cancelling(self) -> bool:
         return self.phase is TurnPhase.CANCELLING
 
+    def is_goal_pause_requested(self) -> bool:
+        return turn_cancel_reason(self.current_cancel_event) is HostCancelReason.GOAL_PAUSE
+
+    def request_goal_pause(self, *, interrupt: bool = True) -> None:
+        """Mark this dispatch as a goal pause and optionally stop current work.
+
+        The reason lives on the canonical turn-cancel event. When the current
+        action has not attached a goal yet, retain that reason without setting
+        the event so the action may finish and the new goal can be paused at
+        the next safe boundary.
+        """
+        cancel = self.current_cancel_event
+        if cancel is None and self.is_dispatch_running():
+            cancel = self.ensure_current_cancel_event()
+        if isinstance(cancel, HostCancelEvent):
+            cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=interrupt)
+        elif interrupt and cancel is not None:
+            cancel.set()
+        if interrupt and (
+            cancel is not None or self.confirm_event is not None or self.is_dispatch_running()
+        ):
+            self.phase = TurnPhase.CANCELLING
+        if interrupt and self.confirm_event is not None:
+            self.confirm_event.set()
+
+    def ensure_current_cancel_event(self) -> threading.Event:
+        """Return the canonical event for the current or about-to-start dispatch."""
+        if self.current_cancel_event is None:
+            self.current_cancel_event = HostCancelEvent()
+        return self.current_cancel_event
+
     def deliver_confirmation(self, answer: str) -> None:
         if self.confirm_event is None:
             return
@@ -185,6 +221,7 @@ class ReplState:
     def attach_turn_task(self, task: asyncio.Task[None]) -> None:
         """Mark a queued turn task as the active dispatch (queue worker entry)."""
         self.current_task = task
+        self.ensure_current_cancel_event()
         self.phase = TurnPhase.DISPATCHING
 
     def attach_cancel_event(self, cancel_event: threading.Event) -> None:
@@ -194,7 +231,10 @@ class ReplState:
 
     def clear_current_task(self, task: asyncio.Task[None] | None = None) -> None:
         if task is None or self.current_task is task:
+            preserve_goal_pause = self.exit_requested and self.is_goal_pause_requested()
             self.current_task = None
+            if not preserve_goal_pause:
+                self.current_cancel_event = None
             self.phase = TurnPhase.IDLE
 
     def finish_dispatch(self, cancel_event: threading.Event) -> None:
@@ -226,8 +266,7 @@ class ReplState:
 class SpinnerState:
     """Mutable state read by prompt callbacks for toolbar + inline spinner."""
 
-    # Braille by default; the host picks the set at construction (see
-    # ``infrastructure.terminal.spinner_frames``) for terminals that draw braille badly.
+    # Braille by default; a caller may pass its own frames at construction.
     _SPINNER_FRAMES: tuple[str, ...] = BRAILLE_SPINNER_FRAMES
     # One glyph advance per interval of *elapsed time*. The frame must be a
     # pure function of the clock, never of how often the prompt message
@@ -370,9 +409,9 @@ class SpinnerState:
         glyph = self._SPINNER_FRAMES[frame_idx % len(self._SPINNER_FRAMES)]
         if token_count > 0:
             tokens_str = format_token_count_short(token_count)
-            elapsed_badge = f"[ {elapsed:.0f}s · ↓ {tokens_str} tokens]"
+            elapsed_badge = f"[{elapsed:.0f}s · ↓ {tokens_str} tokens]"
         else:
-            elapsed_badge = f"[ {elapsed:.0f}s]"
+            elapsed_badge = f"[{elapsed:.0f}s]"
         label = self.phase or self.THINKING_PHASE
         action = self.active_action
         if action:
@@ -381,7 +420,9 @@ class SpinnerState:
         # not soft-wrap, which desyncs row height vs the one-row confirmation
         # prefix and leaves stale spinner/status lines.
         lead = f"{glyph} "
-        tail = f" {self._STOP_HINT}  {elapsed_badge}"
+        # Single spaces throughout the row: the hint and the elapsed badge sit
+        # one cell apart like every other token, and the badge hugs its brackets.
+        tail = f" {self._STOP_HINT} {elapsed_badge}"
         accent = self._phase_accent_ansi()
         width = prompt_line_width()
         reserved = prompt_text_width(lead) + prompt_text_width(tail)

@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,10 +17,16 @@ from typing import Any
 from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
+from config.constants.organization import organization_id
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from config.principal import PrincipalKind
+from config.scope_context import current_scope
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
+from infrastructure.scheduling.scheduler.storage.run_store import skip_queued_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -27,33 +34,48 @@ logger = logging.getLogger(__name__)
 _STORE_FILENAME = "scheduler_tasks.json"
 
 
+@dataclass(frozen=True, slots=True)
+class TaskStoreSnapshot:
+    """Validated tasks plus read completeness and known source absence."""
+
+    tasks: tuple[ScheduledTask, ...]
+    complete: bool
+    missing: bool = False
+
+
 def default_task_store_path() -> Path:
     """Return the scheduler task-store path under the OpenSRE home."""
     return OPENSRE_HOME_DIR / _STORE_FILENAME
+
+
+def _run_database_for_store(store_path: Path) -> Path:
+    """Run database paired with ``store_path``: ``<store dir>/scheduler.db``."""
+    return run_database_path(store_path.parent)
 
 
 def _lock_path(store_path: Path) -> Path:
     return store_path.with_suffix(".lock")
 
 
-def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool]:
-    """Load the raw task list; the flag reports whether the file was readable.
+def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool, bool]:
+    """Load raw tasks, reporting read completeness and known file absence.
 
-    A missing store is readable and empty. A store that will not parse is
-    ``([], False)`` -- callers about to write must not treat that as "no
-    tasks" and silently overwrite it.
+    A missing store is readable and empty, but remains distinguishable from an
+    explicitly stored empty list. A store that will not parse is incomplete --
+    callers about to write must not treat that as "no tasks" and silently
+    overwrite it.
     """
-    if not store_path.exists():
-        return [], True
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except FileNotFoundError:
+        return [], True, True
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
         logger.warning("Failed to read scheduler store: %s", exc)
-        return [], False
+        return [], False, False
     if not isinstance(data, list):
         logger.warning("Scheduler store is not a JSON list; treating it as unreadable")
-        return [], False
-    return data, True  # type: ignore[return-value]
+        return [], False, False
+    return data, True, False  # type: ignore[return-value]
 
 
 def _load_raw(store_path: Path) -> list[dict[str, object]]:
@@ -118,7 +140,7 @@ def _load_for_write(store_path: Path) -> list[dict[str, object]]:
     An unreadable store is moved aside first, so the write lands on a fresh
     file and the damaged one stays on disk for recovery.
     """
-    raw, readable = _read_raw(store_path)
+    raw, readable, _missing = _read_raw(store_path)
     if not readable:
         _quarantine_unreadable(store_path)
     return raw
@@ -154,13 +176,16 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
         raise
 
 
-def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
-    """Return all persisted scheduled tasks."""
+def get_task_store_snapshot(
+    store_path: Path | None = None, *, lock_timeout_seconds: float | None = None
+) -> TaskStoreSnapshot:
+    """Return validated tasks, optionally bounding the task-store lock wait."""
     path = store_path or default_task_store_path()
-    lock = FileLock(_lock_path(path))
+    lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
+    lock = FileLock(_lock_path(path), timeout=lock_timeout)
     with lock:
-        raw = _load_raw(path)
-        if migrate_legacy_task_entries(raw):
+        raw, complete, missing = _read_raw(path)
+        if complete and migrate_legacy_task_entries(raw):
             try:
                 _save_raw(path, raw)
             except OSError:
@@ -176,7 +201,13 @@ def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
             tasks.append(ScheduledTask.model_validate(entry))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping invalid task entry: %s", exc)
-    return tasks
+            complete = False
+    return TaskStoreSnapshot(tasks=tuple(tasks), complete=complete, missing=missing)
+
+
+def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
+    """Return all valid persisted scheduled tasks, skipping unreadable content."""
+    return list(get_task_store_snapshot(store_path).tasks)
 
 
 def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | None:
@@ -194,9 +225,11 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     params are separate reports, and merging them would drop one the user asked
     for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
     run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
-    between two confirmations of the same schedule.
+    between two confirmations of the same schedule. The owning organization is
+    part of it: two organizations with the same schedule hold two rows.
     """
     return (
+        _owner_of(entry),
         entry.get("kind"),
         entry.get("cron"),
         entry.get("timezone"),
@@ -209,6 +242,32 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _owner_of(entry: Mapping[str, Any]) -> str:
+    """The organization a row belongs to: its stamp, else the deployment's organization.
+
+    Rows written before stamps existed carry none; on a deployment that declares
+    its organization they are that organization's.
+    """
+    stamped = str(entry.get("organization") or "")
+    if stamped:
+        return stamped
+    return organization_id()
+
+
+def _owned_by_bound_organization(task: ScheduledTask) -> ScheduledTask:
+    """Stamp the bound organization on a task created inside an org-scoped turn.
+
+    The store is process-wide; the stamp is what lets a reader show one
+    organization only its own loops. A task that already names its owner keeps it.
+    """
+    if task.organization:
+        return task
+    scope = current_scope()
+    if scope is None or scope.principal.kind != PrincipalKind.ORG:
+        return task
+    return task.model_copy(update={"organization": scope.principal.id})
+
+
 def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
     """Persist a scheduled task, or update the matching schedule's skill revision.
 
@@ -217,6 +276,7 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
     ``daily_summary`` entries, none of which could deliver.
     """
     path = store_path or default_task_store_path()
+    task = _owned_by_bound_organization(task)
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)
@@ -254,6 +314,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # The schedule changed: wake any running scheduler so it stops firing this.
     reload_signal.request_scheduler_reload()
+    skip_queued_runs(task_id, reason="missing_task", db_path=_run_database_for_store(path))
 
     return True
 
@@ -262,14 +323,47 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     """Update an existing task in the store. Returns True if found and updated."""
     path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
+    should_reload = False
     with lock:
         raw = _load_raw(path)
         for i, entry in enumerate(raw):
             if entry.get("id") == task.id:
-                raw[i] = task.model_dump(mode="json")
+                updated = task.model_dump(mode="json")
+                should_reload = _job_registration_changed(entry, updated)
+                raw[i] = updated
                 _save_raw(path, raw)
-                return True
-    return False
+                break
+        else:
+            return False
+    if should_reload:
+        # Enable/disable/schedule edits must drop or replace the live APScheduler job.
+        reload_signal.request_scheduler_reload()
+    if not task.enabled:
+        skip_queued_runs(task.id, reason="disabled", db_path=_run_database_for_store(path))
+    return True
+
+
+def _job_registration_changed(previous: dict[str, object], updated: dict[str, object]) -> bool:
+    """True when APScheduler must drop or replace the job for this row."""
+    previous_params = previous.get("params")
+    updated_params = updated.get("params")
+    previous_run_at = (
+        previous_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(previous_params, dict)
+        else None
+    )
+    updated_run_at = (
+        updated_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(updated_params, dict)
+        else None
+    )
+    return (
+        previous.get("enabled") != updated.get("enabled")
+        or previous.get("cron") != updated.get("cron")
+        or previous.get("timezone") != updated.get("timezone")
+        or previous.get("kind") != updated.get("kind")
+        or previous_run_at != updated_run_at
+    )
 
 
 def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
@@ -289,9 +383,11 @@ def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
 
 
 __all__ = [
+    "TaskStoreSnapshot",
     "add_task",
     "default_task_store_path",
     "get_task",
+    "get_task_store_snapshot",
     "list_tasks",
     "record_task_success",
     "remove_task",

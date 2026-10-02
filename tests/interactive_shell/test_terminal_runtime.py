@@ -187,7 +187,7 @@ def test_build_prompt_session_installs_growing_bordered_composer() -> None:
     assert isinstance(root, HSplit)
     framed_input = root.children[0]
     assert isinstance(framed_input, FloatContainer)
-    chrome = framed_input.content
+    chrome = framed_input.content.children[0]
     assert isinstance(chrome, HSplit)
     # Status rows, then the bordered composer — send hints live in the
     # empty-box placeholder, not a third footer child.
@@ -195,7 +195,7 @@ def test_build_prompt_session_installs_growing_bordered_composer() -> None:
     composer = chrome.children[1]
     assert isinstance(composer, HSplit)
     assert composer.height is None
-    editable_row = composer.children[1]
+    editable_row = composer.children[-2]
     assert isinstance(editable_row, VSplit)
     surface_body = editable_row.children[1]
     assert isinstance(surface_body, HSplit)
@@ -203,6 +203,11 @@ def test_build_prompt_session_installs_growing_bordered_composer() -> None:
     default_buffer_slot = editable_body.children[0]
     assert default_buffer_slot.content.height.min == 1
     assert default_buffer_slot.content.height.max == 8
+    assert default_buffer_slot.content.always_hide_cursor()
+    assert any(
+        processor.__class__.__name__ == "ComposerCaret"
+        for processor in default_buffer_slot.content.content.input_processors
+    )
     assert chrome.preferred_width(80).preferred == 79
 
 
@@ -216,7 +221,7 @@ async def test_bordered_composer_grows_with_input_up_to_eight_edit_rows() -> Non
         task = asyncio.create_task(prompt.prompt_async(""))
         await asyncio.sleep(0)
 
-        composer = prompt.layout.container.children[0].content.children[1]
+        composer = prompt.layout.container.children[0].content.children[0].children[1]
         prompt.default_buffer.text = "first"
         single_line_height = composer.preferred_height(79, 30).preferred
         prompt.default_buffer.text = "x" * 200
@@ -395,14 +400,22 @@ def test_shell_completer_suggests_effort_levels() -> None:
     assert names == ["high", "low", "max", "medium", "xhigh"]
 
 
-def test_tab_applies_unique_slash_command_completion() -> None:
+def test_tab_on_unique_slash_command_opens_its_subcommands() -> None:
     buff = Buffer(completer=ShellCompleter())
     buff.insert_text("/mod")
     _tab_expand_or_menu(buff)
-    assert buff.text == "/model"
+
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
+    assert [completion.text for completion in buff.complete_state.completions] == [
+        "show",
+        "set",
+        "restore",
+        "toolcall",
+    ]
 
 
-def test_tab_with_open_completion_menu_applies_current_item() -> None:
+def test_tab_with_open_completion_menu_opens_selected_command_subcommands() -> None:
     from prompt_toolkit.buffer import CompletionState
     from prompt_toolkit.completion import Completion
 
@@ -416,8 +429,14 @@ def test_tab_with_open_completion_menu_applies_current_item() -> None:
 
     _tab_expand_or_menu(buff)
 
-    assert buff.complete_state is None
-    assert buff.text == "/model"
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
+    assert [completion.text for completion in buff.complete_state.completions] == [
+        "show",
+        "set",
+        "restore",
+        "toolcall",
+    ]
 
 
 def test_tab_with_menu_and_no_index_applies_first_choice() -> None:
@@ -433,8 +452,8 @@ def test_tab_with_menu_and_no_index_applies_first_choice() -> None:
 
     _tab_expand_or_menu(buff)
 
-    assert buff.complete_state is None
-    assert buff.text == "/model"
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
 
 
 def test_completion_includes_tab_navigation() -> None:
@@ -464,8 +483,26 @@ def test_build_prompt_style_tracks_active_theme() -> None:
     assert amber_attrs.color != teal_attrs.color
 
 
-def test_completion_menu_current_item_uses_highlight_style() -> None:
-    from infrastructure.terminal.theme import BG, HIGHLIGHT, INPUT_SURFACE
+def test_prompt_style_keeps_transparent_filler_unstyled() -> None:
+    style = _build_prompt_style()
+    filler = style.get_attrs_for_style_str("")
+    default = style.get_attrs_for_style_str("class:default")
+
+    assert not any(
+        (
+            filler.color,
+            filler.bgcolor,
+            filler.underline,
+            filler.strike,
+            filler.blink,
+            filler.reverse,
+        )
+    )
+    assert default.color
+
+
+def test_command_tray_current_item_uses_highlight_style() -> None:
+    from infrastructure.terminal.theme import HIGHLIGHT, INPUT_SURFACE
 
     set_active_theme("green")
     style = _build_prompt_style()
@@ -476,10 +513,10 @@ def test_completion_menu_current_item_uses_highlight_style() -> None:
     assert attrs.bgcolor == str(INPUT_SURFACE).lstrip("#")
     assert attrs.bold is True
 
-    attrs_menu = style.get_attrs_for_style_str("class:completion-menu.completion.current")
+    attrs_menu = style.get_attrs_for_style_str("class:command-tray.current")
 
     assert attrs_menu.color == HIGHLIGHT.lstrip("#")
-    assert attrs_menu.bgcolor == BG.lstrip("#")
+    assert attrs_menu.bgcolor == ui_theme.menu_selection_hex().lstrip("#")
     assert attrs_menu.reverse is False
     assert attrs_menu.bold is True
 
@@ -503,6 +540,22 @@ def test_composer_uses_input_surface_fill() -> None:
 
     # Help line under the plate stays on terminal bg.
     assert not style.get_attrs_for_style_str("class:composer-footer").bgcolor
+
+
+def test_command_tray_selection_tracks_active_palette() -> None:
+    backgrounds: set[str] = set()
+    for name in ("green", "amber"):
+        theme = set_active_theme(name)
+        style = _build_prompt_style()
+        selected = style.get_attrs_for_style_str("class:command-tray.current")
+        plain = style.get_attrs_for_style_str("class:command-tray")
+        description = style.get_attrs_for_style_str("class:command-tray.description")
+        assert plain.bgcolor == theme.INPUT_SURFACE.lstrip("#")
+        assert selected.bgcolor != plain.bgcolor
+        assert selected.color == theme.HIGHLIGHT.lstrip("#")
+        assert description.color == theme.SECONDARY.lstrip("#")
+        backgrounds.add(selected.bgcolor)
+    assert len(backgrounds) == 2
 
 
 def test_lazy_rich_style_split_tracks_active_theme() -> None:

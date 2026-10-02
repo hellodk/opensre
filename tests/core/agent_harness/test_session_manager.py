@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -82,6 +83,37 @@ def test_resolve_restores_context_and_reopens_storage() -> None:
     assert session.accumulated_context == {"service": "checkout"}
     assert session.history == [{"type": "shell", "text": "ls", "ok": True}]
     assert reopened == ["sess-1"]
+
+
+def test_resolve_restores_dangling_tool_recovery_note() -> None:
+    repo = SimpleNamespace(
+        load_session=lambda session_id: {
+            "session_id": session_id,
+            "dangling_tool_intents": [
+                {
+                    "tool_call_id": "call-1",
+                    "tool": "shell_run",
+                    "arguments": {"command": "deploy", "args": ["api"]},
+                    "user_text": "Deploy the API",
+                }
+            ],
+        }
+    )
+
+    session = SessionManager(store=InMemorySessionStore(), repo=repo).resolve("sess-1")
+
+    assert session.pending_recovery_note is not None
+    assert "shell_run deploy api" in session.pending_recovery_note
+    assert "never blindly repeat" in session.pending_recovery_note
+
+
+def test_restore_context_clears_a_recovery_note_once_intents_are_committed() -> None:
+    session = Session(session_id="sess-1")
+    session.pending_recovery_note = "stale recovery note"
+
+    _manager().restore_context(session, {"dangling_tool_intents": []})
+
+    assert session.pending_recovery_note is None
 
 
 def test_restore_context_ignores_empty_and_malformed() -> None:
@@ -372,3 +404,19 @@ def test_close_cancels_in_flight_warm_task() -> None:
 
     assert task.cancelled is True
     assert session.integrations._warm_task is None
+
+
+def test_has_session_requires_an_exact_readable_persisted_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.agent_harness.session import JsonlSessionRepo, JsonlSessionStore
+
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    manager = SessionManager(store=JsonlSessionStore(), repo=JsonlSessionRepo())
+    session = manager.create(session_id="persisted-session")
+    session.record("chat", "keep this conversation")
+    manager.flush(session)
+
+    assert manager.has_session(session.session_id)
+    assert not manager.has_session("persisted")
+    assert not manager.has_session("missing-session")
