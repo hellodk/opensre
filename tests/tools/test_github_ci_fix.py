@@ -11,11 +11,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import integrations.github.tools.ci_fix.runner as runner
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
     ActionToolScope,
 )
+from core.llm.types import ToolCall
 from core.tool.contracts import AgentToolContext, RegisteredTool
+from core.tool.execution import execute_tool_calls
 from integrations.coding_agent import CodingResult
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
@@ -32,7 +35,6 @@ from integrations.github.tools.ci_fix.errors import (
     ERR_UNSUPPORTED_PR_BRANCH,
     GitHubCiFixError,
 )
-from integrations.github.tools.ci_fix.runner import run_ci_fix, run_fix, with_push_output
 from integrations.github.tools.ci_fix.ship import PushResult, push_ci_fix
 from integrations.github.tools.ci_fix.tool import (
     _github_ci_fix_available,
@@ -97,6 +99,50 @@ _CTX = CiFixContext(
     ),
     task="Fix CI.",
 )
+
+
+def test_clean_pr_is_a_successful_noop_in_tool_analytics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.events import tool_result_is_error
+    from integrations.github.tools.ci_fix import runner
+
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        runner, "gather_ci_fix_context", lambda **_kw: replace(_CTX, failing_checks=())
+    )
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_a, **_kw: nullcontext("/workspace"))
+    monkeypatch.setattr(runner, "resumed_push", lambda *_a, **_kw: None)
+    monkeypatch.setattr(runner, "resolve_github_token", lambda *_a: "fixture")
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    coding = MagicMock(side_effect=AssertionError("A clean PR must not run a coding agent"))
+    monkeypatch.setattr(runner, "run_fix", coding)
+    result = execute_tool_calls(
+        [
+            ToolCall(
+                id="clean-pr",
+                name="fix_github_pr_ci",
+                input={
+                    "owner": "Tracer-Cloud",
+                    "repo": "opensre",
+                    "pr_number": 4597,
+                },
+            )
+        ],
+        [_registered(fix_github_pr_ci)],
+        {},
+    )[0]
+    assert result.is_error is False
+    assert tool_result_is_error(result.details) is False
+    assert result.details["work_outcome"]["status"] == "noop"
+    assert result.details["checks_state"] is None
+    assert result.details["branch_name"] is None
+    assert captured[0]["is_error"] is False
+    assert captured[0]["outcome"] == "ok"
+    assert captured[0]["work_status"] == "noop"
+    coding.assert_not_called()
+
 
 _BRANCH_CTX = CiFixContext(
     owner="Tracer-Cloud",
@@ -377,6 +423,56 @@ def test_push_ci_fix_returns_exact_committed_head_sha() -> None:
     head_sha.assert_called_once_with("/workspace")
 
 
+def test_push_ci_fix_records_a_commit_the_coding_agent_already_created(tmp_path: Path) -> None:
+    import subprocess
+
+    work = tmp_path / "repo"
+    work.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=work, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "feat/fix-ci")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Tester")
+    (work / "README.md").write_text("hello\n")
+    git("add", "README.md")
+    git("commit", "-m", "init")
+    parent = git("rev-parse", "HEAD")
+    (work / "app.py").write_text("fixed = True\n")
+    git("add", "app.py")
+    git("commit", "-m", "agent fix")
+    captured: list[dict[str, object]] = []
+    ctx = replace(_CTX, head_sha=parent, head_branch="feat/fix-ci")
+
+    with (
+        patch("integrations.github.tools.ci_fix.ship.resolve_github_token", return_value="tok"),
+        patch(
+            "integrations.github.tools.ci_fix.ship.remote_branch_sha",
+            return_value=parent,
+        ),
+        patch("integrations.github.tools.ci_fix.ship.push_branch"),
+        patch(
+            "infrastructure.analytics.capture.capture_opensre_commit_created",
+            lambda **properties: captured.append(properties),
+        ),
+    ):
+        result = push_ci_fix(
+            str(work),
+            ctx=ctx,
+            result=CodingResult(success=True, summary="Fixed CI.", changed_files=["app.py"]),
+            github_token="tok",
+        )
+
+    assert result.changed_files == []
+    assert result.head_sha == git("rev-parse", "HEAD")
+    assert captured == [
+        {"workflow": "github_ci_fix", "commit_kind": "content", "changed_file_count": 1}
+    ]
+
+
 def test_with_push_output_reports_superseded_commit() -> None:
     output = {
         "owner": "Tracer-Cloud",
@@ -395,7 +491,7 @@ def test_with_push_output_reports_superseded_commit() -> None:
         observed_head_sha="fedcba9876543210",
     )
 
-    result = with_push_output(output, push, verification)
+    result = runner.with_push_output(output, push, verification)
 
     assert result["success"] is False
     assert result["checks_state"] == "superseded"
@@ -422,7 +518,7 @@ def test_with_push_output_reports_branch_success() -> None:
         check_names=("CI",),
     )
 
-    result = with_push_output(output, push, verification)
+    result = runner.with_push_output(output, push, verification)
 
     assert result["response_text"] == (
         "Fixed failing CI for Tracer-Cloud/opensre branch main, "
@@ -459,7 +555,7 @@ def test_run_fix_without_coding_agent_is_backend_neutral() -> None:
         "integrations.github.tools.ci_fix.runner.verify_coding_agent",
         return_value=(False, "pi missing; codex missing"),
     ):
-        result = run_fix(_CTX, "/workspace", model=None)
+        result = runner.run_fix(_CTX, "/workspace", model=None)
 
     assert result.success is False
     assert result.error == (
@@ -474,7 +570,7 @@ def test_run_fix_without_coding_agent_names_branch_target() -> None:
         "integrations.github.tools.ci_fix.runner.verify_coding_agent",
         return_value=(False, "pi missing; codex missing"),
     ):
-        result = run_fix(_BRANCH_CTX, "/workspace", model=None)
+        result = runner.run_fix(_BRANCH_CTX, "/workspace", model=None)
 
     assert result.success is False
     assert result.error == (
@@ -525,7 +621,7 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         diff="diff",
     )
 
-    result = run_ci_fix(
+    result = runner.run_ci_fix(
         owner="Tracer-Cloud",
         repo="opensre",
         pr_number=4597,
@@ -594,7 +690,7 @@ def test_run_ci_fix_reports_failed_post_push_checks_without_prompting_again(
     _wait: MagicMock,
     _push: MagicMock,
 ) -> None:
-    result = run_ci_fix(
+    result = runner.run_ci_fix(
         owner="Tracer-Cloud",
         repo="opensre",
         pr_number=4597,
@@ -664,7 +760,7 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
         diff="diff",
     )
 
-    result = run_ci_fix(
+    result = runner.run_ci_fix(
         owner="Tracer-Cloud",
         repo="opensre",
         branch="main",
@@ -701,11 +797,12 @@ def test_run_ci_fix_no_failing_checks_response_text() -> None:
             "No failing CI checks found on Tracer-Cloud/opensre#4597; no push was made.",
         ),
     ):
-        result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+        result = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
 
-    assert result["success"] is False
+    assert result["success"] is True
     assert result["error_kind"] == ERR_NO_FAILING_CHECKS
-    assert result["response_text"] == result["error"]
+    assert "error" not in result
+    assert "No failing CI checks" in result["response_text"]
     assert "\n" not in result["response_text"]
 
 
@@ -741,7 +838,7 @@ def test_registry_discovers_ci_fix_on_action_surface() -> None:
 
     tool = action["fix_github_pr_ci"]
     assert tool.surfaces == ("action",)
-    assert tool.requires_approval is True
+    assert tool.requires_approval is False
     assert tool.side_effect_level == "mutating"
     assert "fix_github_pr_ci" not in chat
 
@@ -893,7 +990,7 @@ def test_gather_branch_ci_fix_context_reports_no_failing_runs() -> None:
 
 
 def test_run_ci_fix_rejects_branch_and_pr_selector_together() -> None:
-    result = run_ci_fix(branch="main", pr_number=4597)
+    result = runner.run_ci_fix(branch="main", pr_number=4597)
 
     assert result["success"] is False
     assert result["error_kind"] == ERR_INVALID_INPUT
@@ -945,7 +1042,7 @@ def test_skill_guidance_attaches_to_ci_fix_tool() -> None:
     tool = tools_by_name["fix_github_pr_ci"]
 
     assert "Workflow guidance:" in tool.description
-    assert '<skill name="operating-github-ci-fixer"' in tool.skill_guidance
+    assert '<tool_guidance name="operating-github-ci-fixer"' in tool.skill_guidance
     assert "Fork PR branches are refused" in tool.skill_guidance
     assert "post-push check verification" in tool.skill_guidance
 
@@ -1046,7 +1143,7 @@ def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
     prompts: list[str] = []
 
     # Act
-    result = run_ci_fix(
+    result = runner.run_ci_fix(
         owner="Tracer-Cloud",
         repo="opensre",
         pr_number=4597,
@@ -1058,6 +1155,7 @@ def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
     assert order == ["merge", "fix"]
     assert "merging main into it and resolving conflicts" in prompts[0]
     assert mock_push.call_args.kwargs["already_committed"] is True
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["merged_base_branch"] == "main"
     assert result["resolved_conflicts"] == ["package.json"]
     assert result["response_text"] == (
@@ -1106,11 +1204,14 @@ def test_run_ci_fix_pushes_a_merge_only_repair_without_running_the_fix_agent(
     mock_merge.return_value = BaseMergeResult(base_branch="main", commit_sha="merge-sha")
 
     # Act
-    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
 
     # Assert
     mock_run_fix.assert_not_called()
     mock_push.assert_called_once()
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["success"] is True
     assert result["summary"] == "merged main"
 
@@ -1148,7 +1249,9 @@ def test_run_ci_fix_reports_blocked_merge_files_in_one_line(
     )
 
     # Act
-    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
 
     # Assert
     assert result["success"] is False
@@ -1207,7 +1310,7 @@ def test_run_ci_fix_merges_a_behind_base_before_fixing_even_when_github_sees_no_
     prompts: list[str] = []
 
     # Act
-    result = run_ci_fix(
+    result = runner.run_ci_fix(
         owner="Tracer-Cloud",
         repo="opensre",
         pr_number=4597,
@@ -1275,7 +1378,9 @@ def test_run_ci_fix_merges_base_and_reverifies_when_the_pushed_fix_conflicts(
     ]
 
     # Act
-    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
 
     # Assert
     merge_ctx = mock_merge.call_args.args[1]
@@ -1283,6 +1388,7 @@ def test_run_ci_fix_merges_base_and_reverifies_when_the_pushed_fix_conflicts(
     second_push = mock_push.call_args_list[1].kwargs
     assert second_push["ctx"].head_sha == "new-sha"
     assert second_push["already_committed"] is True
+    assert second_push["recorded_through"] == "merge-sha"
     assert [c.kwargs["expected_head_sha"] for c in mock_wait.call_args_list] == [
         "new-sha",
         "merge-sha",
@@ -1346,7 +1452,9 @@ def test_run_ci_fix_keeps_the_pushed_fix_visible_when_conflict_recovery_is_block
     )
 
     # Act
-    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok"
+    )
 
     # Assert
     mock_push.assert_called_once()
@@ -1367,13 +1475,12 @@ def test_run_ci_fix_keeps_the_pushed_fix_visible_when_conflict_recovery_is_block
 def test_with_push_output_reports_pushed_head_github_will_not_check() -> None:
     # Arrange
     from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT
-    from integrations.github.tools.ci_fix.runner import _base_output
 
-    output = _base_output(_CTX)
+    output = runner._base_output(_CTX)
     push = PushResult(branch_name="feat/fix-ci", head_sha="new-sha", changed_files=["app.py"])
 
     # Act
-    result = with_push_output(
+    result = runner.with_push_output(
         output, push, CheckVerification(state=CheckState.CONFLICTED, check_names=())
     )
 
@@ -1390,7 +1497,6 @@ def test_with_push_output_reports_pushed_head_github_will_not_check() -> None:
 def test_demo_guard_blocks_already_committed_test_edits(tmp_path, monkeypatch) -> None:
     import subprocess
 
-    import integrations.github.tools.ci_fix.runner as runner
     from integrations.git import head_sha
 
     def git(*args: str) -> None:
@@ -1434,7 +1540,6 @@ def test_demo_guard_sees_test_edits_hidden_inside_the_base_merge_commit(
     """A resolver that weakens a test while merging the base must not slip past the scope."""
     import subprocess
 
-    import integrations.github.tools.ci_fix.runner as runner
     from integrations.git import head_sha
     from integrations.github.tools.ci_fix.base_merge import BaseMergeResult
 

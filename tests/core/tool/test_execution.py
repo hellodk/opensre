@@ -190,6 +190,75 @@ def test_before_hook_receives_executed_tools_source() -> None:
     assert captured["source"] == "datadog"
 
 
+def test_tool_call_analytics_records_execution_outcome_without_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+
+    result = execute_tool_calls(
+        [_call("dd_echo", "secret input")], [_tool("dd_echo", source="datadog")], {}
+    )[0]
+
+    assert result.is_error is False
+    assert len(captured) == 1
+    assert captured[0]["tool_name"] == "dd_echo"
+    assert captured[0]["source"] == "datadog"
+    assert captured[0]["role"] == "action"
+    assert captured[0]["outcome"] == "ok"
+    assert captured[0]["executed"] is True
+    assert "error_message" not in captured[0]
+    assert "secret input" not in str(captured[0])
+
+
+def test_tool_call_analytics_records_batch_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    tools = [_tool("first"), _tool("second")]
+
+    execute_tool_calls([_call("first"), _call("second")], tools, {})
+
+    assert [event["outcome"] for event in captured] == ["batch_rejected", "batch_rejected"]
+    assert all(event["executed"] is False for event in captured)
+    assert all(event["error_message"].startswith("Nothing ran") for event in captured)
+
+
+@pytest.mark.parametrize(
+    "status", ["blocked", "failed", "incomplete", "succeeded", "private result"]
+)
+def test_tool_analytics_retains_only_categorical_work_status(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    payload = {
+        "error": "private error",
+        "work_outcome": {
+            "status": status,
+            "evidence": {"token": "private token"},
+            "operation": "private repository",
+        },
+    }
+    execute_tool_calls([_call()], [_tool(execute=lambda _a, _c: payload)], {})
+    assert captured[0]["work_status"] == ("" if status == "private result" else status)
+    assert captured[0]["is_error"] is True
+    assert captured[0]["error_message"] == "private error"
+    assert "private token" not in str(captured[0])
+    assert "private repository" not in str(captured[0])
+
+
 def test_after_hook_can_patch_result_and_terminate() -> None:
     def after(
         _request: ToolExecutionRequest,

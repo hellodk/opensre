@@ -163,10 +163,6 @@ def apply_auto_level(
     """
     if result.verdict != "allow":
         return result
-    # Read-only shell commands (ls, find, grep, …) run without approval at every
-    # level: they only inspect state, so gating them is friction without safety.
-    if result.shell_classification == "read_only":
-        return result
     ask_types = AUTO_LEVEL_ASK_TOOL_TYPES[auto_level]
     if ask_types is not None and result.tool_type not in ask_types:
         return result
@@ -195,10 +191,6 @@ def apply_plan_only_gate(
     """
     if not plan_only_active or result.verdict != "allow":
         return result
-    # Read-only shell commands only inspect state; a plan-only request does not
-    # gate them any more than /auto does.
-    if result.shell_classification == "read_only":
-        return result
     if not is_mutating_tool_type(result.tool_type):
         return result
     return replace(
@@ -217,6 +209,11 @@ def allow_tool(tool_type: str) -> ExecutionPolicyResult:
     analytics and confirmation UX.
     """
     return ExecutionPolicyResult(verdict="allow", tool_type=tool_type, reason=None)
+
+
+def ask_tool(tool_type: str, reason: str) -> ExecutionPolicyResult:
+    """Ask verdict for a tool launch: the user confirms at every ``/auto`` level."""
+    return ExecutionPolicyResult(verdict="ask", tool_type=tool_type, reason=reason)
 
 
 def plan_foreground_tool(
@@ -242,6 +239,7 @@ __all__ = [
     "allow_tool",
     "apply_auto_level",
     "apply_plan_only_gate",
+    "ask_tool",
     "is_mutating_tool_type",
     "plan_foreground_tool",
     "resolve_confirmation",

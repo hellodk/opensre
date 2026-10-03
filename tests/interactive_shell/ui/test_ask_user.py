@@ -89,6 +89,21 @@ def test_answer_block_round_trips() -> None:
     assert parsed == list(zip((q.title for q in _QUESTIONS), answers, strict=True))
 
 
+def test_answer_block_round_trips_a_multiline_custom_answer() -> None:
+    answers = ("First paragraph\n\n2. A numbered paragraph",)
+    text = format_ask_user_answers((_QUESTIONS[0],), answers)
+
+    assert parse_ask_user_answers(text) == [(_QUESTIONS[0].title, answers[0])]
+
+
+def test_legacy_answer_keeps_numbered_lines_inside_one_answer() -> None:
+    text = f"1. {_QUESTIONS[0].title}\nA numbered list:\n2. Option A\nMore details"
+
+    assert parse_ask_user_answers(text) == [
+        (_QUESTIONS[0].title, "A numbered list:\n2. Option A\nMore details")
+    ]
+
+
 def test_wizard_enter_on_each_question_submits(monkeypatch) -> None:
     _patch_wizard(monkeypatch, ["enter", "enter", "enter"])
     picked = repl_ask_user(_QUESTIONS)
@@ -102,6 +117,21 @@ def test_wizard_enter_on_each_question_submits(monkeypatch) -> None:
 def test_wizard_esc_cancels(monkeypatch) -> None:
     _patch_wizard(monkeypatch, ["cancel"])
     assert repl_ask_user(_QUESTIONS) is None
+
+
+def test_wizard_reports_listed_indexes_and_custom_text_without_matching_labels(monkeypatch) -> None:
+    questions = (
+        AskUserQuestion(label="One", title="Pick", options=("other", "two\nlines")),
+        AskUserQuestion(label="Two", title="Type", options=("same", "other")),
+    )
+    _patch_wizard(monkeypatch, ["B", "down", "down", *"same", "enter"])
+    answers: list[tuple[int, tuple[int, ...], str | None]] = []
+
+    def remember_answer(index: int, indices: tuple[int, ...], custom: str | None) -> None:
+        answers.append((index, indices, custom))
+
+    assert repl_ask_user(questions, on_answer=remember_answer) is not None
+    assert answers == [(0, (1,), None), (1, (), "same")]
 
 
 def test_wizard_labels_options_with_letters(monkeypatch) -> None:

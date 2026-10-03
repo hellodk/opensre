@@ -8,16 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from core.domain.work_items import add_work_item
+from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim, try_queue_run
 from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
     get_task,
+    get_task_store_snapshot,
     list_tasks,
     remove_task,
     update_task,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskStatus
 
 
 @pytest.fixture()
@@ -27,6 +30,27 @@ def store_path(tmp_path: Path) -> Path:
 
 def _db_path(store_path: Path) -> Path:
     return store_path.with_name("scheduler.db")
+
+
+@pytest.mark.parametrize(
+    ("read_error", "complete"),
+    [(FileNotFoundError, True), (PermissionError, False), (OSError, False)],
+)
+def test_snapshot_distinguishes_absence_from_read_failures(
+    store_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    read_error: type[OSError],
+    complete: bool,
+) -> None:
+    def failed_read(_path: Path, **_kwargs: object) -> str:
+        raise read_error("simulated task-store read failure")
+
+    monkeypatch.setattr(Path, "read_text", failed_read)
+
+    snapshot = get_task_store_snapshot(store_path)
+
+    assert snapshot.tasks == ()
+    assert snapshot.complete is complete
 
 
 class TestStore:
@@ -122,6 +146,39 @@ class TestStore:
         assert len(get_runs("task-a", db_path=db_path)) == 1
         assert len(get_runs("task-b", db_path=db_path)) == 1
 
+    @pytest.mark.parametrize("mutation", ["remove", "disable"])
+    def test_cancel_skips_queued_runs_only_in_the_paired_database(
+        self, tmp_path: Path, mutation: str
+    ) -> None:
+        store_path = tmp_path / "custom" / "scheduler_tasks.json"
+        other_db = tmp_path / "other" / "scheduler.db"
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-paired",
+            ),
+            store_path,
+        )
+        paired_db = _db_path(store_path)
+        assert try_queue_run(task.id, "2026-01-01T09:00Z", db_path=paired_db)
+        assert try_queue_run(task.id, "2026-01-01T09:00Z", db_path=other_db)
+
+        if mutation == "remove":
+            assert remove_task(task.id, store_path) is True
+            expected_error = "missing_task"
+        else:
+            task.enabled = False
+            assert update_task(task, store_path) is True
+            expected_error = "disabled"
+
+        paired = get_runs(task.id, db_path=paired_db)
+        other = get_runs(task.id, db_path=other_db)
+        assert paired and paired[0].status is TaskStatus.SKIPPED
+        assert paired[0].error == expected_error
+        assert other and other[0].status is TaskStatus.PENDING
+
     def test_remove_nonexistent(self, store_path: Path) -> None:
         assert remove_task("nonexistent", store_path) is False
 
@@ -170,8 +227,6 @@ class TestStore:
         assert tasks == []
 
     def test_store_with_invalid_entries_skips_them(self, store_path: Path) -> None:
-        import json
-
         store_path.parent.mkdir(parents=True, exist_ok=True)
         data = [
             {"id": "valid1", "kind": "manual_loop", "cron": "0 9 * * *", "provider": "telegram"},
@@ -324,6 +379,31 @@ class TestReloadSignal:
         assert remove_task("does-not-exist", store_path) is False
         assert signals == []
 
+    def test_update_signals_reload(self, store_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.enabled = False
+        assert update_task(added, store_path) is True
+        assert signals == [True]
+
+    def test_next_run_update_does_not_signal_reload(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.next_run = "2026-01-15T09:00:00+00:00"
+        assert update_task(added, store_path) is True
+        assert signals == []
+
+    def test_update_missing_does_not_signal(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signals = self._capture(monkeypatch)
+        missing = self._task()
+        missing.id = "does-not-exist"
+        assert update_task(missing, store_path) is False
+        assert signals == []
+
 
 class TestStoreSurvivesTornWrites:
     """A crash mid-write, or a store that will not parse, must not lose tasks."""
@@ -390,6 +470,30 @@ class TestStoreSurvivesTornWrites:
         assert removed is False
         assert updated is False
         assert store_path.read_text(encoding="utf-8") == "{ not json"
+
+    @pytest.mark.parametrize("contents", [b"{ not json", b"\xff\xfe"])
+    def test_snapshot_marks_an_unreadable_store_incomplete(
+        self, store_path: Path, contents: bytes
+    ) -> None:
+        store_path.write_bytes(contents)
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == ()
+        assert snapshot.complete is False
+        assert store_path.read_bytes() == contents
+
+    def test_snapshot_marks_partially_invalid_entries_incomplete(self, store_path: Path) -> None:
+        task = self._digest(7)
+        store_path.write_text(
+            json.dumps([task.model_dump(mode="json"), {"id": "invalid-task"}]),
+            encoding="utf-8",
+        )
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == (task,)
+        assert snapshot.complete is False
 
     def test_a_non_list_payload_is_treated_as_unreadable(self, store_path: Path) -> None:
         # Valid JSON of the wrong shape is just as unusable as broken JSON,
@@ -472,6 +576,58 @@ class TestStoreSurvivesTornWrites:
 
 
 class TestLegacyTaskMigration:
+    def test_unreadable_work_item_store_does_not_abort_task_loading(
+        self, store_path: Path, tmp_path: Path
+    ) -> None:
+        work_items_store = tmp_path / "work_items.json"
+        work_items_store.write_text("{not-json", encoding="utf-8")
+        legacy_task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="0 9 12 9 *",
+            timezone="UTC",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": "item-1",
+                "store_path": str(work_items_store),
+            },
+        )
+        add_task(legacy_task, store_path)
+
+        loaded = get_task(legacy_task.id, store_path)
+
+        assert loaded is not None
+        assert WORK_ITEM_REMINDER_RUN_AT_PARAM not in loaded.params
+
+    def test_legacy_work_item_reminder_is_migrated_to_an_absolute_run_at(
+        self, store_path: Path, tmp_path: Path
+    ) -> None:
+        work_items_store = tmp_path / "work_items.json"
+        item = add_work_item(
+            title="Check clusters",
+            remind_at="2027-09-12T09:00",
+            store_path=work_items_store,
+        )
+        legacy_task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="0 9 12 9 *",
+            timezone="Asia/Kolkata",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": item.id,
+                "store_path": str(work_items_store),
+                "disable_after_success": "true",
+            },
+        )
+        add_task(legacy_task, store_path)
+
+        migrated = get_task(legacy_task.id, store_path)
+
+        assert migrated is not None
+        assert migrated.params[WORK_ITEM_REMINDER_RUN_AT_PARAM] == "2027-09-12T09:00:00+05:30"
+        persisted = store_path.read_text(encoding="utf-8")
+        assert get_task(legacy_task.id, store_path) is not None
+        assert store_path.read_text(encoding="utf-8") == persisted
+
     @staticmethod
     def _copy_fixture(store_path: Path) -> None:
         fixture = Path(__file__).parents[1] / "fixtures" / "scheduler" / "pre_5981_tasks.json"
@@ -493,6 +649,7 @@ class TestLegacyTaskMigration:
             "timezone": "Asia/Kolkata",
             "provider": "interactive_shell",
             "chat_id": "local-session",
+            "organization": "",
             "window_hours": 12,
             "enabled": True,
             "params": {

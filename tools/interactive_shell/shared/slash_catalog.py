@@ -60,9 +60,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks a docs/how-to question about OpenSRE features",),
     ),
     "/account": _mcp(
-        "Sign in to a personal OpenSRE account, inspect the local login, open the "
-        "credits and top-up page, or sign out. Signing out closes the interactive "
-        "shell. Subcommands: login, status, usage, logout.",
+        "Sign in to a personal OpenSRE account, inspect the local login, show "
+        "hosted credit balance, open the credits and top-up page, or sign out. "
+        "Signing out closes the interactive shell. Subcommands: login, status, "
+        "credits, usage, logout.",
         "User asks to sign in to OpenSRE or create a personal account",
         "User asks whether they are logged into OpenSRE",
         anti_examples=(
@@ -121,6 +122,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     "/cost": _mcp(
         "Show token usage and estimated session cost for LLM calls in this REPL session.",
         "User asks about token usage, cost, or spend in the current session",
+    ),
+    "/credits": _mcp(
+        "Show remaining OpenSRE hosted credits for the signed-in account. "
+        "Same as `opensre credits` and `/account credits`. Does not report "
+        "a coding-agent provider's own Anthropic or OpenAI balance.",
+        "User asks how many OpenSRE credits they have left",
+        "User asks to check hosted credit balance while signed in",
+        anti_examples=(
+            "User asks to open the billing page (use /account usage)",
+            "User asks to switch LLM providers (use /model)",
+        ),
     ),
     "/cron": _mcp(
         "Manage cron-driven scheduled deliveries. "
@@ -215,7 +227,10 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to clear, disable, or configure command history persistence",
     ),
     "/integrations": _mcp(
-        "Manage configured integrations. Subcommands: list, verify, show <service>, remove.",
+        "Connect an integration with setup <service>; guide the human through sign-in and verify it. "
+        "Other subcommands: list, verify, show <service>, remove.",
+        "User asks Can you configure Telegram for me? (setup telegram)",
+        "User asks to connect GitHub or PostHog (setup github or setup posthog)",
         "User asks to verify an integration by name",
         "User asks to show details for a configured integration",
         anti_examples=(
@@ -279,6 +294,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User says switch to local llama without a concrete provider (clarify the provider)",
         ),
     ),
+    "/new": _mcp(
+        "Start a new session while preserving the current LLM conversation context and "
+        "accumulated infra context. Rotates the session ID and resets all session state "
+        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
+        "User wants to continue a conversation in a new session after /resume",
+        "User asks to start a new session without losing their current conversation",
+        anti_examples=(
+            "User wants to clear the screen (use /clear)",
+            "User asks to list sessions (use /sessions)",
+        ),
+    ),
     "/onboard": _mcp(
         "Launch the interactive LLM onboarding wizard (handoff if run inside the REPL).",
         "User asks to run onboarding or reconfigure the LLM provider",
@@ -299,16 +325,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks about remote deployment status, health, or operations",
         anti_examples=("Vague connect to X without remote/hosted context (clarify the target)",),
     ),
-    "/new": _mcp(
-        "Start a new session while preserving the current LLM conversation context and "
-        "accumulated infra context. Rotates the session ID and resets all session state "
-        "while keeping the conversation thread so you can continue seamlessly in a fresh session file.",
-        "User wants to continue a conversation in a new session after /resume",
-        "User asks to start a new session without losing their current conversation",
-        anti_examples=(
-            "User wants to clear the screen (use /clear)",
-            "User asks to list sessions (use /sessions)",
-        ),
+    "/rename": _mcp(
+        "Rename the current session with /rename <name>; "
+        "/rename --reset restores its automatic title.",
+        "User explicitly asks to rename the current session or reset its name",
+        anti_examples=("User asks to rename a different saved session",),
     ),
     "/resume": _mcp(
         "Restore the conversation context from a previous session. "
@@ -420,12 +441,14 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks for version information",
     ),
     "/work": _mcp(
-        "Manage durable human work items and reminders. Subcommands: list, add, done, next, path.",
+        "Manage durable human work items. Subcommands: list, add, done, next, path. "
+        "Reminder delivery requires the destination-aware work_task_* tools or opensre work CLI.",
         "User explicitly types /work to list, add, complete, or prioritize work items",
         "User asks for a durable task list or hackathon task overview via the slash command",
         anti_examples=(
             "User asks to manage OpenSRE runtime background jobs (use /tasks)",
-            "User asks in natural language to add or prioritize work (use work_task_* tools)",
+            "User asks in natural language to add, prioritize, or schedule work reminders "
+            "(use work_task_* tools)",
         ),
     ),
     "/debug": _mcp(
@@ -537,12 +560,17 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
     header = (
         "Run a slash command in the OpenSRE interactive shell. "
         "Use this only for explicit slash-command operations: literal /command "
-        "text, requests that explicitly ask to run a slash command, or "
+        "text, requests that explicitly ask to run a slash command, requests to configure "
+        "or connect an integration, or "
         "operation/discovery cases that the system prompt explicitly maps to a "
         "slash command. Do not use this as a natural-language router for "
         "ordinary informational, how-to, capability, or status questions merely "
         "because a slash command can display related information; answer those "
         "directly unless a prompt rule names a read-only discovery exception. "
+        "For requests such as Can you configure Telegram/GitHub/PostHog for me, "
+        'call slash_invoke(command="/integrations", args=["setup", "telegram"/"github"/"posthog"]). '
+        "The guided flow explains each human action, collects secrets privately, discovers IDs, "
+        "and verifies the result. Do not ask for tokens in chat or use cli_exec for interactive setup. "
         "Supply positional args in the args array. This tool covers "
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "

@@ -16,7 +16,12 @@ from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 class JsonlSessionRepo:
     """Read-only queries over v2 session files."""
 
-    def load_recent(self, n: int = 20) -> list[dict[str, Any]]:
+    def load_recent(
+        self,
+        n: int = 20,
+        *,
+        require_conversation: bool = False,
+    ) -> list[dict[str, Any]]:
         root = storage_paths.sessions_dir()
         if not root.exists():
             return []
@@ -28,7 +33,10 @@ class JsonlSessionRepo:
                 if loaded is None:
                     continue
                 header, entries = loaded
-                results.append(self._summary(path, header, entries))
+                summary = self._summary(path, header, entries)
+                if require_conversation and not summary.get("conversation_title"):
+                    continue
+                results.append(summary)
             if len(results) >= n:
                 break
         results.sort(key=lambda x: x.get("started_at") or "", reverse=True)
@@ -77,18 +85,20 @@ class JsonlSessionRepo:
             context = _accumulated_context_for_branch(branch)
             goal_state = _session_goal_state_for_branch(branch)
             plan_state = _task_plan_state_for_branch(branch)
+            choice_state = _pending_user_choice_state_for_branch(branch)
             history = _history_for_branch(branch)
             turn_details = _turn_details_for_branch(branch)
             return {
                 "session_id": str(header.get("id") or target_path.stem),
                 "entry_id": target_entry,
                 "leaf_id": _resolve_entry_id(entries, None),
-                "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+                "name": _session_name(header, entries),
                 "started_at": header.get("created_at"),
                 RestoreContextKey.CLI_AGENT_MESSAGES: messages,
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
+                RestoreContextKey.PENDING_USER_CHOICE_STATE: choice_state,
                 RestoreContextKey.HISTORY: history,
                 "turn_details": turn_details,
                 "has_snapshot": False,
@@ -105,10 +115,28 @@ class JsonlSessionRepo:
     ) -> dict[str, Any]:
         leaf = next((rec for rec in reversed(entries) if rec.get("type") == "leaf"), None)
         total_turns = _count_turns(entries)
+        leaf_id = _resolve_entry_id(entries, None)
+        branch = _branch_to(entries, leaf_id)
+        conversation_title = next(
+            (
+                title
+                for rec in branch
+                if rec.get("type") == "message" and rec.get("role") == "user"
+                if (title := " ".join(str(rec.get("content") or "").split()))
+                and not title.startswith("/")
+            ),
+            "",
+        )
+        activity_at = next(
+            (rec.get("timestamp") for rec in reversed(branch) if rec.get("timestamp")),
+            header.get("created_at"),
+        )
         return {
             "session_id": str(header.get("id") or path.stem),
-            "name": storage_paths.derive_name(_records_to_lines([header, *entries])),
+            "name": _session_name(header, entries),
             "started_at": header.get("created_at"),
+            "conversation_title": conversation_title,
+            "activity_at": activity_at,
             "opensre_version": header.get("opensre_version"),
             "duration_secs": leaf.get("duration_secs") if leaf else None,
             "total_turns": leaf.get("total_turns") if leaf else total_turns,
@@ -122,7 +150,7 @@ class JsonlSessionRepo:
                 )
                 for rec in entries
             ),
-            "leaf_id": _resolve_entry_id(entries, None),
+            "leaf_id": leaf_id,
         }
 
 
@@ -140,15 +168,15 @@ def _split_session_ref(ref: str) -> tuple[str, str | None]:
 
 
 def _load_v2_file(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
-    return _load_v2_lines(path.read_text(encoding="utf-8").splitlines())
+    return _load_v2_lines(path.read_bytes().splitlines())
 
 
-def _load_v2_lines(lines: list[str]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+def _load_v2_lines(lines: list[bytes]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     if not lines:
         return None
     try:
-        header = json.loads(lines[0])
-    except json.JSONDecodeError:
+        header = json.loads(lines[0].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None
     if (
         not isinstance(header, dict)
@@ -158,8 +186,8 @@ def _load_v2_lines(lines: list[str]) -> tuple[dict[str, Any], list[dict[str, Any
         return None
     entries: list[dict[str, Any]] = []
     for line in lines[1:]:
-        with contextlib.suppress(json.JSONDecodeError):
-            rec = json.loads(line)
+        with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+            rec = json.loads(line.decode("utf-8"))
             if isinstance(rec, dict) and "id" in rec and "type" in rec:
                 entries.append(rec)
     return header, entries
@@ -303,6 +331,26 @@ def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] 
     return latest
 
 
+def _pending_user_choice_state_for_branch(
+    branch: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return the last pending-choice custom message on the branch."""
+    from core.agent_harness.session.pending_choice import (
+        PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+    )
+
+    latest: dict[str, Any] | None = None
+    for rec in branch:
+        if rec.get("type") != "custom_message":
+            continue
+        if rec.get("custom_type") != PENDING_USER_CHOICE_STATE_CUSTOM_TYPE:
+            continue
+        content = rec.get("content")
+        if isinstance(content, dict):
+            latest = content
+    return latest
+
+
 def _count_turns(entries: list[dict[str, Any]]) -> int:
     return sum(
         1
@@ -321,5 +369,13 @@ def _count_chat_turns(entries: list[dict[str, Any]]) -> int:
     )
 
 
-def _records_to_lines(records: list[dict[str, Any]]) -> list[str]:
-    return [json.dumps(rec, ensure_ascii=False, default=str) for rec in records]
+def _session_name(header: dict[str, Any], entries: list[dict[str, Any]]) -> str:
+    for record in reversed(entries):
+        if record.get("type") == "custom_message" and record.get("custom_type") == "session_name":
+            name = record.get("name")
+            if isinstance(name, str) and name:
+                return name
+            break
+    return storage_paths.derive_name(
+        [json.dumps(record, ensure_ascii=False, default=str) for record in [header, *entries]]
+    )

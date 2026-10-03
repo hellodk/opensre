@@ -2,18 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Final
+from collections.abc import Mapping, Sequence
+from typing import Final, cast
+from uuid import uuid4
 
 from infrastructure.analytics.event_properties import (
+    _bounded_redacted_text,
     _bucket_duration_ms,
     _bucket_percentage,
     _integration_lifecycle_properties,
     _onboard_completed_properties,
 )
-from infrastructure.analytics.events import Event
-from infrastructure.analytics.provider import Properties, get_analytics
+from infrastructure.analytics.events import Event, cli_command_event_name
+from infrastructure.analytics.provider import (
+    JsonValue,
+    Properties,
+    analytics_opted_out,
+    get_analytics,
+)
 from infrastructure.observability.errors.sentry import capture_exception
+
+_ASK_USER_LABEL_MAX_CHARS: Final[int] = 80
+_ASK_USER_TITLE_MAX_CHARS: Final[int] = 500
+_ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
+_TOOL_ERROR_MESSAGE_MAX_CHARS: Final[int] = 500
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -68,7 +80,9 @@ def _capture(event: Event, properties: Properties | None = None) -> None:
         capture_exception(exc)
 
 
-def capture_cli_invoked(properties: Properties | None = None) -> None:
+def capture_cli_invoked(
+    properties: Properties | None = None, command_parts: Sequence[str] = ()
+) -> None:
     # Whole-process default for local CLI; gateway binds surface per turn instead.
     try:
         from infrastructure.analytics.usage_context import UsageSurface, ensure_process_session_id
@@ -76,7 +90,7 @@ def capture_cli_invoked(properties: Properties | None = None) -> None:
         analytics = get_analytics()
         analytics.set_persistent_property("surface", UsageSurface.CLI)
         ensure_process_session_id()
-        analytics.capture(Event.CLI_INVOKED, properties)
+        analytics.capture(cli_command_event_name(command_parts), properties)
     except Exception as exc:
         capture_exception(exc)
 
@@ -89,6 +103,27 @@ def capture_account_authenticated() -> None:
         analytics.capture(Event.ACCOUNT_AUTHENTICATED)
     except Exception as exc:
         capture_exception(exc)
+
+
+def capture_sign_in_prompted() -> None:
+    """Exposure event: the mandatory sign-in screen was rendered to a signed-out user."""
+    _capture(Event.SIGN_IN_PROMPTED, {"entrypoint": "sign_in_gate"})
+
+
+def capture_sign_in_selected(*, choice_label: str) -> None:
+    """User picked sign-in on the gate; ``account_authenticated`` reports the outcome."""
+    _capture(
+        Event.SIGN_IN_SELECTED,
+        {"choice_label": choice_label, "method": "menu", "entrypoint": "sign_in_gate"},
+    )
+
+
+def capture_stay_signed_out_selected(*, choice_label: str, method: str) -> None:
+    """User left the gate signed out: ``menu`` picked the exit option, ``dismissed`` closed the menu."""
+    _capture(
+        Event.STAY_SIGNED_OUT_SELECTED,
+        {"choice_label": choice_label, "method": method, "entrypoint": "sign_in_gate"},
+    )
 
 
 def capture_gateway_turn_started(*, surface: str) -> None:
@@ -219,15 +254,18 @@ def capture_terminal_actions_executed(
     executed_count: int,
     executed_success_count: int,
 ) -> None:
-    success_percent = 100.0 * executed_success_count / executed_count if executed_count > 0 else 0.0
+    properties: Properties = {
+        "planned_count": planned_count,
+        "executed_count": executed_count,
+        "executed_success_count": executed_success_count,
+    }
+    if executed_count > 0:
+        properties["success_rate_bucket"] = _bucket_percentage(
+            100.0 * executed_success_count / executed_count
+        )
     _capture(
         Event.TERMINAL_ACTIONS_EXECUTED,
-        {
-            "planned_count": planned_count,
-            "executed_count": executed_count,
-            "executed_success_count": executed_success_count,
-            "success_rate_bucket": _bucket_percentage(success_percent),
-        },
+        properties,
     )
 
 
@@ -272,7 +310,7 @@ def capture_terminal_turn_summarized(
     fallback_to_llm: bool,
     session_turn_index: int,
     session_fallback_count: int,
-    session_action_success_percent: float,
+    session_action_success_percent: float | None,
     session_fallback_rate_percent: float,
 ) -> None:
     _capture(
@@ -284,8 +322,218 @@ def capture_terminal_turn_summarized(
             "fallback_to_llm": fallback_to_llm,
             "session_turn_index": session_turn_index,
             "session_fallback_count": session_fallback_count,
-            "session_action_success_bucket": _bucket_percentage(session_action_success_percent),
+            **(
+                {
+                    "session_action_success_bucket": _bucket_percentage(
+                        session_action_success_percent
+                    )
+                }
+                if session_action_success_percent is not None
+                else {}
+            ),
             "session_fallback_rate_bucket": _bucket_percentage(session_fallback_rate_percent),
+        },
+    )
+
+
+def capture_agent_tool_call_completed(
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    source: str,
+    role: str,
+    outcome: str,
+    executed: bool,
+    is_error: bool,
+    terminate: bool,
+    duration_ms: int,
+    work_status: str = "",
+    error_message: str = "",
+) -> None:
+    """Record the privacy-safe outcome of one model-requested tool call.
+
+    A failed call also carries ``error_message``: the tool's own description of
+    what went wrong, redacted and length-capped. Arguments and result evidence
+    stay off the event.
+    """
+    properties: Properties = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "source": source,
+        "role": role,
+        "outcome": outcome,
+        "executed": executed,
+        "is_error": is_error,
+        "terminate": terminate,
+        "duration_ms": duration_ms,
+        "duration_bucket": _bucket_duration_ms(duration_ms),
+        "work_status": work_status,
+    }
+    recorded_error = _bounded_redacted_text(error_message, max_chars=_TOOL_ERROR_MESSAGE_MAX_CHARS)
+    if is_error and recorded_error:
+        properties["error_message"] = recorded_error
+    _capture(Event.AGENT_TOOL_CALL_COMPLETED, properties)
+
+
+def _ask_user_questions(
+    questions: Sequence[Mapping[str, object]],
+) -> list[dict[str, JsonValue]]:
+    sanitized: list[dict[str, JsonValue]] = []
+    for question in questions:
+        raw_options = question.get("options")
+        options = (
+            raw_options
+            if isinstance(raw_options, Sequence) and not isinstance(raw_options, str)
+            else ()
+        )
+        sanitized.append(
+            {
+                "label": _bounded_redacted_text(
+                    question.get("label", ""), max_chars=_ASK_USER_LABEL_MAX_CHARS
+                ),
+                "title": _bounded_redacted_text(
+                    question.get("title", ""), max_chars=_ASK_USER_TITLE_MAX_CHARS
+                ),
+                "options": [
+                    _bounded_redacted_text(option, max_chars=_ASK_USER_OPTION_MAX_CHARS)
+                    for option in options
+                ],
+                "multi_select": bool(question.get("multi_select", False)),
+            }
+        )
+    return sanitized
+
+
+def _with_optional_skill(properties: Properties, skill_name: str | None) -> Properties:
+    if skill_name:
+        properties["skill_name"] = skill_name
+    return properties
+
+
+def capture_ask_user_prompt_rendered(
+    *,
+    interaction_id: str,
+    questions: Sequence[Mapping[str, object]],
+    render_mode: str,
+    allow_custom: bool,
+    has_command_options: bool,
+    skill_name: str | None,
+) -> None:
+    """Record a structured Ask User prompt when it becomes visible."""
+    sanitized = _ask_user_questions(questions)
+    _capture(
+        Event.ASK_USER_PROMPT_RENDERED,
+        _with_optional_skill(
+            {
+                "interaction_id": interaction_id,
+                "prompt_kind": "batch" if len(sanitized) > 1 else "single",
+                "question_count": len(sanitized),
+                "questions": cast(list[JsonValue], sanitized),
+                "render_mode": render_mode,
+                "allow_custom": allow_custom,
+                "has_command_options": has_command_options,
+            },
+            skill_name,
+        ),
+    )
+
+
+def capture_ask_user_prompt_answered(
+    *,
+    interaction_id: str,
+    selected_option_indices: Sequence[Sequence[int]],
+    custom_answers: Sequence[str | None],
+    disposition: str,
+    skill_name: str | None,
+) -> None:
+    """Record listed/custom options selected from a rendered Ask User prompt."""
+    answer_details: list[JsonValue] = []
+    for index, (indices, custom_answer) in enumerate(
+        zip(selected_option_indices, custom_answers, strict=True)
+    ):
+        detail: dict[str, JsonValue] = {
+            "question_index": index,
+            "selected_option_indices": list(indices),
+            "custom": custom_answer is not None,
+        }
+        if custom_answer is not None:
+            detail["answer"] = _bounded_redacted_text(
+                custom_answer, max_chars=_ASK_USER_TITLE_MAX_CHARS
+            )
+        answer_details.append(detail)
+    _capture(
+        Event.ASK_USER_PROMPT_ANSWERED,
+        _with_optional_skill(
+            {
+                "interaction_id": interaction_id,
+                "question_count": len(answer_details),
+                "answers": answer_details,
+                "disposition": disposition,
+            },
+            skill_name,
+        ),
+    )
+
+
+def capture_ask_user_prompt_dismissed(
+    *, interaction_id: str, reason: str, skill_name: str | None
+) -> None:
+    """Record a rendered Ask User prompt closed without an answer."""
+    _capture(
+        Event.ASK_USER_PROMPT_DISMISSED,
+        _with_optional_skill(
+            {"interaction_id": interaction_id, "reason": reason},
+            skill_name,
+        ),
+    )
+
+
+def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
+    """Record first interactive-shell chrome, including the sign-in screen.
+
+    The REPL entrypoint suppresses this for ``--resume`` and for an auto-launch
+    after ``opensre onboard``. CLI subcommands never call it.
+    """
+    _capture(Event.INTERACTIVE_SHELL_RENDERED, {"entrypoint": entrypoint})
+
+
+def begin_cli_auth_attempt() -> str | None:
+    """Record a non-secret browser handoff even when the URL will be opened manually."""
+    if analytics_opted_out():
+        return None
+    attempt_id = str(uuid4())
+    _capture(Event.CLI_AUTH_STARTED, {"cli_auth_attempt_id": attempt_id})
+    return attempt_id
+
+
+def capture_browser_open_requested(
+    *, target: str, opened: bool, cli_auth_attempt_id: str | None = None
+) -> None:
+    """Record an application-requested browser open without retaining its URL."""
+    properties: Properties = {"target": target, "opened": opened}
+    if cli_auth_attempt_id:
+        properties["cli_auth_attempt_id"] = cli_auth_attempt_id
+    _capture(Event.BROWSER_OPEN_REQUESTED, properties)
+
+
+def capture_skill_executed(*, skill_name: str, entrypoint: str) -> None:
+    """Record one successful entry into an OpenSRE skill workflow."""
+    _capture(
+        Event.SKILL_EXECUTED,
+        {"skill_name": skill_name, "entrypoint": entrypoint},
+    )
+
+
+def capture_opensre_commit_created(
+    *, workflow: str, commit_kind: str, changed_file_count: int
+) -> None:
+    """Record a git commit successfully created by an OpenSRE workflow."""
+    _capture(
+        Event.OPENSRE_COMMIT_CREATED,
+        {
+            "workflow": workflow,
+            "commit_kind": commit_kind,
+            "changed_file_count": changed_file_count,
         },
     )
 
@@ -309,6 +557,89 @@ def capture_agent_secret_detected(
     blocked: bool,
 ) -> None:
     _capture(
-        Event.AGENT_SECRET_DETECTED,
+        Event.AGENT_EXPOSURE_DETECTED,
         {"rule_names": ",".join(rule_names), "count": count, "blocked": blocked},
     )
+
+
+def capture_hosted_gateway_task_submitted(prompt_id: str) -> None:
+    """A new prompt was accepted by the managed gateway; polls do not emit this."""
+    _capture(Event.HOSTED_GATEWAY_TASK_SUBMITTED, {"prompt_id": prompt_id})
+
+
+def capture_hosted_gateway_started(
+    *, gateway_id: str, actual_state: str, already_running: bool
+) -> None:
+    """The app accepted a start of the organization's hosted gateway; it may still be coming up."""
+    _capture(
+        Event.HOSTED_GATEWAY_STARTED,
+        {
+            "gateway_id": gateway_id,
+            "actual_state": actual_state,
+            "already_running": already_running,
+        },
+    )
+
+
+def capture_hosted_gateway_healthy(*, gateway_id: str, tool_name: str) -> None:
+    """A health read found the organization's hosted gateway running with nothing pending."""
+    _capture(Event.HOSTED_GATEWAY_HEALTHY, {"gateway_id": gateway_id, "tool_name": tool_name})
+
+
+def _ci_repair_properties(
+    repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> Properties:
+    # ``repair_run_id`` joins the repair's events across the shell, gateway, and worker.
+    properties: Properties = {
+        "repair_run_id": repair_run_id,
+        "repository": repository,
+        "demo": demo,
+    }
+    if pr_number:
+        properties["pr_number"] = pr_number
+    return properties
+
+
+def capture_remote_ci_monitoring_started(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> None:
+    """A gateway's own scheduler registered a CI repair loop, so it runs without the shell."""
+    _capture(
+        Event.REMOTE_CI_MONITORING_STARTED,
+        _ci_repair_properties(repair_run_id, repository, pr_number, demo),
+    )
+
+
+def capture_test_ci_failure_triggered(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool, remote: bool
+) -> None:
+    """The repair demo opened its pull request with a failing test; ``remote`` names the host."""
+    properties = _ci_repair_properties(repair_run_id, repository, pr_number, demo)
+    properties["remote"] = remote
+    _capture(Event.TEST_CI_FAILURE_TRIGGERED, properties)
+
+
+def capture_remote_ci_failure_detected(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> None:
+    """A remote repair loop saw its pull request fail CI and started its first repair attempt."""
+    _capture(
+        Event.REMOTE_CI_FAILURE_DETECTED,
+        _ci_repair_properties(repair_run_id, repository, pr_number, demo),
+    )
+
+
+def capture_remote_ci_repair_succeeded(
+    *,
+    repair_run_id: str,
+    repository: str,
+    pr_number: int,
+    demo: bool,
+    attempts: int,
+    duration_ms: float,
+) -> None:
+    """A remote repair loop's own commit passed CI; ``duration_ms`` counts from scheduling."""
+    properties = _ci_repair_properties(repair_run_id, repository, pr_number, demo)
+    properties["attempts"] = attempts
+    properties["duration_ms"] = round(duration_ms)
+    _capture(Event.REMOTE_CI_REPAIR_SUCCEEDED, properties)

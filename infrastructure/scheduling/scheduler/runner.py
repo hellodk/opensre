@@ -1,8 +1,8 @@
 """APScheduler-backed blocking runner for scheduled tasks.
 
-Loads all enabled tasks from the store, creates CronTrigger jobs, and
+Loads all enabled tasks from the store, creates APScheduler jobs, and
 blocks until SIGINT/SIGTERM. Fire times for dedup are passed directly from the
-APScheduler executor to each callback (UTC, minute precision), not recovered
+APScheduler executor to each callback (UTC, second precision), not recovered
 from listener timing or wall-clock time inside the callback.
 """
 
@@ -20,6 +20,8 @@ from config.constants.turn_concurrency import (
     DEFAULT_SCHEDULED_RUN_CONCURRENCY,
     OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
 )
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
@@ -46,6 +48,7 @@ from infrastructure.scheduling.scheduler.storage import (
 from infrastructure.scheduling.scheduler.types import (
     Provider,
     ScheduledTask,
+    TaskKind,
     TaskReport,
     TaskRun,
     TaskStatus,
@@ -59,21 +62,31 @@ _RECOVERY_INTERVAL_SECONDS = 60
 
 
 def _make_trigger(task: ScheduledTask) -> Any:
-    """Build an APScheduler CronTrigger from a task's cron expression and timezone.
+    """Build an APScheduler trigger from a task's schedule and timezone.
 
     Raises ValueError if the cron expression or timezone is invalid.
     """
-    from apscheduler.triggers.cron import CronTrigger
+    if task.kind is TaskKind.WORK_ITEM_REMINDER:
+        run_at = task.params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM, "").strip()
+        if run_at:
+            from apscheduler.triggers.date import DateTrigger
 
-    parts = task.cron.split()
-    if len(parts) != 5:
-        raise ValueError(f"Invalid cron expression (need 5 fields): {task.cron!r}")
+            try:
+                run_date = datetime.fromisoformat(run_at)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid work-item reminder run_at for task {task.id}: {run_at!r}"
+                ) from exc
+            if run_date.tzinfo is None:
+                raise ValueError(
+                    f"Invalid work-item reminder run_at for task {task.id}: timezone missing"
+                )
+            return DateTrigger(run_date=run_date)
 
     try:
-        trigger = CronTrigger.from_crontab(task.cron, timezone=task.timezone)
-    except (ValueError, TypeError, KeyError) as exc:
+        return build_cron_trigger(task.cron, task.timezone)
+    except ValueError as exc:
         raise ValueError(f"Invalid cron/timezone for task {task.id}: {exc}") from exc
-    return trigger
 
 
 def _next_run_from_trigger(trigger: Any, now: datetime | None = None) -> str | None:
@@ -88,7 +101,7 @@ def _next_run_from_trigger(trigger: Any, now: datetime | None = None) -> str | N
 
 
 def compute_next_run(task: ScheduledTask, now: datetime | None = None) -> str | None:
-    """Return the task's next UTC cron fire time, or raise for invalid schedules."""
+    """Return the task's next UTC fire time, or raise for an invalid schedule."""
     return _next_run_from_trigger(_make_trigger(task), now)
 
 
@@ -96,9 +109,11 @@ def _compute_fire_time(scheduled_run_time: datetime) -> str:
     """Compute a stable, UTC-normalized fire_time string.
 
     Always converts to UTC so DST transitions don't produce ambiguous keys.
+    Seconds are kept so a six-field cron firing several times a minute gets one
+    claim key per tick instead of deduplicating its later ticks away.
     """
     utc_time: datetime = scheduled_run_time.astimezone(UTC)
-    return utc_time.strftime("%Y-%m-%dT%H:%MZ")
+    return utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _queue_scheduled_run(job_id: str, scheduled_run_time: datetime) -> None:
@@ -190,6 +205,46 @@ def _scheduled_job(
         _record_task_success_after_full_delivery(task.id, fire_time)
 
 
+def _complete_recoverable_as_skipped(
+    run: Any,
+    task: ScheduledTask | None,
+) -> bool:
+    """Drop a queued tick whose schedule was disabled or deleted."""
+    claim = try_claim(run.task_id, run.fire_time)
+    if claim is None:
+        return False
+    reason = "missing_task" if task is None else "disabled"
+    if task is None:
+        record_scheduler_service_operation(
+            "scheduler_job_skipped",
+            extra={"task_id": run.task_id, "fire_time": run.fire_time, "reason": reason},
+        )
+    else:
+        record_scheduler_execution_operation(
+            "scheduled_task_execution_skipped",
+            task,
+            fire_time=run.fire_time,
+            status=TaskStatus.SKIPPED,
+            extra={"reason": reason},
+        )
+    complete_run(claim, status=TaskStatus.SKIPPED, error=reason)
+    return True
+
+
+def _skip_cancelled_recoverable_runs() -> None:
+    """Finish disabled/deleted ticks without occupying the live-recovery scan."""
+    while True:
+        skipped = 0
+        for run in get_recoverable_runs():
+            task = get_task(run.task_id)
+            if task is not None and task.enabled:
+                continue
+            if _complete_recoverable_as_skipped(run, task):
+                skipped += 1
+        if skipped == 0:
+            return
+
+
 def _recover_runs(
     runners: SchedulerRunners,
     *,
@@ -199,11 +254,13 @@ def _recover_runs(
     """Resume pending and expired ticks within the scheduler worker pool."""
     _ = scheduled_run_time
     eligible_task_ids = _desired_task_ids(task_filter=task_filter)
+    # Cancelled ticks must be skip-completed even when they outnumber the
+    # recovery scan limit, or they stay queued and fire after a later re-enable.
+    _skip_cancelled_recoverable_runs()
     for run in get_recoverable_runs(eligible_task_ids=eligible_task_ids):
         task = get_task(run.task_id)
         if task is None or not task.enabled:
-            continue
-        if task_filter is not None and not task_filter(task):
+            _complete_recoverable_as_skipped(run, task)
             continue
         result = execute_task(task, run.fire_time, runners)
         if result:
@@ -479,8 +536,8 @@ def run_task_now(
 ) -> bool:
     """Execute a task immediately (ad-hoc one-shot for debugging).
 
-    Uses the current time with seconds precision as fire_time so it does
-    not conflict with scheduled runs (which use minute precision).
+    Uses the current time with microsecond precision as fire_time so it does
+    not conflict with scheduled runs (which use second precision).
 
     ``only_failed=True`` retries only the destinations the most recently
     completed run failed at, instead of delivering to every configured

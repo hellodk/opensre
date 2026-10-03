@@ -342,6 +342,27 @@ def _github_ci_analytics_case() -> ToolFailureCase:
     )
 
 
+def _github_ci_health_scan_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.client import GitHubApiError
+        from integrations.github.tools.ci_health_scan import tool as mod
+
+        mp.setattr(mod, "resolve_scope", MagicMock(side_effect=GitHubApiError("boom")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_health_scan.tool import scan_github_ci_health
+
+        return scan_github_ci_health(owners=["o"], github_token="tok")
+
+    return ToolFailureCase(
+        "github_ci_health_scan",
+        patch,
+        invoke,
+        "scan_github_ci_health",
+        "github",
+    )
+
+
 def _eks_list_clusters_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.eks.tools import eks_list_clusters_tool as mod
@@ -741,8 +762,41 @@ def _runbook_guidance_case() -> ToolFailureCase:
     )
 
 
+def _hosted_gateway_case(tool_name: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.hosted_gateway import HostedGatewayClient, HostedGatewayError
+
+        mp.setattr(
+            HostedGatewayClient,
+            "from_account",
+            MagicMock(side_effect=HostedGatewayError("unreachable")),
+        )
+
+    def invoke() -> dict[str, Any]:
+        from integrations.hosted_gateway.tools import (
+            gateway_health,
+            gateway_lifecycle,
+            gateway_prompt,
+        )
+
+        if tool_name == "ask_hosted_gateway":
+            return gateway_prompt.ask_hosted_gateway(prompt="which tasks run?")
+        tools = {
+            "check_hosted_gateway": gateway_health.check_hosted_gateway,
+            "start_hosted_gateway": gateway_lifecycle.start_hosted_gateway,
+            "stop_hosted_gateway": gateway_lifecycle.stop_hosted_gateway,
+        }
+        return tools[tool_name]()
+
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "opensre")
+
+
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
+    _hosted_gateway_case("check_hosted_gateway"),
+    _hosted_gateway_case("start_hosted_gateway"),
+    _hosted_gateway_case("stop_hosted_gateway"),
+    _hosted_gateway_case("ask_hosted_gateway"),
     _ci_repair_case("schedule_ci_repair_loop"),
     _ci_repair_case("get_ci_repair_loop"),
     _openobserve_case(),
@@ -753,6 +807,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _github_repository_case(),
     _github_star_history_case(),
     _github_ci_analytics_case(),
+    _github_ci_health_scan_case(),
     _eks_list_clusters_case(),
     _eks_describe_cluster_case(),
     _eks_nodegroup_case(),
@@ -944,8 +999,13 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_github_repository",
         "get_github_star_history",
         "analyze_github_ci_reliability",
+        "scan_github_ci_health",
         "schedule_ci_repair_loop",
         "get_ci_repair_loop",
+        "check_hosted_gateway",
+        "start_hosted_gateway",
+        "stop_hosted_gateway",
+        "ask_hosted_gateway",
         # EKS — enumerated in #1463
         "list_eks_clusters",
         "describe_eks_cluster",
@@ -992,6 +1052,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # unknown key); a parser failure it did not anticipate reaches the
         # global wrapper.
         "read_structured_file",
+        # list_scheduled_loops reads the local task store and lets any store
+        # error reach the global wrapper.
+        "list_scheduled_loops",
         # scan_local_git_workspace shells out to git per repository and lets
         # anything unexpected reach the global wrapper.
         "scan_local_git_workspace",
@@ -1035,6 +1098,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "get_aerospike_latency",
         "get_aerospike_namespace_stats",
         "get_aerospike_node_status",
+        # resolve_merge_conflicts catches only its own ResolveMergeError for
+        # known states; unexpected errors escape to the global #1476 wrapper.
+        "resolve_merge_conflicts",
         "get_airflow_dag_runs",
         "get_airflow_metrics",
         "get_airflow_task_instances",
@@ -1225,7 +1291,6 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "read_yc_db_logs",
         "read_yc_logs",
         "query_yc_metrics",
-        "redeploy_railway_service",
         "replay_slack_thread_locally",
         "scan_redis_keys",
         "search_bitbucket_code",

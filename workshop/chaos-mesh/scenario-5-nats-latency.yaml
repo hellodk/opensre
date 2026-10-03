@@ -1,0 +1,32 @@
+# Scenario 5 — NATS server latency (NetworkChaos delay)
+#
+# Restricts the NATS "ready" assertion promised by a healthy cluster: the
+# server keeps every connection and subscription, yet every inbound packet
+# costs an extra ~500ms. OpenSRE tools still resolve the server as healthy —
+# the fault lives between the wire and the socket, not in the NATS process.
+#
+# Apply:    kubectl apply -f scenario-5-nats-latency.yaml
+# Observe:  get_nats_server_status + get_nats_connections -> server OK,
+#           connections/subs unchanged, per-message RTT inflated externally.
+# Revert:   kubectl delete -f scenario-5-nats-latency.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: nats-latency
+  namespace: hetu
+  labels:
+    workshop: chaos-mesh
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - hetu
+    labelSelectors:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/component: nats
+  delay:
+    latency: "500ms"
+    jitter: "100ms"
+    correlation: "100"
+  duration: "60s"

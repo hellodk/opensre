@@ -6,6 +6,8 @@ import io
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -209,7 +211,7 @@ class TestDispatchSlash:
         dispatch_slash("/auto med", session, console)
         assert session.terminal.auto_level == "med"
         assert "Auto (Med)" in buf.getvalue()
-        assert "allow reversible commands" in buf.getvalue()
+        assert "approve shell and mutating tools" in buf.getvalue()
 
     def test_auto_bare_shows_default_and_levels(self) -> None:
         session = Session()
@@ -394,7 +396,7 @@ class TestSpecificListCommands:
         self._patch_llm(monkeypatch)
         monkeypatch.setattr(
             "config.account.account_llm_route",
-            lambda: object(),
+            object,
         )
         console, buf = _capture()
 
@@ -1444,6 +1446,155 @@ class TestResumeCommand:
         assert session.session_id == old_id
         assert "no conversation to resume" in buf.getvalue()
 
+    def test_apply_resume_does_not_rebind_while_the_target_session_is_busy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """/resume must not wait for or rebind a session another host owns."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import session_execution_lock
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        old_id = session.session_id
+        console, _ = _capture()
+        attempted = threading.Event()
+        completed = threading.Event()
+        errors: list[Exception] = []
+        results: list[bool] = []
+
+        def _resume() -> None:
+            try:
+                attempted.set()
+                results.append(_apply_resume_data(data, session, console))
+                completed.set()
+            except Exception as exc:
+                errors.append(exc)
+
+        with session_execution_lock(target_id):
+            thread = threading.Thread(target=_resume)
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert completed.wait(timeout=1)
+            assert session.session_id == old_id
+
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert not errors, errors
+        assert completed.is_set()
+        assert results == [False]
+        assert session.session_id == old_id
+
+    def test_apply_resume_retains_target_lease_until_the_turn_scope_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A turn-hosted /resume keeps its target safe through final flush."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import (
+            SessionExecutionBusyError,
+            retained_session_execution_locks,
+            session_execution_lock,
+        )
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        def _try_target_lock(results: list[bool]) -> threading.Thread:
+            def _try_lock() -> None:
+                try:
+                    with session_execution_lock(target_id, timeout=0):
+                        results.append(True)
+                except SessionExecutionBusyError:
+                    results.append(False)
+
+            thread = threading.Thread(target=_try_lock)
+            thread.start()
+            return thread
+
+        with retained_session_execution_locks():
+            assert _apply_resume_data(data, session, console) is True
+            held_results: list[bool] = []
+            thread = _try_target_lock(held_results)
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert held_results == [False]
+
+        released_results: list[bool] = []
+        thread = _try_target_lock(released_results)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert released_results == [True]
+
+    def test_apply_resume_reloads_the_target_after_acquiring_its_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A resumed target is restored from the post-lease repository state."""
+        from core.agent_harness.session import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        target_id = "target-session-123"
+        stale_data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "stale")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        fresh_data = {**stale_data, "cli_agent_messages": [("user", "fresh")]}
+
+        class _Repo:
+            def load_session(self, session_id: str) -> dict:
+                assert session_id == target_id
+                return fresh_data
+
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.session_cmds.resume.default_session_repo",
+            _Repo,
+        )
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        assert _apply_resume_data(stale_data, session, console, refresh_target=True) is True
+        assert session.agent.messages == [("user", "fresh")]
+
     def test_apply_resume_displays_history_in_repl_format(self, tmp_path: Path) -> None:
         """History display uses REPL turn order and includes slash commands."""
         from unittest.mock import patch
@@ -1980,6 +2131,103 @@ class TestRunCliCommand:
         console, _buf = _capture()
         assert m.run_cli_command(console, ["remote", "health"], session=session) is False
         assert session.history[-1]["ok"] is False
+
+    def test_headless_cron_run_keeps_its_tick_running_past_the_reply_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A gateway ``/cron run`` past the reply window must finish, not be killed.
+
+        Killing it took a CI repair's supervisor and worker down mid-verification
+        and left the tick's claim blocking the task's later ticks for its lease.
+        The child also writes more than a pipe buffer after the window, so it
+        only finishes if something keeps draining its output.
+        """
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        finished = tmp_path / "finished"
+        child = (
+            "import pathlib, sys, time\n"
+            "time.sleep(0.5)\n"
+            "sys.stdout.write('x' * 200_000)\n"
+            f"pathlib.Path({str(finished)!r}).write_text('done')\n"
+        )
+        monkeypatch.setattr(
+            m, "build_opensre_cli_argv", lambda _args: [sys.executable, "-c", child]
+        )
+        monkeypatch.setattr(m, "_HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS", 0.1)
+        session = SessionCore(store=InMemorySessionStore())
+        session.record("slash", "/cron run abc123", ok=True)
+        console, buf = _capture()
+
+        assert m._cmd_cron(session, console, ["run", "abc123"]) is True
+        assert "/cron logs abc123" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
+        assert session.history[-1]["slash_outcome"] == "still_running"
+        deadline = time.monotonic() + 15
+        while not finished.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert finished.read_text() == "done"
+        m.shutdown_kept_cli_commands()
+
+    def test_captured_child_renders_to_terminal_width_minus_replay_gutter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A captured child's Rich tables must fit the REPL once re-printed.
+
+        ``print_command_output`` prepends a 4-cell ``↳`` gutter and cannot
+        re-flow a table, so a child told it has 200 columns produced rows that
+        folded mid-border on every real terminal (``/cron list``). The child
+        must render at the real width minus the gutter, even when the user has
+        exported a wider ``COLUMNS``.
+        """
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from surfaces.interactive_shell.ui import COMMAND_OUTPUT_GUTTER_WIDTH
+
+        monkeypatch.setenv("COLUMNS", "200")
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        console = Console(file=io.StringIO(), force_terminal=False, width=134)
+        assert m.run_cli_command(console, ["cron", "list"], session=Session()) is True
+
+        assert seen_env[0]["COLUMNS"] == str(134 - COMMAND_OUTPUT_GUTTER_WIDTH - 1)
+        assert seen_env[0]["FORCE_COLOR"] == "1"
+
+    def test_headless_captured_child_renders_wide_so_ids_survive(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With no terminal, only the action agent reads the table: render wide."""
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from tools.interactive_shell.subprocess import HEADLESS_SUBPROCESS_TERMINAL_WIDTH
+
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        session = SessionCore(store=InMemorySessionStore())
+        console = Console(file=io.StringIO(), force_terminal=False, width=80)
+        assert m.run_cli_command(console, ["cron", "list"], session=session) is True
+
+        assert seen_env[0]["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
 
     def test_frozen_binary_delegate_reexecs_opensre_without_module_flags(
         self,

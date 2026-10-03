@@ -16,6 +16,7 @@ permissions:
   pull-requests: read
 
 env:
+  OPENSRE_CICD: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHON_SOURCE_PATHS: "bootstrap config core gateway integrations infrastructure surfaces tools"
 
@@ -61,7 +62,7 @@ jobs:
         run: |
           uv run python -m tests.ci_sharding report --label=tools-runtime tests/tools tests/core core/agent_harness/prompts/skills tests/infrastructure tests/filestorage tests/utils tests/masking --ignore=tests/core/agent --ignore=tests/core/tool/test_contracts.py --ignore=tests/tools/test_registry_index.py --ignore=tests/tools/selection
           uv run python -m tests.ci_sharding report --label=cli-runtime tests/cli tests/interactive_shell tests/surfaces tests/core/agent tests/fleet_monitoring tests/analytics tests/sandbox --ignore=tests/cli/test_smoke.py
-          uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/bootstrap tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler gateway/tests
+          uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/bootstrap tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler tests/workshop gateway/tests
 
       - name: Shared static checks
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
@@ -369,6 +370,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           - os: ubuntu-latest
             shard: integrations-and-misc-2
@@ -384,6 +386,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           - os: ubuntu-latest
             shard: integrations-and-misc-3
@@ -399,6 +402,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           - os: ubuntu-latest
             shard: integrations-and-misc-4
@@ -414,6 +418,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           - os: ubuntu-latest
             shard: integrations-and-misc-5
@@ -429,6 +434,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           - os: ubuntu-latest
             shard: integrations-and-misc-6
@@ -444,6 +450,7 @@ jobs:
               tests/quality
               tests/packaging
               tests/scheduler
+              tests/workshop
               gateway/tests
           # install/ + quickstart/ are opt-in live (CDN/brew/LLM); not PR CI.
           - os: ubuntu-latest
@@ -534,11 +541,15 @@ jobs:
           && echo "pytest_paths=$(tr '\n' ' ' < .pytest-shard-files)" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
+        # The cli-live-agent shard needs OPENAI_API_KEY. Neither fork PRs nor
+        # Dependabot PRs can read repository secrets, so skip just that shard
+        # for them; every other shard and event runs unchanged.
         if: >-
           (steps.changes.outputs.source == 'true' || github.event_name == 'push') &&
           !(github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.fork == true &&
-          matrix.shard == 'cli-live-agent')
+          matrix.shard == 'cli-live-agent' &&
+          (github.event.pull_request.head.repo.fork == true ||
+          github.event.pull_request.user.login == 'dependabot[bot]'))
         env:
           COVERAGE_FILE: .coverage.${{ matrix.shard }}
           # PRs do not consume coverage artifacts. Avoid instrumenting every

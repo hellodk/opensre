@@ -16,7 +16,7 @@ from surfaces.interactive_shell.runtime.core import state as loop_state
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.input_prompt import completion as prompt_completion
 from surfaces.interactive_shell.ui.input_prompt import rendering as prompt_rendering
-from surfaces.interactive_shell.ui.input_prompt.completion import completion_preview_hint_ansi
+from surfaces.interactive_shell.ui.input_prompt.completion import completion_preview_text
 from surfaces.interactive_shell.ui.input_prompt.layout import prompt_line_width
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
 from surfaces.interactive_shell.ui.input_prompt.rendering import (
@@ -156,6 +156,18 @@ class TestPromptTurnCounter:
         text = get_active_theme().TEXT.lstrip("#")
         tr, tg, tb = (int(text[i : i + 2], 16) for i in (0, 2, 4))
         assert f"{tr};{tg};{tb}" in raw
+
+    def test_long_user_row_keeps_the_whole_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A pasted path wider than the terminal stays in the plate, uncut."""
+        monkeypatch.setattr(prompt_rendering, "terminal_columns", lambda: 40)
+        session = Session()
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, highlight=False, width=40)
+        path = "https://github.com/davincios/opensre-ci-repair-demo-20260915-epoch-7c92"
+        render_submitted_prompt(console, session, f"use this repository: {path}")
+        visible = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        assert path in visible.replace("\n", "")
+        assert "…" not in visible
 
     def test_autosubmitted_goal_condition_gets_work_turn_marker(self) -> None:
         """``/goal set`` autosubmit must not look like part of the slash turn."""
@@ -325,7 +337,7 @@ class _FakeApp:
 class TestCompletionPreviewHint:
     def test_returns_empty_when_no_app(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: None)
-        assert completion_preview_hint_ansi() == ""
+        assert completion_preview_text() == ""
 
     def test_shows_full_slash_command_description(self, monkeypatch: pytest.MonkeyPatch) -> None:
         completion = Completion(
@@ -346,7 +358,7 @@ class TestCompletionPreviewHint:
         )
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: app)
 
-        rendered = _strip_ansi(completion_preview_hint_ansi())
+        rendered = _strip_ansi(completion_preview_text())
         assert rendered.startswith("/gateway — ")
         assert len(rendered) > len("/gateway — " + completion.display_meta_text)
         assert "…" not in rendered
@@ -372,7 +384,7 @@ class TestCompletionPreviewHint:
         )
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: app)
 
-        rendered = _strip_ansi(completion_preview_hint_ansi())
+        rendered = _strip_ansi(completion_preview_text())
         assert rendered == "/plugin-cmd — Plugin-provided slash command."
 
     def test_shows_subcommand_label_with_parent_command(
@@ -396,7 +408,7 @@ class TestCompletionPreviewHint:
         )
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: app)
 
-        rendered = _strip_ansi(completion_preview_hint_ansi())
+        rendered = _strip_ansi(completion_preview_text())
         assert rendered == "/effort high — favor more thorough reasoning"
 
     def test_falls_back_to_first_completion_when_none_selected(
@@ -420,7 +432,7 @@ class TestCompletionPreviewHint:
         )
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: app)
 
-        rendered = _strip_ansi(completion_preview_hint_ansi())
+        rendered = _strip_ansi(completion_preview_text())
         assert rendered == "/plugin-cmd — Plugin-provided slash command."
 
     def test_clips_preview_to_terminal_width(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -446,7 +458,7 @@ class TestCompletionPreviewHint:
         )
         monkeypatch.setattr(prompt_completion, "get_app_or_none", lambda: app)
 
-        rendered = _strip_ansi(completion_preview_hint_ansi())
+        rendered = _strip_ansi(completion_preview_text())
         assert rendered.endswith("…")
         # One column short of the terminal width (pending-wrap guard).
         assert len(rendered) <= prompt_line_width(40)
@@ -454,14 +466,7 @@ class TestCompletionPreviewHint:
 
 
 class TestResolvePromptPrefix:
-    def test_prefers_inline_spinner_over_completion_preview(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            prompt_rendering,
-            "completion_preview_hint_ansi",
-            lambda: "preview line",
-        )
+    def test_prefers_inline_spinner_over_idle_hint(self) -> None:
         spinner = loop_state.SpinnerState()
         spinner.start()
         prefix = resolve_prompt_prefix_ansi(
@@ -471,20 +476,13 @@ class TestResolvePromptPrefix:
         assert "preview line" not in prefix
         assert "Press ESC to stop" in _strip_ansi(prefix)
 
-    def test_prefers_completion_preview_over_idle_hint(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            prompt_rendering,
-            "completion_preview_hint_ansi",
-            lambda: "preview line",
-        )
+    def test_completion_details_do_not_replace_runtime_status(self) -> None:
         spinner = loop_state.SpinnerState()
         prefix = resolve_prompt_prefix_ansi(
             inline_spinner=spinner.inline_spinner_ansi(),
-            idle_hint=spinner.idle_hint_ansi(),
+            idle_hint="runtime status",
         )
-        assert prefix == "preview line"
+        assert prefix == "runtime status"
         assert "/ for commands" not in prefix
 
     def test_idle_prompt_prefix_is_empty_when_no_preview(self) -> None:

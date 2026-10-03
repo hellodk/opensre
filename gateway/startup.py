@@ -13,8 +13,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from config.constants.gateway import DEFAULT_STOP_TIMEOUT_SECONDS, WEB_STOP_TIMEOUT_SECONDS
+from config.constants.gateway import (
+    DEFAULT_STOP_TIMEOUT_SECONDS,
+    PROMPT_WORKER_STOP_TIMEOUT_SECONDS,
+    WEB_STOP_TIMEOUT_SECONDS,
+)
+from config.constants.organization import organization_id
 from gateway.core.process.shutdown_budget import ShutdownBudget
+from gateway.core.prompt_intake import PromptQueue, PromptTurnRunner, PromptWorker
 from gateway.transports.names import TransportName
 from gateway.transports.startup import (
     TransportHandle,
@@ -23,9 +29,12 @@ from gateway.transports.startup import (
 )
 from gateway.web.startup import start_web_server
 from gateway.web.web_server import WebAppServerHandle
+from infrastructure.analytics.provider import analytics_delivery_unavailable
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 _WEB_COMPONENT = "web"
+_PROMPT_COMPONENT = "remote prompts"
+_ANALYTICS_COMPONENT = "analytics"
 
 
 @dataclass
@@ -35,10 +44,16 @@ class StartedGateway:
     web_server: WebAppServerHandle | None = None
     transports: dict[TransportName, TransportHandle] = field(default_factory=dict)
     statuses: dict[str, str] = field(default_factory=dict)
+    prompt_worker: PromptWorker | None = None
 
     def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
         """Stop web and every chat transport; return whether all chat workers stopped."""
         budget = ShutdownBudget(timeout)
+        if self.prompt_worker is not None:
+            started = budget.mark()
+            self.prompt_worker.stop(timeout_seconds=budget.take(PROMPT_WORKER_STOP_TIMEOUT_SECONDS))
+            budget.consume(started)
+            self.prompt_worker = None
         if self.web_server is not None:
             started = budget.mark()
             self.web_server.stop(timeout=budget.take(WEB_STOP_TIMEOUT_SECONDS))
@@ -53,22 +68,47 @@ def start_gateway(
     *,
     logger: logging.Logger,
     handler: TurnCallback,
+    prompt_runner: PromptTurnRunner | None = None,
 ) -> StartedGateway:
     """Start web and every chat transport together.
 
     Missing chat credentials skip that transport (``not configured``); readiness
-    or runtime failures record ``failed``. The rest still start.
+    or runtime failures record ``failed``. The rest still start. Remote prompts
+    are accepted only when ``prompt_runner`` is given.
     """
+    prompt_worker = None
+    statuses: dict[str, str] = {}
+    if prompt_runner is not None:
+        prompt_worker = start_prompt_intake(logger=logger, runner=prompt_runner)
+        statuses[_PROMPT_COMPONENT] = "accepting"
     web = start_web_server(logger=logger)
     chat = start_transports(logger=logger, handler=handler)
-    statuses: dict[str, str] = {_WEB_COMPONENT: web.status}
+    statuses[_WEB_COMPONENT] = web.status
     for name, status in chat.statuses.items():
         statuses[name] = status
+    # A silo whose analytics destination fails closed (for example a webapp URL
+    # without AGENT_USAGE_SECRET) silently drops every product event, so none of
+    # its remote sessions ever reach the dashboard. Local runs keep the anonymous
+    # fallback destination and never trip this.
+    if organization_id() and analytics_delivery_unavailable():
+        statuses[_ANALYTICS_COMPONENT] = "failed"
     return StartedGateway(
         web_server=web.server,
         transports={handle.name: handle for handle in chat.handles},
         statuses=statuses,
+        prompt_worker=prompt_worker,
     )
+
+
+def start_prompt_intake(*, logger: logging.Logger, runner: PromptTurnRunner) -> PromptWorker:
+    """Attach a prompt queue to the web app and start the thread that runs its jobs."""
+    from gateway.web.webapp import app
+
+    queue = PromptQueue()
+    app.state.prompt_queue = queue
+    worker = PromptWorker(queue, runner, logger=logger)
+    worker.start()
+    return worker
 
 
 __all__ = [

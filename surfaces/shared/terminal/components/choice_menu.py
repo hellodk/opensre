@@ -327,6 +327,15 @@ def _clear_prompt_toolkit_paint() -> None:
             app.invalidate()
 
 
+def enter_inline_menu() -> None:
+    """Prepare the terminal for a raw-key inline menu."""
+    from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+
+    _clear_prompt_toolkit_paint()
+    drain_stale_cpr_bytes()
+    hide_terminal_cursor()
+
+
 def _draw_menu(
     *,
     title: str,
@@ -444,6 +453,7 @@ def _pick(
     letter_keys: bool = False,
     numbered: bool = True,
     note: str = "",
+    on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
 ) -> int | str | None:
     """Draw an inline menu; return index, custom typed string, or None on Esc.
 
@@ -533,7 +543,8 @@ def _pick(
                 continue
             if action == "enter" and idx == len(labels):
                 parts: list[str] = []
-                for index in sorted(checked):
+                indices = sorted(checked)
+                for index in indices:
                     if index == custom_index:
                         text = draft.strip()
                         if text:
@@ -543,6 +554,11 @@ def _pick(
                         parts.append(selected_values[index])
                 if not parts:
                     continue
+                if on_answer is not None:
+                    on_answer(
+                        tuple(index for index in indices if index != custom_index),
+                        draft.strip() if custom_index in checked else None,
+                    )
                 _erase_menu(
                     crumb, display, multi_select=True, header=header, note=note, drawn_height=height
                 )
@@ -564,6 +580,8 @@ def _pick(
                     idx = select_index
                     continue
                 _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
+                if on_answer is not None:
+                    on_answer((select_index,), None)
                 return select_index
             continue
         if action == "enter":
@@ -572,8 +590,12 @@ def _pick(
                 if not text:
                     continue
                 _erase_menu(crumb, display, header=header, note=note, drawn_height=height)
+                if on_answer is not None:
+                    on_answer((), text)
                 return text
             _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
+            if on_answer is not None:
+                on_answer((idx,), None)
             return idx
         if action in ("cancel", "eof"):
             _erase_menu(
@@ -601,6 +623,7 @@ def repl_choose_one(
     numbered: bool = True,
     note: str = "",
     on_custom_answer: Callable[[], None] | None = None,
+    on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
 ) -> str | None:
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
 
@@ -620,14 +643,11 @@ def repl_choose_one(
 
     When ``multi_select`` is True, checkboxes appear and the return value is a
     newline-joined string of selected **values** (``choices[i][0]``).
+    ``on_answer`` receives listed row indexes and the separate custom text.
     """
-    from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-
     if not choices or not repl_tty_interactive():
         return None
-    _clear_prompt_toolkit_paint()
-    drain_stale_cpr_bytes()
-    hide_terminal_cursor()
+    enter_inline_menu()
     try:
         crumb = breadcrumb
         labels = [label for _value, label in choices]
@@ -650,6 +670,7 @@ def repl_choose_one(
             letter_keys=letter_keys,
             numbered=numbered,
             note=note,
+            on_answer=on_answer,
         )
         if picked is None:
             return None

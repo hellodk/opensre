@@ -9,14 +9,11 @@ turn budget (``--max-turns``), and token delta. User-facing copy never says
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from rich.console import Console
 from rich.markup import escape as _rich_escape
 
 from core.agent_harness import SessionManager
 from core.agent_harness.spi.session_goal import (
-    MAX_GOAL_CONDITION_CHARS,
     SESSION_GOAL_UNBOUNDED_TURNS,
     SessionGoal,
     SessionGoalReason,
@@ -24,6 +21,7 @@ from core.agent_harness.spi.session_goal import (
     attach_session_goal,
     clear_session_goal,
     derive_session_goal_checklist,
+    edit_session_goal,
     format_session_goal_progress,
     goal_paint_signature,
     session_goal_is_active,
@@ -35,7 +33,6 @@ from core.agent_harness.spi.session_state import (
     session_terminal,
     set_auto_command,
 )
-from infrastructure.evidence.evidence_compaction import truncate_message
 from infrastructure.terminal.theme import DIM, ERROR, HIGHLIGHT
 from surfaces.interactive_shell.runtime import Session
 from surfaces.shared.terminal.components.rendering import print_repl_text
@@ -151,10 +148,28 @@ def _print_goal_block(session: Session, console: Console, goal: SessionGoal) -> 
         terminal.goal_paint_signature = goal_paint_signature(goal)
 
 
+def _consume_inflight_goal_pause(session: Session) -> bool:
+    """Return whether this command follows an in-flight pause boundary."""
+    terminal = session_terminal(session)
+    if terminal is None:
+        return False
+    pending = getattr(terminal, "pending_inflight_goal_pauses", 0)
+    if pending <= 0:
+        return False
+    terminal.pending_inflight_goal_pauses = pending - 1
+    return True
+
+
 def _pause(session: Session, console: Console) -> bool:
+    follows_inflight_pause = _consume_inflight_goal_pause(session)
     goal = getattr(session, "session_goal", None)
     if not isinstance(goal, SessionGoal) or not session_goal_is_active(session):
         if isinstance(goal, SessionGoal) and session_goal_is_paused(session):
+            terminal = session_terminal(session)
+            if follows_inflight_pause:
+                if terminal is None or terminal.goal_paint_signature != goal_paint_signature(goal):
+                    _print_goal_block(session, console, goal)
+                return True
             print_repl_text(
                 console, format_session_goal_progress(goal, session=session), markup=False
             )
@@ -216,11 +231,9 @@ def _edit(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{ERROR}]usage:[/] /goal edit <condition>")
         console.print(f"[{DIM}]e.g.[/] [{HIGHLIGHT}]{_EDIT_EXAMPLE}[/]")
         return True
-    condition = truncate_message(condition, MAX_GOAL_CONDITION_CHARS)
-    edited = replace(goal, condition=condition)
-    edited = attach_session_goal(session, edited)
+    edited = edit_session_goal(session, goal, condition)
     if session_goal_is_active(session):
-        _queue_condition(session, condition)
+        _queue_condition(session, edited.condition)
     _persist_goal_state(session)
     _print_goal_block(session, console, edited)
     if session_goal_is_active(session):

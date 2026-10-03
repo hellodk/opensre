@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 else:
     GroundingContext = Any
 
+from config.constants.paths import integrations_store_stamp
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.accounting.token_usage import TokenUsage
 from core.agent_harness.session.integration_resolution import IntegrationState
@@ -168,16 +169,15 @@ class SessionCore:
 
     A question the user has settled must not be asked again later in the
     session, whether it comes back through a skill's entry hook or because the
-    model calls the menu tool itself. Session-scoped on purpose: ``/new`` starts
-    clean, and a ``/resume`` may ask again, since the answer's effect is not
-    restored either.
+    model calls the menu tool itself. ``/new`` starts clean; resume restores the
+    keys so a multi-round workflow does not repeat an earlier blocker.
     """
 
     skill_question_keys: dict[str, set[str]] = field(default_factory=dict)
     """Queued question keys by owning skill, for explicit workflow restarts."""
 
     skills_already_prompted: set[str] = field(default_factory=set)
-    """Skills whose ``pre_execute`` menu this session has already opened.
+    """Skills whose entry menu this session has already opened.
 
     The host may reopen one on request (startup, ``/demo``); the model may not,
     or a later message that routes back to the skill asks the same question
@@ -332,6 +332,9 @@ class SessionCore:
     @resolved_integrations_cache.setter
     def resolved_integrations_cache(self, value: dict[str, Any] | None) -> None:
         self.integrations.resolved_cache = value
+        # Every writer stamps the store the cache came from, so a rewritten
+        # store invalidates it on the next turn no matter who filled it.
+        self.integrations.store_stamp = integrations_store_stamp() if value else None
 
     @property
     def vcs_repo_scopes(self) -> dict[str, tuple[str, ...]]:

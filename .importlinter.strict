@@ -33,6 +33,7 @@ ignore_imports =
     # surfaces -> gateway (cli + repl gateway commands)
     surfaces.cli.commands.gateway -> gateway.core.process
     surfaces.gateway_entry -> gateway.core.lifecycle.controller
+    surfaces.gateway_entry -> gateway.web.web_server
     surfaces.interactive_shell.command_registry.gateway_cmds -> gateway.core.process
     # tools -> integrations (T-4 debt — vendor tools / reporting)
     tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry
@@ -43,5 +44,12 @@ ignore_imports =
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.coding_agent
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.git
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.coding_agent
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.errors -> integrations.git
     tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli
+    tools.interactive_shell.shell.merge_guard -> integrations.git
     tools.system.python_execution_tool.credentials -> integrations.github

@@ -15,6 +15,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
+    "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
@@ -22,6 +23,12 @@ _LAZY_EXPORTS: dict[str, str] = {
     "saved_github_username": "integrations.github.identity",
     "GitHubLoginResult": "integrations.github.login",
     "authenticate_and_configure_github": "integrations.github.login",
+    "PullRequestCheckout": "integrations.github.pull_request_checkout",
+    "checkout_pull_request": "integrations.github.pull_request_checkout",
+    "parse_pull_request": "integrations.github.pull_request_checkout",
+    "CHECKS_NOT_WATCHED": "integrations.github.pull_request_checks",
+    "ChecksOutcome": "integrations.github.pull_request_checks",
+    "watch_pull_request_checks": "integrations.github.pull_request_checks",
     "ERR_GITHUB_TOKEN": "integrations.github.pull_requests",
     "GitHubPullRequestError": "integrations.github.pull_requests",
     "PullRequest": "integrations.github.pull_requests",
@@ -66,6 +73,7 @@ def __getattr__(name: str) -> object:
 
 
 if TYPE_CHECKING:
+    from integrations.github.cli_setup import setup_github
     from integrations.github.helpers import github_creds
     from integrations.github.identity import saved_github_username
     from integrations.github.login import GitHubLoginResult, authenticate_and_configure_github
@@ -86,6 +94,16 @@ if TYPE_CHECKING:
         authorize_github_via_device_flow,
     )
     from integrations.github.personal_account import disconnect_personal_github
+    from integrations.github.pull_request_checkout import (
+        PullRequestCheckout,
+        checkout_pull_request,
+        parse_pull_request,
+    )
+    from integrations.github.pull_request_checks import (
+        CHECKS_NOT_WATCHED,
+        ChecksOutcome,
+        watch_pull_request_checks,
+    )
     from integrations.github.pull_requests import (
         ERR_GITHUB_TOKEN,
         GitHubPullRequestError,
@@ -109,9 +127,15 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "setup_github",
+    "PullRequestCheckout",
+    "checkout_pull_request",
+    "parse_pull_request",
+    "CHECKS_NOT_WATCHED",
     "DEFAULT_GITHUB_MCP_MODE",
     "DEFAULT_GITHUB_MCP_URL",
     "Analysis",
+    "ChecksOutcome",
     "DEFAULT_LOOP_TIME",
     "ERR_GITHUB_TOKEN",
     "GitHubApiError",
@@ -147,4 +171,5 @@ __all__ = [
     "saved_github_username",
     "schedule_ci_reliability_loop",
     "validate_github_mcp_config",
+    "watch_pull_request_checks",
 ]

@@ -15,13 +15,14 @@ from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.actions.skill_entry import enter_skill
+from tools.registry_skill_guidance import tool_guidance_tools
 
 
 def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
     """Load one bundled reference file without re-entering the skill.
 
-    Re-entering would re-run ``pre_execute`` menus and reset the active-skill
-    tool scope, so a reference load never goes through :func:`enter_skill`.
+    Re-entering would reopen the entry menu and reset the active-skill tool
+    scope, so a reference load never goes through :func:`enter_skill`.
     """
     content = load_skill_reference(name, reference)
     if not content:
@@ -53,7 +54,27 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
     reference = str(args.get("reference", "")).strip()
     if reference:
         return _view_skill_reference(name, reference)
+    if not any(skill.name == name for skill in list_action_skills()):
+        guided_tools = tool_guidance_tools(name)
+        if guided_tools:
+            return _already_loaded_guidance(name, guided_tools)
     return enter_skill(name, ctx, from_model=True)
+
+
+def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
+    """Guidance attached to tool descriptions has nothing to open; say so without failing."""
+    listed = ", ".join(guided_tools)
+    return {
+        "ok": True,
+        "name": name,
+        "already_loaded": True,
+        "tools": list(guided_tools),
+        "summary": f"{name} is tool guidance, already loaded",
+        "content": (
+            f"{name} is guidance attached to these tools: {listed}. There is no separate "
+            "skill to open: call the tool that fits the request."
+        ),
+    }
 
 
 def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str, Any]:
@@ -80,7 +101,7 @@ skill_view_tool = RegisteredTool(
             "name": string_property(
                 description=(
                     "Skill name from the SKILLS INDEX (kebab-case), e.g. "
-                    "'delivering-morning-briefings' or 'fixing-github-ci'."
+                    "'delivering-morning-briefings' or 'repair-github-ci'."
                 ),
                 min_length=1,
             ),

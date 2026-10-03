@@ -16,14 +16,20 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
-from config.constants.git import OPENSRE_COMMIT_COAUTHOR_TRAILER
+from config.constants.git import (
+    OPENSRE_COMMIT_COAUTHOR_EMAIL,
+    OPENSRE_COMMIT_COAUTHOR_NAME,
+    OPENSRE_COMMIT_COAUTHOR_TRAILER,
+)
+from config.constants.github import GITHUB_TOKEN_CHECKLIST
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
     GIT_UNAVAILABLE,
+    MERGE_FAILED,
     NOT_A_GIT_REPO,
     PROTECTED_BRANCH,
     PUSH_FAILED,
@@ -50,13 +56,51 @@ def _with_opensre_coauthor(message: str) -> str:
     return f"{stripped}\n\n{trailer}"
 
 
+def _opensre_author_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Environment that makes git record the OpenSRE Agent account as author and committer."""
+    identity = {
+        "GIT_AUTHOR_NAME": OPENSRE_COMMIT_COAUTHOR_NAME,
+        "GIT_AUTHOR_EMAIL": OPENSRE_COMMIT_COAUTHOR_EMAIL,
+        "GIT_COMMITTER_NAME": OPENSRE_COMMIT_COAUTHOR_NAME,
+        "GIT_COMMITTER_EMAIL": OPENSRE_COMMIT_COAUTHOR_EMAIL,
+    }
+    return {**(env if env is not None else os.environ), **identity}
+
+
+def _content_commit_env(workspace: str) -> dict[str, str] | None:
+    """The environment for a content commit: the OpenSRE Agent identity where git has none.
+
+    A person's checkout keeps that person as author, with the co-author trailer,
+    whether git knows them from its config or from ``GIT_AUTHOR_*`` and
+    ``GIT_COMMITTER_*``. A hosted container has neither, and the commit would fail.
+    """
+    configured = {
+        field: _configured_git_value(workspace, f"user.{field}") for field in ("name", "email")
+    }
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("name", "email"):
+            given = os.environ.get(f"GIT_{role}_{field.upper()}", "").strip()
+            if not given and not configured[field]:
+                return _opensre_author_env()
+    return None
+
+
+def _configured_git_value(workspace: str, key: str) -> str:
+    result = _run_git(workspace, "config", "--get", key)
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def _run_git(
     workspace: str,
     *args: str,
     env: dict[str, str] | None = None,
     timeout: float = _GIT_TIMEOUT_SEC,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``git <args>`` in *workspace*; raise GitCommandError if git is missing."""
+    """Run ``git <args>`` in *workspace*; raise GitCommandError if git or the directory is missing."""
+    if not os.path.isdir(workspace):
+        raise GitCommandError(NOT_A_GIT_REPO, f"{workspace} is not a directory.")
     try:
         return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             ["git", *args],
@@ -83,10 +127,23 @@ def _remote_https_base(workspace: str, remote: str = "origin") -> str:
     result = _run_git(workspace, "remote", "get-url", remote)
     if result.returncode != 0:
         return ""
-    parsed = urlsplit(result.stdout.strip())
+    return _https_base(result.stdout.strip())
+
+
+def _https_base(url: str) -> str:
+    parsed = urlsplit(url)
     if parsed.scheme == "https" and parsed.hostname:
         return f"https://{parsed.hostname}/"
     return ""
+
+
+def _is_url(destination: str) -> bool:
+    return "://" in destination or destination.startswith(("/", "git@", "ssh:"))
+
+
+def _config(workspace: str, key: str) -> str:
+    result = _run_git(workspace, "config", "--get", key)
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _token_auth_env(token: str, base_url: str) -> dict[str, str]:
@@ -268,6 +325,38 @@ def file_fingerprints(workspace: str, paths: Sequence[str]) -> dict[str, str]:
     return fingerprints
 
 
+def staged_paths(workspace: str) -> list[str]:
+    """Paths whose index entry differs from HEAD (added, modified, deleted, renamed)."""
+    result = _run_git(workspace, "diff", "--cached", "--name-only", "--no-renames", "-z")
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def unstage_paths(workspace: str, paths: Sequence[str]) -> None:
+    """Restore the index entries of *paths* from HEAD, leaving the working tree as it is."""
+    if not paths:
+        return
+    result = _run_git(workspace, "reset", "-q", "--", *paths)
+    if result.returncode != 0:
+        raise GitCommandError(MERGE_FAILED, f"git reset failed: {result.stderr.strip()}")
+
+
+def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
+    """Dirty paths that are new or whose content differs from *baseline* fingerprints."""
+    pre_existing = dict(baseline or {})
+    current = changed_paths(workspace)
+    current_fingerprints = file_fingerprints(workspace, current)
+    return [
+        path
+        for path in current
+        if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
+    ]
+
+
+def is_base_branch(name: str) -> bool:
+    """True for the branch names pull requests are normally merged into."""
+    return name.strip().casefold() in _PROTECTED_BRANCHES
+
+
 def assert_not_protected(branch: str, *, protected_extra: str = "") -> None:
     """Raise unless *branch* is a safe, non-base feature branch to push to."""
     name = branch.strip()
@@ -306,7 +395,13 @@ def checkout_branch(workspace: str, branch: str) -> None:
         )
 
 
-def commit_paths(workspace: str, paths: Sequence[str], message: str) -> None:
+def commit_paths(
+    workspace: str,
+    paths: Sequence[str],
+    message: str,
+    *,
+    analytics_workflow: str = "unspecified",
+) -> None:
     """Stage and commit *only* the given paths, excluding any other WIP in the tree.
 
     ``git add`` registers the paths (so newly created files are tracked), and
@@ -333,9 +428,119 @@ def commit_paths(workspace: str, paths: Sequence[str], message: str) -> None:
         _with_opensre_coauthor(message),
         "--",
         *paths,
+        env=_content_commit_env(workspace),
     )
     if commit.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {commit.stderr.strip()}")
+    from infrastructure.analytics.capture import capture_opensre_commit_created
+
+    capture_opensre_commit_created(
+        workflow=analytics_workflow,
+        commit_kind="content",
+        changed_file_count=len(set(paths)),
+    )
+
+
+def upstream_branch(workspace: str) -> str:
+    """``remote/branch`` the current branch tracks, or empty when it tracks nothing."""
+    result = _run_git(workspace, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def push_destination(workspace: str) -> str:
+    """Where a push of HEAD lands: ``remote/branch``, or ``owner:branch`` for a fork URL."""
+    branch = current_branch(workspace)
+    destination, remote_branch = _push_destination(workspace, branch)
+    return _push_label(destination, remote_branch)
+
+
+def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
+    """Push HEAD where the branch pushes (its push remote, else the branch it tracks).
+
+    A branch without any push or tracking configuration goes to a same-named
+    branch on origin. The remote branch must not be a protected base branch.
+    Returns the destination as ``push_destination`` labels it.
+    """
+    branch = current_branch(workspace)
+    if not _config(workspace, f"branch.{branch}.remote") and not _push_remote(workspace, branch):
+        push_branch(workspace, branch, token=token)
+        return f"origin/{branch}"
+    destination, remote_branch = _push_destination(workspace, branch)
+    assert_not_protected(remote_branch)
+    label = _push_label(destination, remote_branch)
+    base = (
+        _https_base(destination)
+        if _is_url(destination)
+        else _remote_https_base(workspace, destination)
+    )
+    env = _token_auth_env(token, base) if token and base else None
+    result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
+    if result.returncode != 0:
+        raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr, base))
+    return label
+
+
+_PUSH_DENIED_MARKERS = ("error: 403", "permission to", "denied to")
+#: What a refused push means per hosting service, keyed by the remote's host.
+_PUSH_DENIED_HINTS = {
+    "github.com": (
+        "The GitHub credential is not allowed to push to this repository. " + GITHUB_TOKEN_CHECKLIST
+    ),
+}
+
+
+def push_failure_message(label: str, stderr: str, https_base: str) -> str:
+    """The push error for the user; a refusal by a known host says what the credential lacks.
+
+    ``https_base`` is the remote's ``https://host/`` or "" for other transports;
+    only a host with a known hint gets one, so advice never names the wrong service.
+    """
+    detail = stderr.strip()
+    message = f"git push to {label} failed: {detail}"
+    host = urlsplit(https_base).hostname or ""
+    hint = _PUSH_DENIED_HINTS.get(host.lower())
+    if hint is None:
+        return message
+    lowered = detail.lower()
+    if any(marker in lowered for marker in _PUSH_DENIED_MARKERS):
+        return f"{message}\n{hint}"
+    return message
+
+
+def _push_destination(workspace: str, branch: str) -> tuple[str, str]:
+    """(remote name or URL, branch name there) that ``git push`` would use for *branch*.
+
+    A push remote (as ``gh pr checkout`` sets for a fork) wins over the tracked
+    remote; in that triangular setup the remote branch keeps the local name.
+    """
+    tracked = _config(workspace, f"branch.{branch}.remote") or "origin"
+    push_remote = _push_remote(workspace, branch)
+    if push_remote and push_remote != tracked:
+        return push_remote, branch
+    merge_ref = _config(workspace, f"branch.{branch}.merge")
+    return tracked, merge_ref.removeprefix("refs/heads/") or branch
+
+
+def _push_remote(workspace: str, branch: str) -> str:
+    return _config(workspace, f"branch.{branch}.pushRemote") or _config(
+        workspace, "remote.pushDefault"
+    )
+
+
+def _push_label(destination: str, remote_branch: str) -> str:
+    if not _is_url(destination):
+        return f"{destination}/{remote_branch}"
+    parts = _repository_path(destination).strip("/").split("/")
+    owner = parts[-2] if len(parts) >= 2 else parts[-1]
+    return f"{owner}:{remote_branch}"
+
+
+def _repository_path(url: str) -> str:
+    """The path part of a remote URL, including the scp form ``git@host:owner/repo.git``."""
+    if "://" in url:
+        return urlsplit(url).path
+    _host, colon, path = url.partition(":")
+    return path if colon and not url.startswith("/") else url
 
 
 def push_branch(
@@ -361,13 +566,10 @@ def push_branch(
     """
     if not allow_protected:
         assert_not_protected(branch, protected_extra=base_default)
-    env = None
-    if token:
-        base = _remote_https_base(workspace, remote)
-        if base:
-            env = _token_auth_env(token, base)
+    base = _remote_https_base(workspace, remote)
+    env = _token_auth_env(token, base) if token and base else None
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
     if result.returncode != 0:
         raise GitCommandError(
-            PUSH_FAILED, f"git push to {remote}/{branch} failed: {result.stderr.strip()}"
+            PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr, base)
         )

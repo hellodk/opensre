@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent import Agent
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
@@ -35,6 +36,7 @@ from core.agent_harness.ports import (
     ToolProvider,
 )
 from core.agent_harness.prompts import (
+    action_prompt_skill_and_context,
     build_action_system_prompt_envelope,
     build_action_user_message,
 )
@@ -42,6 +44,12 @@ from core.agent_harness.session.integration_resolution import resolve_and_cache_
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
+from core.agent_harness.task_plan.conclusion import (
+    blocked_steps_await_the_user,
+    demo_pick_stalled_on_skill_load,
+    task_plan_awaits_reply,
+    task_plan_blocks_conclusion,
+)
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -61,20 +69,23 @@ from core.agent_harness.turns.display_text import (
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
     tap_executed_tool_names,
-    task_plan_awaits_reply,
-    task_plan_blocks_conclusion,
 )
-from core.agent_harness.turns.plan_evidence_hook import with_plan_evidence
+from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.agent_harness.turns.turn_trace import turn_trace_state
 from core.agent_harness.turns.wal_recorder import with_wal_recording
+from core.agent_harness.turns.work_outcome import (
+    ExecutedToolOutcome,
+    tap_executed_tool_outcomes,
+)
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 from core.tool.execution import ToolExecutionHooks, public_tool_input
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
+from infrastructure.analytics.prompt_log.model_prompt import record_action_model_prompt
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
@@ -111,6 +122,9 @@ class ActionTurnPlan:
     # Replies the plan gate deferred and the sink already painted mid-turn.
     # They join ``response_text`` for history but are never streamed again.
     deferred_replies: list[str] = field(default_factory=list)
+    # Active skill body and the other ephemeral context sent with the user message.
+    prompt_skill: str = ""
+    prompt_context: str = ""
 
 
 def _deferred_reply_presenter(
@@ -555,7 +569,10 @@ def _build_action_agent(
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
     executed_tool_names: list[str] = []
+    executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
+    prompt_skill = ""
+    prompt_context = ""
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -588,12 +605,16 @@ def _build_action_agent(
         # prior-action-facts) rides with the user message so Anthropic's system
         # cache_control breakpoint is not invalidated every turn.
         system = envelope.render_cached()
+        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
         user_message = build_action_user_message(message, prefix=envelope.render_ephemeral())
         # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
         # review is opt-in. The verifier reads executed tool names from the
         # shared list the event tap below fills, so it can stand down on
         # handoff/dispatch turns whose outcome is not reviewable at
         # conclusion time.
+        # The skill active as the turn starts: the onboarding master when the
+        # message answers its menu, so a child that loads and stops is caught.
+        starting_skill = getattr(session, "active_skill", None)
         goal = build_goal_reviewer(
             llm,
             _goal_review_user_request(message, turn_snapshot),
@@ -606,6 +627,15 @@ def _build_action_agent(
                 task_plan=getattr(session, "task_plan", None)
             ),
             on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
+            blocked_needs_user=lambda: blocked_steps_await_the_user(
+                session, user_answered=bool(parse_ask_user_answers(message))
+            ),
+            skill_load_only=lambda: demo_pick_stalled_on_skill_load(
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
+            ),
+            executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),
         )
 
@@ -621,6 +651,7 @@ def _build_action_agent(
     on_runtime_event = tap_provider_usage(on_runtime_event, session)
     if goal is not None:
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
+        on_runtime_event = tap_executed_tool_outcomes(on_runtime_event, executed_outcomes)
 
     config = AgentConfig(
         llm=llm,
@@ -640,6 +671,8 @@ def _build_action_agent(
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
         deferred_replies=deferred_replies,
+        prompt_skill=prompt_skill,
+        prompt_context=prompt_context,
     )
 
 
@@ -946,9 +979,19 @@ def _end_silent_tool_turn(output: OutputSink) -> None:
 
 
 def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) -> None:
-    """Print the one-shot per-step work breakdown when the plan is complete."""
+    """Print the one-shot per-step work breakdown when the plan is complete.
+
+    Not while a question to the user is queued or its answer is on its way:
+    a plan ending on blocked steps is still being resolved with them.
+    """
+    from core.agent_harness.session.terminal_access import session_terminal
     from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
 
+    if getattr(session, "pending_user_choice", None) is not None:
+        return
+    terminal = session_terminal(session)
+    if terminal is not None and getattr(terminal, "awaiting_handoff_answer", False):
+        return
     breakdown = take_completed_plan_breakdown(session)
     if not breakdown:
         return
@@ -960,6 +1003,9 @@ def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) ->
         render(breakdown)
     else:
         output.print(breakdown)
+    # The breakdown is the last thing a completed turn prints, so it needs the
+    # same blank row below as above — otherwise it butts against the prompt.
+    output.print()
 
 
 def _count_turn(result: Any, session: SessionState, history_start: int) -> _TurnCounts:
@@ -1025,7 +1071,7 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_plan_evidence(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_task_plan_hooks(with_duplicate_action_call_guard(args.tool_hooks), session),
                 session,
             ),
             tool_resources=tool_resources,
@@ -1037,7 +1083,7 @@ def _run_action_turn(
             [{"role": "user", "content": built.user_message}],
             phase="action",
             iteration_cap=built.max_iterations,
-            llm=built.llm,
+            llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
             session=session,
         )
         persist_turn_system_prompt(
@@ -1045,6 +1091,7 @@ def _run_action_turn(
             phase="action_agent",
             system_prompt=result.final_system_prompt,
         )
+        record_action_model_prompt(result, skill=built.prompt_skill, context=built.prompt_context)
     except Exception as exc:
         from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
@@ -1133,6 +1180,11 @@ def _run_action_turn(
         counts.handled,
         cancelled,
     )
+    from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+
+    recorder = PromptRecorder.current()
+    if recorder is not None and result.hit_iteration_cap and not cancelled:
+        recorder.set_error("iteration_limit", "Agent stopped before producing a final answer.")
     tool_evidence, evidence_success_count = (
         collect_tool_evidence(getattr(result, "tool_results", ()))
         if getattr(session, "session_goal", None) is not None
@@ -1148,8 +1200,8 @@ def _run_action_turn(
         response_streamed=response_streamed,
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
-        input_tokens=int(getattr(result, "input_tokens", 0) or 0),
-        output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+        input_tokens=getattr(result, "input_tokens", None),
+        output_tokens=getattr(result, "output_tokens", None),
         tool_evidence=tool_evidence,
         evidence_success_count=evidence_success_count,
     )

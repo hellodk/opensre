@@ -443,6 +443,19 @@ def test_skill_view_failure_renders_failure_child() -> None:
     assert buffer.getvalue() == "\nError    Could not load skill · no-such-skill\n"
 
 
+def test_skill_view_of_already_loaded_tool_guidance_prints_nothing() -> None:
+    # Arrange
+    observer, buffer = _skill_observer()
+    call = {"id": "t1", "name": "skill_view", "input": {"name": "tracking-github-work-status"}}
+
+    # Act
+    observer("tool_start", call)
+    observer("tool_end", {**call, "output": {"ok": True, "already_loaded": True}})
+
+    # Assert: no "Skill activated" line and no error row.
+    assert buffer.getvalue() == ""
+
+
 def test_skill_view_tool_end_without_start_prints_nothing() -> None:
     observer, buffer = _skill_observer()
 
@@ -733,7 +746,6 @@ def test_chat_turn_records_single_cli_agent_history_entry() -> None:
         "what broke in prod?",
         session,
         console,
-        recorder=None,
         execute_actions=_no_actions,
     )
 
@@ -929,3 +941,36 @@ def test_command_tools_suppress_the_static_action_header() -> None:
         assert "Execute" not in out
         assert "opensre" not in out
         assert cmd not in out  # header suppressed; the $cmd line comes from the presenter
+
+
+def test_a_tools_progress_update_is_drawn_as_a_dim_line() -> None:
+    # Arrange
+    observer, buffer = _observer_with_buffer()
+
+    # Act
+    observer("tool_update", {"name": "ask_hosted_gateway", "update": {"progress": "Reading runs…"}})
+    observer("tool_update", {"name": "other", "update": {"partial": 3}})
+
+    # Assert: only a progress text is drawn, once
+    output = buffer.getvalue()
+    assert "↳ Reading runs…" in output and output.count("↳") == 1
+
+
+def test_a_gateway_progress_update_keeps_three_rows() -> None:
+    """The command on a later row is printed whole, not cut to an ellipsis."""
+    observer, buffer = _observer_with_buffer()
+    command = "rg -n -C 3 'GET /repos/davincios/opensre-onboarding-ci-repair-demo'"
+    progress = "\n".join(
+        [
+            "on the gateway: ⏳ Run a local shell command on this machine…",
+            f"({command})",
+            "(operating-github-ci-repairs)",
+        ]
+    )
+
+    observer("tool_update", {"name": "ask_hosted_gateway", "update": {"progress": progress}})
+
+    output = buffer.getvalue()
+    assert command in output
+    assert "opensre-onbo…" not in output
+    assert output.count("↳") == 1

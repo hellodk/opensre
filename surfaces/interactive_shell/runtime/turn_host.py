@@ -23,8 +23,8 @@ from rich.console import Console
 if TYPE_CHECKING:
     from infrastructure.turn_host.turn_runner import TurnRunner
 
+from core.agent_harness.spi.cancel import HostCancelReason, turn_cancel_reason
 from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
-from infrastructure.analytics.repl_context import bound_repl_turn_context
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.observability.trace.spans import (
     bind_session_trace,
@@ -59,15 +59,12 @@ from surfaces.interactive_shell.runtime.input_policy import (
     turn_needs_exclusive_stdin,
 )
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.error_handling.exception_reporting import report_exception
 from surfaces.shared.terminal.output.console_state import set_turn_spinner
 from surfaces.shared.terminal.output.repl_progress import repl_safe_progress_scope
 
 _logger = logging.getLogger(__name__)
-
-_AGENT_TURN_KIND = "agent"
 
 
 @dataclass(frozen=True)
@@ -184,17 +181,12 @@ def _streaming_console(
 
 async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     """Set up shell presentation for one turn and drive its lifecycle."""
-    dispatch_cancel = threading.Event()
+    dispatch_cancel = runtime.state.ensure_current_cancel_event()
     console = _streaming_console(runtime, dispatch_cancel)
     emit = ConsoleAgentEventSink(
         session=runtime.session,
         spinner=runtime.spinner,
         console=console,
-    )
-    recorder = PromptRecorder.start(
-        session=runtime.session,
-        text=text,
-        turn_kind=_AGENT_TURN_KIND,
     )
     exclusive_stdin = turn_needs_exclusive_stdin(text, runtime.session)
     progress_scope = contextlib.nullcontext() if exclusive_stdin else repl_safe_progress_scope()
@@ -217,7 +209,6 @@ async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
                 runtime=runtime,
                 text=text,
                 output=console,
-                recorder=recorder,
                 confirm=lambda prompt: _confirm_via_prompt(runtime, prompt),
                 emit=emit,
                 dispatch_cancel=dispatch_cancel,
@@ -246,7 +237,6 @@ async def _run_agent_turn_loop(
     runtime: AgentTurnResources,
     text: str,
     output: StreamingConsole,
-    recorder: PromptRecorder | None,
     confirm: Callable[[str], str],
     emit: AgentEventSink,
     dispatch_cancel: threading.Event,
@@ -272,18 +262,12 @@ async def _run_agent_turn_loop(
                 surface=UsageSurface.CLI,
                 session_id=runtime.session.session_id,
             ),
-            bound_repl_turn_context(
-                session_id=runtime.session.session_id,
-                turn_kind=_AGENT_TURN_KIND,
-                prompt_turn_id=recorder.turn_id if recorder is not None else None,
-            ),
         ):
             await asyncio.to_thread(
                 execute_shell_turn,
                 text,
                 runtime.session,
                 output,
-                recorder=recorder,
                 confirm_fn=confirm,
                 is_tty=None,
                 request_exit=runtime.request_exit,
@@ -351,6 +335,7 @@ async def run_agent_turn_queue(
     *,
     state: ReplState,
     run_turn: Callable[[str], Coroutine[Any, Any, None]],
+    on_goal_pause: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """Consume queued turns and run each one until exit."""
     while not state.exit_requested:
@@ -364,6 +349,7 @@ async def run_agent_turn_queue(
 
         turn_task = asyncio.create_task(run_turn(text))
         state.attach_turn_task(turn_task)
+        turn_cancel = state.current_cancel_event
         try:
             await turn_task
         except asyncio.CancelledError:
@@ -371,8 +357,24 @@ async def run_agent_turn_queue(
         except Exception as exc:
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
-            state.clear_current_task()
-            state.queue.task_done()
+            pause_cancel = None
+            try:
+                current_cancel = state.current_cancel_event
+                pause_cancel = next(
+                    (
+                        cancel
+                        for cancel in (turn_cancel, current_cancel)
+                        if turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
+                    ),
+                    None,
+                )
+                if pause_cancel is not None and on_goal_pause is not None:
+                    await on_goal_pause()
+            finally:
+                if state.exit_requested and pause_cancel is not None:
+                    state.attach_cancel_event(pause_cancel)
+                state.clear_current_task()
+                state.queue.task_done()
 
 
 __all__ = [
